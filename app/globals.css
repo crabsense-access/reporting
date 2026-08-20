@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 20% 12%;
+
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 20% 96%;
+    --secondary-foreground: 222 20% 12%;
+
+    --muted: 220 20% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 243 75% 96%;
+    --accent-foreground: 243 75% 30%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
+    --ring: 243 75% 59%;
+
+    --radius: 0.6rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /* Recharts 3 activa por default una "accessibility layer" (tabIndex +
+     role="application") en el <svg class="recharts-surface"> raíz de CADA
+     gráfico del tablero — al hacer click en una barra o en el chart, el
+     navegador dibuja su anillo de foco default (azul o rojo según
+     navegador/tema) sobre lo que haya quedado enfocado. Antes esto se sacaba
+     bloque por bloque, repitiendo una clase Tailwind arbitraria en el
+     wrapper de cada gráfico nuevo; acá se saca UNA sola vez, de forma
+     global, para TODOS los gráficos recharts del tablero (.recharts-wrapper
+     es la clase que la librería pone en el div contenedor de cualquier
+     chart, sin importar el tipo) — los gráficos nuevos ya nacen sin este
+     problema. Acotado a .recharts-wrapper: no afecta el foco de inputs,
+     botones, links ni ningún otro elemento interactivo de la página. El
+     resaltado puntual de una barra/sector seleccionado (borde + opacidad vía
+     <Cell>) es aparte y no se ve afectado. */
+  .recharts-wrapper,
+  .recharts-wrapper * {
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
