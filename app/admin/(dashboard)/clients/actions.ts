@@ -13,7 +13,7 @@ interface ActionResult<T = null> {
 
 interface CreateClientInput {
   name: string;
-  ga4: GA4Config;
+  ga4: GA4Config | null;
   searchConsole: GSCConfig | null;
   googleAds: GoogleAdsConfig | null;
   metaAds: MetaAdsConfig | null;
@@ -49,15 +49,17 @@ export async function createClientAction(
     return { data: null, error: clientError?.message ?? "No se pudo crear el cliente" };
   }
 
-  const { error: dataSourceError } = await supabase.from("data_sources").insert({
-    client_id: client.id,
-    source_type: "ga4",
-    connection_type: "service_account",
-    config: input.ga4,
-  });
+  if (input.ga4) {
+    const { error: dataSourceError } = await supabase.from("data_sources").insert({
+      client_id: client.id,
+      source_type: "ga4",
+      connection_type: "service_account",
+      config: input.ga4,
+    });
 
-  if (dataSourceError) {
-    return { data: null, error: dataSourceError.message };
+    if (dataSourceError) {
+      return { data: null, error: dataSourceError.message };
+    }
   }
 
   if (input.searchConsole) {
@@ -124,17 +126,34 @@ export async function updateClientNameAction(
   return { data: null, error: error?.message ?? null };
 }
 
-export async function updateGA4ConfigAction(
-  dataSourceId: string,
+export async function saveGA4ConfigAction(
   clientId: string,
-  config: GA4Config
+  dataSourceId: string | null,
+  config: GA4Config | null
 ): Promise<ActionResult> {
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("data_sources")
-    .update({ config })
-    .eq("id", dataSourceId);
+
+  if (!config) {
+    if (dataSourceId) {
+      const { error } = await supabase.from("data_sources").delete().eq("id", dataSourceId);
+      revalidatePath(`/admin/clients/${clientId}`);
+      revalidatePath("/admin/clients");
+      return { data: null, error: error?.message ?? null };
+    }
+    return { data: null, error: null };
+  }
+
+  const { error } = dataSourceId
+    ? await supabase.from("data_sources").update({ config }).eq("id", dataSourceId)
+    : await supabase.from("data_sources").insert({
+        client_id: clientId,
+        source_type: "ga4",
+        connection_type: "service_account",
+        config,
+      });
+
   revalidatePath(`/admin/clients/${clientId}`);
+  revalidatePath("/admin/clients");
   return { data: null, error: error?.message ?? null };
 }
 
@@ -223,10 +242,16 @@ export async function saveGoogleAdsConfigAction(
   return { data: null, error: error?.message ?? null };
 }
 
+// El campo system_user_token nunca viaja desde el server al cliente en
+// initialConfig (ver page.tsx, que lo redacta antes de pasarlo al form), así
+// que el form no puede simplemente reenviar el config completo: distingue
+// "no toqué el token" (tokenUpdate === null, se preserva el que ya había en
+// la fila) de "borralo" ({ clear: true }) y "guardá este nuevo" ({ value }).
 export async function saveMetaAdsConfigAction(
   clientId: string,
   dataSourceId: string | null,
-  config: MetaAdsConfig | null
+  config: Omit<MetaAdsConfig, "system_user_token"> | null,
+  tokenUpdate: { value: string } | { clear: true } | null = null
 ): Promise<ActionResult> {
   const supabase = await createClient();
 
@@ -240,13 +265,39 @@ export async function saveMetaAdsConfigAction(
     return { data: null, error: null };
   }
 
+  let systemUserToken: string | undefined;
+  if (tokenUpdate && "value" in tokenUpdate) {
+    systemUserToken = tokenUpdate.value;
+  } else if (tokenUpdate && "clear" in tokenUpdate) {
+    systemUserToken = undefined;
+  } else if (dataSourceId) {
+    const { data: existing } = await supabase
+      .from("data_sources")
+      .select("config")
+      .eq("id", dataSourceId)
+      .single();
+    systemUserToken = (existing?.config as MetaAdsConfig | null)?.system_user_token;
+  }
+
+  const fullConfig: MetaAdsConfig = {
+    ...config,
+    ...(systemUserToken ? { system_user_token: systemUserToken } : {}),
+  };
+  // oauth_client: el cliente tiene su propio System User token guardado acá.
+  // oauth_agency: no hay token propio, se sigue usando el token de agencia
+  // compartido (env var) como fallback — ver fetchMetaGraphApi.
+  const connectionType = systemUserToken ? "oauth_client" : "oauth_agency";
+
   const { error } = dataSourceId
-    ? await supabase.from("data_sources").update({ config }).eq("id", dataSourceId)
+    ? await supabase
+        .from("data_sources")
+        .update({ config: fullConfig, connection_type: connectionType })
+        .eq("id", dataSourceId)
     : await supabase.from("data_sources").insert({
         client_id: clientId,
         source_type: "meta_ads",
-        connection_type: "oauth_agency",
-        config,
+        connection_type: connectionType,
+        config: fullConfig,
       });
 
   revalidatePath(`/admin/clients/${clientId}`);

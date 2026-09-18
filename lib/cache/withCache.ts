@@ -13,9 +13,19 @@ export interface CacheDescriptor {
    * segmento, dimensiones, filtros, etc.) — deben alcanzar para que dos
    * consultas con los mismos parámetros compartan cache y dos consultas con
    * parámetros distintos NUNCA lo hagan. Debe incluir `to` (fecha "hasta"
-   * del rango consultado) para que el TTL se pueda calcular.
+   * del rango consultado) para que el TTL se pueda calcular, salvo que se
+   * pase `ttlSeconds` explícito (ver abajo).
    */
   params: Record<string, unknown>;
+  /**
+   * TTL fijo en segundos, para cuando el caller ya sabe cuánto cachear en vez de dejar que
+   * withCache lo calcule con la heurística de `params.to` (ver resolveTtlSeconds más abajo) —
+   * usado por el Calendario de inversión (ver metaInvestmentData.ts / app/api/reporting/
+   * chart-insights/route.ts) para cachear a un TTL fijo mientras el mes está en curso. Si no se
+   * pasa, se sigue usando esa heurística — los callers existentes (GA4/Search Console) no cambian
+   * de comportamiento.
+   */
+  ttlSeconds?: number;
 }
 
 // Search Console y GA4 tardan un par de días en "cerrar" los datos más
@@ -23,8 +33,10 @@ export interface CacheDescriptor {
 // alguno de esos últimos 3 días, cache corta; si el rango ya quedó atrás de
 // esa ventana, los números no van a cambiar más → cache larga.
 const RECENT_WINDOW_DAYS = 3;
-const SHORT_TTL_SECONDS = 30 * 60;
-const LONG_TTL_SECONDS = 24 * 60 * 60;
+export const SHORT_TTL_SECONDS = 30 * 60;
+export const LONG_TTL_SECONDS = 24 * 60 * 60;
+/** TTL fijo de 3 horas — Calendario de inversión (datos e insights de Anthropic) mientras el mes consultado está en curso, ver metaInvestmentData.ts / app/api/reporting/chart-insights/route.ts. */
+export const THREE_HOURS_SECONDS = 3 * 60 * 60;
 
 // Serialización determinística: ordena las keys (recursivamente) para que
 // el mismo conjunto de parámetros en distinto orden genere el mismo string,
@@ -64,7 +76,7 @@ function resolveTtlSeconds(to: unknown): number {
 export function withCache<T>(descriptor: CacheDescriptor, fn: () => Promise<T>): Promise<T> {
   const cacheKey = buildCacheKey(descriptor);
   const cached = unstable_cache(fn, [cacheKey], {
-    revalidate: resolveTtlSeconds(descriptor.params.to),
+    revalidate: descriptor.ttlSeconds ?? resolveTtlSeconds(descriptor.params.to),
     tags: [`client:${descriptor.clientId}`],
   });
   return cached();

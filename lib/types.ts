@@ -1,3 +1,5 @@
+import type { ReportContent } from "@/lib/reports/types";
+
 export type DataSourceType =
   | "ga4"
   | "search_console"
@@ -9,8 +11,10 @@ export type ConnectionType = "service_account" | "oauth_agency" | "oauth_client"
 
 export interface GA4Config {
   property_id: string;
-  primary_goals: string[];
-  secondary_goals: string[];
+  /** Objetivo principal de este cliente en GA4, texto libre — guía qué mirar al generar informes. */
+  primary_goal: string;
+  /** Objetivo secundario, opcional (texto libre, puede quedar vacío). */
+  secondary_goal: string;
 }
 
 export interface GSCBlogConfig {
@@ -27,14 +31,49 @@ export interface GSCConfig {
   brand_regex?: string | null;
   /** Regex sobre `page` que matchea SOLO la home del sitio (segmento "Home", Prompt 69) — opcional: sin configurar, se usa un fallback que matchea la raíz de `site_url` (ver resolveHomePageRegex en lib/gsc/segments.ts). */
   home_page_regex?: string | null;
+  /** Objetivo principal de este cliente en Search Console, texto libre. Si queda vacío al guardar, el form precarga un texto por defecto (ver lib/gsc/config.ts). */
+  primary_goal?: string;
+  /** Objetivo secundario, opcional (texto libre, arranca vacío). */
+  secondary_goal?: string;
 }
 
 export interface GoogleAdsConfig {
   customer_id: string;
+  /** Objetivo principal de este cliente en Google Ads, texto libre (arranca vacío). */
+  primary_goal?: string;
+  /** Objetivo secundario, opcional (texto libre, arranca vacío). */
+  secondary_goal?: string;
+}
+
+/** Un objetivo (evento de conversión) configurado para Meta Ads: el nombre del evento tal cual
+ * figura en Meta Events Manager, y una leyenda breve en español que es lo que se muestra como
+ * texto en el informe. Reemplaza al viejo par fijo primary_goal/secondary_goal — ahora se cargan
+ * de a uno por vez, sin límite. */
+export interface MetaAdsObjective {
+  event: string;
+  label: string;
 }
 
 export interface MetaAdsConfig {
   ad_account_id: string;
+  /** Objetivos configurados para este cliente en Meta Ads (arranca vacío — se cargan de a uno por vez, ver MetaAdsConfigForm). */
+  objectives?: MetaAdsObjective[];
+  /**
+   * Presupuesto mensual de este cliente en Meta Ads, cargado a mano (no hay ningún campo
+   * equivalente en la Marketing API — el "monthly budget" de una cuenta o campaña ahí es otra
+   * cosa, y cambia si se pausan/reactivan campañas). Se usa en el Calendario de inversión (ver
+   * components/admin/reporting/InvestmentCalendar.tsx) para la comparación "gasto vs.
+   * presupuesto" — si no está cargado, esa comparación no se muestra.
+   */
+  monthly_budget?: number;
+  /**
+   * System User token de Meta Ads propio de este cliente (Marketing API).
+   * Si no está seteado, fetchMetaGraphApi cae al token de agencia compartido
+   * (env var META_ADS_SYSTEM_USER_TOKEN) para no romper clientes que todavía
+   * usan ese esquema. Nunca se manda al cliente en initialConfig (ver
+   * page.tsx) — el form solo sabe si hay uno guardado (hasStoredToken).
+   */
+  system_user_token?: string;
 }
 
 export interface Admin {
@@ -67,20 +106,30 @@ export interface DataSource {
   created_at: string;
 }
 
-export type InsightSentimentValue = "positive" | "negative" | "neutral";
+export type ReportStatus = "pending" | "generating" | "completed" | "failed";
 
-export interface DashboardInsight {
+export interface Report {
   id: string;
   client_id: string;
-  dashboard: string;
-  metric_key: string;
-  range_from: string;
-  range_to: string;
-  conversion_event: string;
-  insight_text: string;
-  sentiment: InsightSentimentValue;
-  model: string;
-  generated_at: string;
+  prompt_text: string;
+  date_range_start: string;
+  date_range_end: string;
+  status: ReportStatus;
+  structured_content: ReportContent | null;
+  error_message: string | null;
+  created_at: string;
+  created_by: string;
+}
+
+// Subconjunto de columnas que necesita el historial de informes (InformesPopup) — evita traer
+// `structured_content` (puede ser un JSON grande) cuando solo hace falta listar filas.
+export interface ReportSummary {
+  id: string;
+  created_at: string;
+  prompt_text: string;
+  date_range_start: string;
+  date_range_end: string;
+  status: ReportStatus;
 }
 
 export interface Database {
@@ -115,19 +164,16 @@ export interface Database {
         Update: Partial<DataSource>;
         Relationships: [];
       };
-      dashboard_insights: {
-        Row: DashboardInsight;
-        Insert: Partial<DashboardInsight> & {
+      reports: {
+        Row: Report;
+        Insert: Partial<Report> & {
           client_id: string;
-          dashboard: string;
-          metric_key: string;
-          range_from: string;
-          range_to: string;
-          insight_text: string;
-          sentiment: InsightSentimentValue;
-          model: string;
+          prompt_text: string;
+          date_range_start: string;
+          date_range_end: string;
+          created_by: string;
         };
-        Update: Partial<DashboardInsight>;
+        Update: Partial<Report>;
         Relationships: [];
       };
     };
@@ -136,6 +182,7 @@ export interface Database {
     Enums: {
       data_source_type: DataSourceType;
       connection_type: ConnectionType;
+      report_status: ReportStatus;
     };
     CompositeTypes: Record<string, never>;
   };

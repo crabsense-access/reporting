@@ -1,21 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { LayoutDashboard } from "lucide-react";
+import { FileText, History, LineChart } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import {
-  getFirstAvailableDashboardType,
-  mapSourceTypesToDashboardTypes,
-} from "@/lib/dashboard/getAvailableDashboardTypes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion } from "@/components/ui/accordion";
 import { ClientNameForm } from "@/components/admin/ClientNameForm";
 import { GA4ConfigForm } from "@/components/admin/GA4ConfigForm";
 import { GoogleAdsConfigForm } from "@/components/admin/GoogleAdsConfigForm";
 import { MetaAdsConfigForm } from "@/components/admin/MetaAdsConfigForm";
 import { SearchConsoleConfigForm } from "@/components/admin/SearchConsoleConfigForm";
 import { ClientUsersManager } from "@/components/admin/ClientUsersManager";
-import type { DataSourceType, GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
+import { InformesPopup } from "@/components/admin/reports/InformesPopup";
+import type { GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
 
 export default async function ClientDetailPage({
   params,
@@ -66,13 +64,11 @@ export default async function ClientDetailPage({
     .eq("client_id", id)
     .order("created_at", { ascending: true });
 
-  const sourceTypes = new Set<DataSourceType>();
-  if (dataSource) sourceTypes.add("ga4");
-  if (gscDataSource) sourceTypes.add("search_console");
-  if (googleAdsDataSource) sourceTypes.add("google_ads");
-  if (metaAdsDataSource) sourceTypes.add("meta_ads");
-  const availableTypes = mapSourceTypesToDashboardTypes(sourceTypes);
-  const dashboardHref = `/${client.slug}/dashboard/${getFirstAvailableDashboardType(availableTypes) ?? "analitica"}`;
+  const { data: reports } = await supabase
+    .from("reports")
+    .select("id, created_at, prompt_text, date_range_start, date_range_end, status")
+    .eq("client_id", id)
+    .order("created_at", { ascending: false });
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,12 +77,31 @@ export default async function ClientDetailPage({
           <p className="text-sm text-muted-foreground">Cliente</p>
           <h1 className="text-2xl font-semibold text-foreground">{client.name}</h1>
         </div>
-        <Button asChild variant="outline">
-          <Link href={dashboardHref}>
-            <LayoutDashboard className="h-4 w-4" />
-            Ver tablero
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href={`/admin/clients/${client.id}/reporting`}>
+              <LineChart className="h-4 w-4" />
+              Informes
+            </Link>
+          </Button>
+          <InformesPopup
+            clientId={client.id}
+            clientName={client.name}
+            reports={reports ?? []}
+            trigger={
+              <Button type="button" variant="outline">
+                <History className="h-4 w-4" />
+                Ver informes
+              </Button>
+            }
+          />
+          <Button asChild variant="outline">
+            <Link href={`/admin/clients/${client.id}/informes/nuevo`}>
+              <FileText className="h-4 w-4" />
+              Generar informe
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -98,74 +113,45 @@ export default async function ClientDetailPage({
         </CardContent>
       </Card>
 
-      <div id="fuentes-de-datos" className="flex scroll-mt-6 flex-col gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Conexión GA4</CardTitle>
-            <CardDescription>Property ID y objetivos que se muestran en su tablero.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {dataSource ? (
-              <GA4ConfigForm
-                clientId={client.id}
-                dataSourceId={dataSource.id}
-                initialConfig={dataSource.config as GA4Config}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Este cliente todavía no tiene una fuente GA4 configurada.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <div id="fuentes-de-datos" className="scroll-mt-6">
+        <Accordion defaultOpenId="search-console">
+          <SearchConsoleConfigForm
+            clientId={client.id}
+            dataSourceId={gscDataSource?.id ?? null}
+            initialConfig={gscDataSource ? (gscDataSource.config as GSCConfig) : null}
+            configured={Boolean(gscDataSource)}
+          />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Conexión Google Ads</CardTitle>
-            <CardDescription>
-              Customer ID de la cuenta de Ads vinculada a la MCC de la agencia.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <GoogleAdsConfigForm
-              clientId={client.id}
-              dataSourceId={googleAdsDataSource?.id ?? null}
-              initialConfig={googleAdsDataSource ? (googleAdsDataSource.config as GoogleAdsConfig) : null}
-            />
-          </CardContent>
-        </Card>
+          <GA4ConfigForm
+            clientId={client.id}
+            dataSourceId={dataSource?.id ?? null}
+            initialConfig={dataSource ? (dataSource.config as GA4Config) : null}
+            configured={Boolean(dataSource)}
+          />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Conexión Meta Ads</CardTitle>
-            <CardDescription>
-              Ad Account ID de la cuenta de Meta compartida con el Business Manager de la agencia.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <MetaAdsConfigForm
-              clientId={client.id}
-              dataSourceId={metaAdsDataSource?.id ?? null}
-              initialConfig={metaAdsDataSource ? (metaAdsDataSource.config as MetaAdsConfig) : null}
-            />
-          </CardContent>
-        </Card>
+          <MetaAdsConfigForm
+            clientId={client.id}
+            dataSourceId={metaAdsDataSource?.id ?? null}
+            initialConfig={
+              metaAdsDataSource
+                ? // El token nunca sale del server hacia el cliente: se redacta acá
+                  // y el form solo recibe si hay uno guardado (hasStoredToken).
+                  (({ system_user_token: _omit, ...rest }: MetaAdsConfig) => rest)(
+                    metaAdsDataSource.config as MetaAdsConfig
+                  )
+                : null
+            }
+            hasStoredToken={Boolean((metaAdsDataSource?.config as MetaAdsConfig | undefined)?.system_user_token)}
+            configured={Boolean(metaAdsDataSource)}
+          />
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Conexión Search Console</CardTitle>
-            <CardDescription>
-              Site URL y, si tiene, la configuración del blog para separar su tráfico.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <SearchConsoleConfigForm
-              clientId={client.id}
-              dataSourceId={gscDataSource?.id ?? null}
-              initialConfig={gscDataSource ? (gscDataSource.config as GSCConfig) : null}
-            />
-          </CardContent>
-        </Card>
+          <GoogleAdsConfigForm
+            clientId={client.id}
+            dataSourceId={googleAdsDataSource?.id ?? null}
+            initialConfig={googleAdsDataSource ? (googleAdsDataSource.config as GoogleAdsConfig) : null}
+            configured={Boolean(googleAdsDataSource)}
+          />
+        </Accordion>
       </div>
 
       <Card>

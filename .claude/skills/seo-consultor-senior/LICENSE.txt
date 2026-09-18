@@ -1,0 +1,4 @@
+Licencia MIT
+
+Copyright (c) 2026 Palo Seco S.L.
+https://palos-seco.com

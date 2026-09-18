@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import type { SearchConsoleFormErrors, SearchConsoleFormValues } from "@/lib/gsc/config";
 
 interface SearchConsoleFieldsProps {
@@ -18,20 +19,6 @@ export function SearchConsoleFields({ value, onChange, errors }: SearchConsoleFi
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="sc-enabled">¿Este cliente tiene Search Console conectado?</Label>
-          <p className="text-sm text-muted-foreground">
-            Activalo para configurar su propiedad de Search Console.
-          </p>
-        </div>
-        <Switch
-          id="sc-enabled"
-          checked={value.enabled}
-          onCheckedChange={(checked) => patch({ enabled: checked })}
-        />
-      </div>
-
       {value.enabled && (
         <div className="flex flex-col gap-6 rounded-lg border border-border p-4">
           <div className="flex flex-col gap-2">
@@ -48,6 +35,26 @@ export function SearchConsoleFields({ value, onChange, errors }: SearchConsoleFi
               para propiedades de prefijo — tiene que coincidir exactamente con cómo está
               verificada la propiedad.
             </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="sc-primary-goal">Objetivo principal</Label>
+            <Textarea
+              id="sc-primary-goal"
+              value={value.primaryGoal}
+              onChange={(event) => patch({ primaryGoal: event.target.value })}
+              placeholder="Describí el objetivo principal de este cliente en Search Console."
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="sc-secondary-goal">Objetivo secundario</Label>
+            <Textarea
+              id="sc-secondary-goal"
+              value={value.secondaryGoal}
+              onChange={(event) => patch({ secondaryGoal: event.target.value })}
+              placeholder="Describí el objetivo secundario de este cliente en Search Console (opcional)."
+            />
           </div>
 
           <div className="flex flex-col gap-2">
@@ -145,6 +152,11 @@ export function SearchConsoleFields({ value, onChange, errors }: SearchConsoleFi
             </div>
           )}
         </div>
+      )}
+      {!value.enabled && (
+        <p className="text-sm text-muted-foreground">
+          Activá el switch de arriba para conectar Search Console.
+        </p>
       )}
     </div>
   );

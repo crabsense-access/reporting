@@ -1,5 +1,12 @@
 import type { GSCConfig } from "@/lib/types";
 
+// Precarga del campo "Objetivo principal" cuando está vacío (conexión nueva, o una existente que
+// nunca lo tuvo cargado) — el admin lo puede editar o borrar libremente después.
+export const DEFAULT_GSC_PRIMARY_GOAL =
+  "Analizar el tráfico orgánico proveniente de Google, detectar oportunidades SEO de valor " +
+  "comercial y determinar qué impacto tiene ese tráfico sobre el comportamiento y las " +
+  "conversiones en Google Analytics.";
+
 export interface SearchConsoleFormValues {
   enabled: boolean;
   siteUrl: string;
@@ -10,6 +17,8 @@ export interface SearchConsoleFormValues {
   homeRegex: string;
   postsRegex: string;
   brandRegex: string;
+  primaryGoal: string;
+  secondaryGoal: string;
 }
 
 export const EMPTY_SEARCH_CONSOLE_FORM_VALUES: SearchConsoleFormValues = {
@@ -22,6 +31,8 @@ export const EMPTY_SEARCH_CONSOLE_FORM_VALUES: SearchConsoleFormValues = {
   homeRegex: "",
   postsRegex: "",
   brandRegex: "",
+  primaryGoal: DEFAULT_GSC_PRIMARY_GOAL,
+  secondaryGoal: "",
 };
 
 export function searchConsoleConfigToFormValues(config: GSCConfig | null): SearchConsoleFormValues {
@@ -39,6 +50,8 @@ export function searchConsoleConfigToFormValues(config: GSCConfig | null): Searc
     homeRegex: config.blog?.home_regex ?? "",
     postsRegex: config.blog?.posts_regex ?? "",
     brandRegex: config.brand_regex ?? "",
+    primaryGoal: config.primary_goal || DEFAULT_GSC_PRIMARY_GOAL,
+    secondaryGoal: config.secondary_goal ?? "",
   };
 }
 
@@ -93,12 +106,22 @@ export function buildSearchConsoleConfig(values: SearchConsoleFormValues): Build
     errors.brandRegex = "Ese regex no es válido.";
   }
 
+  const primaryGoal = values.primaryGoal.trim();
+  const secondaryGoal = values.secondaryGoal.trim();
+
   if (!values.hasBlog) {
     if (Object.keys(errors).length > 0) {
       return { config: null, errors };
     }
     return {
-      config: { site_url: siteUrl, blog: null, brand_regex: brandRegex || null, home_page_regex: homePageRegex || null },
+      config: {
+        site_url: siteUrl,
+        blog: null,
+        brand_regex: brandRegex || null,
+        home_page_regex: homePageRegex || null,
+        primary_goal: primaryGoal,
+        secondary_goal: secondaryGoal,
+      },
       errors: {},
     };
   }
@@ -135,6 +158,8 @@ export function buildSearchConsoleConfig(values: SearchConsoleFormValues): Build
       site_url: siteUrl,
       brand_regex: brandRegex || null,
       home_page_regex: homePageRegex || null,
+      primary_goal: primaryGoal,
+      secondary_goal: secondaryGoal,
       blog: {
         same_property: values.sameProperty,
         site_url: values.sameProperty ? null : blogSiteUrl,

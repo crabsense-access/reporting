@@ -1,23 +1,23 @@
 import Link from "next/link";
-import { BarChart3, LayoutDashboard, Megaphone, Pencil, Search, Sparkles } from "lucide-react";
+import { BarChart3, FileText, LineChart, Megaphone, Pencil, Search, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { InformesPopup } from "@/components/admin/reports/InformesPopup";
+import type { ReportSummary } from "@/lib/types";
 
 interface ClientRow {
   id: string;
   name: string;
   slug: string;
   created_at: string;
-  propertyId: string | null;
-  userCount: number;
   hasGA4: boolean;
   hasSearchConsole: boolean;
   hasGoogleAds: boolean;
   hasMetaAds: boolean;
   hasBlog: boolean;
-  dashboardHref: string;
+  reports: ReportSummary[];
 }
 
 export function ClientsTable({ clients }: { clients: ClientRow[] }) {
@@ -36,9 +36,8 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
           <tr>
             <th className="px-4 py-3 font-medium">Cliente</th>
             <th className="px-4 py-3 font-medium">Fuentes de datos</th>
-            <th className="px-4 py-3 font-medium">Property ID GA4</th>
-            <th className="px-4 py-3 font-medium">Usuarios autorizados</th>
             <th className="px-4 py-3 font-medium">Alta</th>
+            <th className="px-4 py-3 font-medium">Informes</th>
             <th className="px-4 py-3 font-medium text-right">Acciones</th>
           </tr>
         </thead>
@@ -93,18 +92,23 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 </div>
               </td>
               <td className="px-4 py-3 text-muted-foreground">
-                {client.propertyId ?? <span className="italic">Sin configurar</span>}
-              </td>
-              <td className="px-4 py-3 text-muted-foreground">{client.userCount}</td>
-              <td className="px-4 py-3 text-muted-foreground">
                 {new Date(client.created_at).toLocaleDateString("es-AR")}
+              </td>
+              <td className="px-4 py-3">
+                <InformesPopup clientId={client.id} clientName={client.name} reports={client.reports} />
               </td>
               <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
                   <Button asChild variant="outline" size="sm">
-                    <Link href={client.dashboardHref}>
-                      <LayoutDashboard className="h-4 w-4" />
-                      Ver tablero
+                    <Link href={`/admin/clients/${client.id}/reporting`}>
+                      <LineChart className="h-4 w-4" />
+                      Informes
+                    </Link>
+                  </Button>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/admin/clients/${client.id}/informes/nuevo`}>
+                      <FileText className="h-4 w-4" />
+                      Generar informe
                     </Link>
                   </Button>
                   <Button asChild variant="ghost" size="sm">

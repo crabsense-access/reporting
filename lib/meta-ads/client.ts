@@ -1,8 +1,13 @@
 // Marketing API REST tradicional (no el MCP — ver lib/meta-ads/mcp-client.ts
 // para el motivo: Meta todavía no habilitó el permiso ads_mcp_management
-// para la Business de la agencia). Mismo patrón que lib/google-ads/client.ts:
-// una sola credencial de agencia (System User token, ads_read) reutilizada
-// para todos los clientes, autenticando por request.
+// para la Business de la agencia). Antes usaba una sola credencial de
+// agencia (System User token) para todos los clientes; ahora cada cliente
+// puede tener su propio System User token (guardado en
+// data_sources.config.system_user_token, ver MetaAdsConfig en lib/types.ts)
+// para no depender de que el cliente comparta su cuenta con el Business
+// Manager de la agencia. El param `token` es opcional y, si no se pasa, cae
+// al token de agencia (env var META_ADS_SYSTEM_USER_TOKEN) — eso mantiene
+// funcionando a lib/reports/tools.ts (todavía no migrado a token por cliente).
 const META_GRAPH_API_VERSION = "v26.0";
 const META_GRAPH_API_BASE = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`;
 
@@ -17,11 +22,15 @@ interface MetaGraphErrorBody {
   };
 }
 
-export async function fetchMetaGraphApi<T>(path: string, params: Record<string, string>): Promise<T> {
-  const token = process.env.META_ADS_SYSTEM_USER_TOKEN;
+export async function fetchMetaGraphApi<T>(
+  path: string,
+  params: Record<string, string>,
+  clientToken?: string
+): Promise<T> {
+  const token = clientToken || process.env.META_ADS_SYSTEM_USER_TOKEN;
   if (!token) {
     throw new Error(
-      "Falta la variable de entorno META_ADS_SYSTEM_USER_TOKEN (System User token de la agencia en Meta Business Manager)."
+      "Falta un token de Meta Ads para este cliente. Configurá un System User token propio del cliente en su ficha, o definí la variable de entorno META_ADS_SYSTEM_USER_TOKEN como token de agencia por defecto."
     );
   }
 

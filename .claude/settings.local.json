@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tail -15 /tmp/nextdev.log)",
+      "Read(//private/tmp/**)"
+    ]
+  }
+}
