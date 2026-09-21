@@ -1,11 +1,9 @@
 import Link from "next/link";
-import { BarChart3, FileText, LineChart, Megaphone, Pencil, Search, Sparkles } from "lucide-react";
+import { BarChart3, CalendarDays, Megaphone, Pencil, Search, Sparkles } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { InformesPopup } from "@/components/admin/reports/InformesPopup";
-import type { ReportSummary } from "@/lib/types";
 
 interface ClientRow {
   id: string;
@@ -17,7 +15,6 @@ interface ClientRow {
   hasGoogleAds: boolean;
   hasMetaAds: boolean;
   hasBlog: boolean;
-  reports: ReportSummary[];
 }
 
 export function ClientsTable({ clients }: { clients: ClientRow[] }) {
@@ -37,7 +34,6 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
             <th className="px-4 py-3 font-medium">Cliente</th>
             <th className="px-4 py-3 font-medium">Fuentes de datos</th>
             <th className="px-4 py-3 font-medium">Alta</th>
-            <th className="px-4 py-3 font-medium">Informes</th>
             <th className="px-4 py-3 font-medium text-right">Acciones</th>
           </tr>
         </thead>
@@ -95,20 +91,11 @@ export function ClientsTable({ clients }: { clients: ClientRow[] }) {
                 {new Date(client.created_at).toLocaleDateString("es-AR")}
               </td>
               <td className="px-4 py-3">
-                <InformesPopup clientId={client.id} clientName={client.name} reports={client.reports} />
-              </td>
-              <td className="px-4 py-3">
                 <div className="flex justify-end gap-2">
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/admin/clients/${client.id}/reporting`}>
-                      <LineChart className="h-4 w-4" />
-                      Informes
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/admin/clients/${client.id}/informes/nuevo`}>
-                      <FileText className="h-4 w-4" />
-                      Generar informe
+                    <Link href={`/admin/clients/${client.id}/reporting/calendario`}>
+                      <CalendarDays className="h-4 w-4" />
+                      Informe Mensual
                     </Link>
                   </Button>
                   <Button asChild variant="ghost" size="sm">

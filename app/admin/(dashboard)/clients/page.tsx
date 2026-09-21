@@ -4,7 +4,7 @@ import { Plus, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { ClientsTable } from "@/components/admin/ClientsTable";
-import type { DataSourceType, GSCConfig, ReportSummary } from "@/lib/types";
+import type { DataSourceType, GSCConfig } from "@/lib/types";
 
 export default async function AdminClientsPage() {
   const supabase = await createClient();
@@ -17,18 +17,6 @@ export default async function AdminClientsPage() {
   const { data: dataSources } = await supabase
     .from("data_sources")
     .select("client_id, source_type, config");
-
-  const { data: reports } = await supabase
-    .from("reports")
-    .select("id, client_id, created_at, prompt_text, date_range_start, date_range_end, status")
-    .order("created_at", { ascending: false });
-
-  const reportsByClient = new Map<string, ReportSummary[]>();
-  (reports ?? []).forEach((report) => {
-    const list = reportsByClient.get(report.client_id) ?? [];
-    list.push(report);
-    reportsByClient.set(report.client_id, list);
-  });
 
   const sourceTypesByClient = new Map<string, Set<DataSourceType>>();
   const hasBlogByClient = new Map<string, boolean>();
@@ -64,7 +52,6 @@ export default async function AdminClientsPage() {
       hasGoogleAds: hasGoogleAdsByClient.get(client.id) ?? false,
       hasMetaAds: hasMetaAdsByClient.get(client.id) ?? false,
       hasBlog: hasBlogByClient.get(client.id) ?? false,
-      reports: reportsByClient.get(client.id) ?? [],
     };
   });
 
