@@ -757,7 +757,9 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 border-t border-border pt-3">
+              {/* pt-8 (en vez de pt-3, como el resto de los separadores de esta card) a pedido de
+                  Martín: "espaciado top importante" antes del título. */}
+              <div className="flex flex-col gap-2 border-t border-border pt-8">
                 <span className="text-lg font-bold text-foreground">Resumen ejecutivo</span>
                 <p className="text-sm leading-relaxed text-foreground">{executiveSummary}</p>
               </div>

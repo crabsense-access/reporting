@@ -600,7 +600,18 @@ export function InvestmentTrendChart({
           )}
         </div>
 
-        <ChartInsightPanel chart="investment-trend" metrics={insightMetrics} accentColor="hsl(var(--primary))" monthIsComplete={monthIsComplete} clientId={clientId} />
+        {/* variant="card" a pedido de Martín: mismo estilo (recuadro + espaciado importante arriba)
+            que las tarjetas de ChartInsightByTypePanel/CampaignHighlightPanel (ver
+            ChartInsightPanel.tsx) — el resto de los charts con ChartInsightPanel no pasan variant,
+            así que no cambian. */}
+        <ChartInsightPanel
+          chart="investment-trend"
+          metrics={insightMetrics}
+          accentColor="hsl(var(--primary))"
+          variant="card"
+          monthIsComplete={monthIsComplete}
+          clientId={clientId}
+        />
       </CardContent>
     </Card>
   );
