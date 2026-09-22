@@ -1,21 +1,26 @@
 "use client";
 
 // Reemplaza la grilla de calendario (días del mes) por un análisis de campañas individuales:
-// ranking horizontal ordenable por Leads / CPL / Inversión, con el estado de cada una (Activa /
-// Pausada) — y, debajo, el hallazgo de la campaña con mejor y con peor CPL del mes, redactado por
-// Claude (ver CampaignHighlightPanel.tsx). "Mejor"/"peor" se decide acá por código (nunca por
-// Claude) para que el texto nunca contradiga lo que muestra el ranking.
+// ranking horizontal por Inversión (de mayor a menor), con el estado de cada una (Activa /
+// Pausada) — y, junto a la barra, una tabla con Inversión / % Inv. / Resultados / Costo por
+// Resultado, mismo patrón "barra + tabla al costado" que RegionAnalysis.tsx/PlacementAnalysis.tsx
+// (a pedido de Martín: antes había un toggle de Leads/CPL/Inversión que elegía qué métrica
+// ordenaba el ranking y aparecía sola a la derecha de la barra — ahora las 4 métricas se ven
+// siempre juntas, sin toggle, y el orden es siempre por Inversión). Debajo, el hallazgo de la
+// campaña con mejor y con peor CPL del mes, redactado por Claude (ver CampaignHighlightPanel.tsx).
+// "Mejor"/"peor" se decide acá por código (nunca por Claude) para que el texto nunca contradiga lo
+// que muestra el ranking.
 //
 // Usa datos de prueba (ver lib/reporting/mockInvestmentCalendar.ts — CAMPAIGNS,
 // campaignMonthlyTotals) derivados de los mismos totales por tipo que el resto de la página —
 // cuando se conecte a Meta Ads real, sólo cambia de dónde sale CampaignTotals[], el resto del
 // componente no cambia.
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import {
   campaignMonthlyTotals,
   type CampaignTotals,
@@ -25,10 +30,6 @@ import {
   MOCK_CURRENCY,
 } from "@/lib/reporting/mockInvestmentCalendar";
 import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHighlightPanel";
-
-type Metric = "leads" | "cpl" | "spend";
-
-const METRIC_LABEL: Record<Metric, string> = { leads: "Leads", cpl: "CPL", spend: "Inversión" };
 
 /** Devuelve el elemento de `items` con mayor (o menor) `value(item)`, o null si la lista está vacía. */
 function pickExtreme<T>(items: readonly T[], value: (item: T) => number, mode: "max" | "min"): T | null {
@@ -44,6 +45,11 @@ function pickExtreme<T>(items: readonly T[], value: (item: T) => number, mode: "
   return best;
 }
 
+// Ancho fijo por columna (Inversión, % Inv., Resultados, Costo por Resultado) para que los valores
+// queden alineados verticalmente entre todas las filas — mismo criterio que RegionAnalysis.tsx/
+// PlacementAnalysis.tsx.
+const METRIC_GRID_COLUMNS = "92px 56px 68px 96px";
+
 export function CampaignAnalysis({
   monthLeadsByType,
   monthSpendByType,
@@ -56,8 +62,6 @@ export function CampaignAnalysis({
   monthIsComplete: boolean;
   clientId: string;
 }) {
-  const [metric, setMetric] = useState<Metric>("leads");
-
   const campaigns = useMemo(
     () => campaignMonthlyTotals(monthLeadsByType, monthSpendByType),
     [monthLeadsByType, monthSpendByType]
@@ -71,18 +75,12 @@ export function CampaignAnalysis({
     };
   }, [campaigns]);
 
-  const sorted = useMemo(() => {
-    const withValue = campaigns.map((c) => ({
-      ...c,
-      value: metric === "leads" ? c.leads : metric === "spend" ? c.spend : (c.cpl ?? 0),
-    }));
-    return withValue.sort((a, b) => (metric === "cpl" ? a.value - b.value : b.value - a.value));
-  }, [campaigns, metric]);
+  // Siempre por Inversión, de mayor a menor — a pedido de Martín, ya no hay toggle de métrica (ver
+  // comentario de cabecera).
+  const sorted = useMemo(() => [...campaigns].sort((a, b) => b.spend - a.spend), [campaigns]);
 
-  const maxValue = Math.max(...sorted.map((c) => c.value), 1);
-
-  const formatMetricValue = (value: number) =>
-    metric === "leads" ? formatNumber(value) : formatCurrency(value, MOCK_CURRENCY, metric === "cpl" ? 2 : 0);
+  const totalSpend = sorted.reduce((sum, c) => sum + c.spend, 0);
+  const maxSpend = Math.max(...sorted.map((c) => c.spend), 1);
 
   const highlightMetrics = useMemo(() => {
     if (!best || !worst) return null;
@@ -104,45 +102,38 @@ export function CampaignAnalysis({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
-        <div className="flex flex-col gap-0.5">
-          <CardTitle className="text-lg font-bold text-foreground">Análisis de campañas</CardTitle>
-          <span className="text-xs text-muted-foreground">Ranking del mes por campaña individual</span>
-        </div>
-        <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-          {(["leads", "cpl", "spend"] as Metric[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setMetric(option)}
-              className={cn(
-                "rounded px-3 py-1 text-xs font-medium transition-colors",
-                metric === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {METRIC_LABEL[option]}
-            </button>
-          ))}
-        </div>
+      <CardHeader className="flex flex-col gap-0.5 pb-2">
+        <CardTitle className="text-lg font-bold text-foreground">Análisis de campañas</CardTitle>
+        <span className="text-xs text-muted-foreground">Ranking del mes por campaña individual</span>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
-        {metric === "cpl" && (
-          <p className="-mt-1 text-[11px] text-muted-foreground">Ordenado de menor a mayor costo por lead.</p>
-        )}
-
+      <CardContent className="flex flex-col gap-4 pt-4">
         <div className="flex flex-col gap-3.5">
+          <div className="flex items-center gap-4">
+            <span className="min-w-0 flex-1" />
+            <div
+              className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
+            >
+              <span>Inversión</span>
+              <span>% Inv.</span>
+              <span>Resultados</span>
+              <span>Costo por Resultado</span>
+            </div>
+          </div>
+
           {sorted.map((c) => {
-            const widthPct = Math.max(4, Math.round((c.value / maxValue) * 100));
+            const widthPct = Math.max(4, Math.round((c.spend / maxSpend) * 100));
+            const spendShare = totalSpend > 0 ? c.spend / totalSpend : 0;
             return (
-              <div key={c.id} className="flex flex-col gap-1">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
-                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+              <div key={c.id} className="flex items-center gap-4">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                     <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: LEAD_TYPE_COLOR[c.type] }} />
-                    {c.name}
+                    <span className="truncate">{c.name}</span>
                     <span
                       className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
                         c.state === "activa"
                           ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                           : "bg-muted text-muted-foreground"
@@ -151,13 +142,23 @@ export function CampaignAnalysis({
                       {c.state === "activa" ? "Activa" : "Pausada"}
                     </span>
                   </span>
-                  <span className="whitespace-nowrap font-semibold tabular-nums text-foreground">{formatMetricValue(c.value)}</span>
+                  {/* La barra termina donde empieza la tabla: su ancho de referencia (w-full) es
+                      el de esta columna de campaña, no el de la fila entera — mismo criterio que
+                      RegionAnalysis.tsx/PlacementAnalysis.tsx. */}
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${widthPct}%`, backgroundColor: LEAD_TYPE_COLOR[c.type], opacity: c.state === "activa" ? 1 : 0.55 }}
+                    />
+                  </div>
                 </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full transition-[width]"
-                    style={{ width: `${widthPct}%`, backgroundColor: LEAD_TYPE_COLOR[c.type], opacity: c.state === "activa" ? 1 : 0.55 }}
-                  />
+                <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
+                  <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(c.spend, MOCK_CURRENCY)}</span>
+                  <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
+                  <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(c.leads)}</span>
+                  <span className="whitespace-nowrap text-muted-foreground">
+                    {c.cpl !== null ? formatCurrency(c.cpl, MOCK_CURRENCY, 2) : "s/d"}
+                  </span>
                 </div>
               </div>
             );
