@@ -225,6 +225,21 @@ export interface RealInvestmentCalendarData {
   placementSegments: PlacementSegmentTotals[];
 }
 
+/**
+ * Desglose por anuncio de HourlyTotals — igual al shared AdBreakdownEntry más reach/impressions/
+ * clicks (mismo shape que RegionAdBreakdownEntry) — a pedido de Martín, para las columnas de
+ * Alcance/Impresiones/Clicks de la tabla de franjas horarias de HourlyPerformanceChart.tsx.
+ */
+export interface HourlyAdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
 export interface HourlyTotals {
   /** Hora del día en el huso horario de la cuenta publicitaria, 0-23. */
   hour: number;
@@ -233,8 +248,13 @@ export interface HourlyTotals {
   /** Objetivos configurados, mismo criterio de matching e índice que audienceSegments/regionSegments — a pedido de Martín, HourlyPerformanceChart ahora también filtra por Tipo de Resultado (antes combinaba todos los Objetivos en un único total). */
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones/clics TOTALES de esta hora — no varían por Tipo de Resultado, sólo por
+   * Campaña/Anuncio (ver byAd) — mismo criterio que RegionSegmentTotals.reach/impressions/clicks. */
+  reach: number;
+  impressions: number;
+  clicks: number;
   /** Desglose de ESTA hora por anuncio (clave = ad_id), mismo criterio que DailyRealTotals.byAd — para los combos de Campaña/Anuncio. */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, HourlyAdBreakdownEntry>;
 }
 
 /**
@@ -568,6 +588,12 @@ interface MetaHourlyRow {
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
   campaign_id?: string;
   ad_id?: string;
+  /** Alcance/impresiones/clics de ESTA fila (hora+anuncio) para el período pedido — a pedido de
+   *  Martín, mismo criterio que MetaRegionRow.reach/impressions/clicks: totales de la hora (y del
+   *  anuncio, en byAd), sin desglose por Objetivo — ver HourlyTotals. */
+  reach?: string;
+  impressions?: string;
+  clicks?: string;
 }
 
 interface MetaHourlyInsightsResponse {
@@ -601,7 +627,8 @@ async function fetchHourlyTotals(
       level: "ad",
       breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id",
+      // reach/impressions/clicks sumados a pedido de Martín — ver MetaHourlyRow.
+      fields: "spend,actions,campaign_id,ad_id,reach,impressions,clicks",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -609,7 +636,16 @@ async function fetchHourlyTotals(
 
   const byHour = new Map<number, HourlyTotals>();
   for (let h = 0; h < 24; h += 1) {
-    byHour.set(h, { hour: h, spend: 0, objectiveLeads: objectives.map(() => 0), objectiveSpend: objectives.map(() => 0), byAd: {} });
+    byHour.set(h, {
+      hour: h,
+      spend: 0,
+      objectiveLeads: objectives.map(() => 0),
+      objectiveSpend: objectives.map(() => 0),
+      reach: 0,
+      impressions: 0,
+      clicks: 0,
+      byAd: {},
+    });
   }
 
   for (const row of insights.data) {
@@ -619,14 +655,46 @@ async function fetchHourlyTotals(
 
     const entry = byHour.get(hour)!;
     const spend = Number(row.spend ?? 0);
+    const reach = Number(row.reach ?? 0);
+    const impressions = Number(row.impressions ?? 0);
+    const clicks = Number(row.clicks ?? 0);
     entry.spend += spend;
+    entry.reach += reach;
+    entry.impressions += impressions;
+    entry.clicks += clicks;
 
     const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
     }
-    addRowToByAd(entry.byAd, row.ad_id, row.campaign_id, spend, matched, objectives.length);
+
+    // No se usa el addRowToByAd compartido acá: su byAd no tiene reach/impressions/clicks (lo
+    // siguen usando fetchPlacementSegments, que no pide esos campos) — se arma la entrada completa
+    // acá mismo con el shape de HourlyAdBreakdownEntry, mismo criterio que fetchRegionSegments.
+    if (row.ad_id && row.campaign_id) {
+      let adEntry = entry.byAd[row.ad_id];
+      if (!adEntry) {
+        adEntry = {
+          campaignId: row.campaign_id,
+          spend: 0,
+          objectiveLeads: Array.from({ length: objectives.length }, () => 0),
+          objectiveSpend: Array.from({ length: objectives.length }, () => 0),
+          reach: 0,
+          impressions: 0,
+          clicks: 0,
+        };
+        entry.byAd[row.ad_id] = adEntry;
+      }
+      adEntry.spend += spend;
+      if (matched) {
+        adEntry.objectiveLeads[matched.index] = (adEntry.objectiveLeads[matched.index] ?? 0) + matched.value;
+        adEntry.objectiveSpend[matched.index] = (adEntry.objectiveSpend[matched.index] ?? 0) + spend;
+      }
+      adEntry.reach += reach;
+      adEntry.impressions += impressions;
+      adEntry.clicks += clicks;
+    }
   }
 
   return Array.from(byHour.values()).sort((a, b) => a.hour - b.hour);
@@ -1370,7 +1438,43 @@ function mergePlacementSegments(a: PlacementSegmentTotals[], b: PlacementSegment
   return Array.from(byPlacement.values());
 }
 
-/** Suma spend/leads por hora entre el tramo estable y el fresco. */
+/** Igual que mergeRegionByAd (ver arriba) pero para HourlyAdBreakdownEntry — reach/impressions/
+ *  clicks no las tiene el shape compartido (mergeByAd), así que HourlyPerformanceChart.tsx
+ *  necesita su propio merge, mismo criterio que mergeRegionByAd. */
+function mergeHourlyByAd(
+  a: Record<string, HourlyAdBreakdownEntry>,
+  b: Record<string, HourlyAdBreakdownEntry>
+): Record<string, HourlyAdBreakdownEntry> {
+  const result: Record<string, HourlyAdBreakdownEntry> = {};
+  for (const [adId, adEntry] of [...Object.entries(a), ...Object.entries(b)]) {
+    let existing = result[adId];
+    if (!existing) {
+      existing = {
+        campaignId: adEntry.campaignId,
+        spend: 0,
+        objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
+        objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
+        reach: 0,
+        impressions: 0,
+        clicks: 0,
+      };
+      result[adId] = existing;
+    }
+    existing.spend += adEntry.spend;
+    existing.reach += adEntry.reach;
+    existing.impressions += adEntry.impressions;
+    existing.clicks += adEntry.clicks;
+    adEntry.objectiveLeads.forEach((value, i) => {
+      existing!.objectiveLeads[i] = (existing!.objectiveLeads[i] ?? 0) + value;
+    });
+    adEntry.objectiveSpend.forEach((value, i) => {
+      existing!.objectiveSpend[i] = (existing!.objectiveSpend[i] ?? 0) + value;
+    });
+  }
+  return result;
+}
+
+/** Suma spend/leads/reach/impressions/clicks por hora entre el tramo estable y el fresco. */
 function mergeHourlyTotals(a: HourlyTotals[], b: HourlyTotals[]): HourlyTotals[] {
   const byHour = new Map<number, HourlyTotals>();
   for (const entry of [...a, ...b]) {
@@ -1381,17 +1485,23 @@ function mergeHourlyTotals(a: HourlyTotals[], b: HourlyTotals[]): HourlyTotals[]
         spend: entry.spend,
         objectiveLeads: [...entry.objectiveLeads],
         objectiveSpend: [...entry.objectiveSpend],
+        reach: entry.reach,
+        impressions: entry.impressions,
+        clicks: entry.clicks,
         byAd: entry.byAd,
       });
     } else {
       existing.spend += entry.spend;
+      existing.reach += entry.reach;
+      existing.impressions += entry.impressions;
+      existing.clicks += entry.clicks;
       entry.objectiveLeads.forEach((value, i) => {
         existing.objectiveLeads[i] = (existing.objectiveLeads[i] ?? 0) + value;
       });
       entry.objectiveSpend.forEach((value, i) => {
         existing.objectiveSpend[i] = (existing.objectiveSpend[i] ?? 0) + value;
       });
-      existing.byAd = mergeByAd(existing.byAd, entry.byAd);
+      existing.byAd = mergeHourlyByAd(existing.byAd, entry.byAd);
     }
   }
   return Array.from(byHour.values()).sort((a, b) => a.hour - b.hour);
@@ -1534,7 +1644,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v15") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v16") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1575,6 +1685,11 @@ function mergeRealInvestmentCalendarData(
  * fetchVideoRetentionByAge) — campo nuevo, una entrada vieja en v14 no lo tiene, así que
  * VideoRetentionChart.tsx mostraría "Al 95%" en 0/undefined hasta que venza el TTL si no se
  * bumpea acá.
+ *
+ * v15→v16: HourlyTotals (y su byAd) suma reach/impressions/clicks (ver fetchHourlyTotals y
+ * HourlyAdBreakdownEntry) — campos nuevos, una entrada vieja en v15 no los tiene, así que la
+ * tabla de franjas horarias de HourlyPerformanceChart.tsx mostraría Alcance/Impresiones/Clicks en
+ * 0/undefined hasta que venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1590,7 +1705,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v15",
+        query: "investmentCalendar:v16",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1606,7 +1721,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v15",
+        query: "investmentCalendar:v16",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1620,7 +1735,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v15",
+        query: "investmentCalendar:v16",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1632,7 +1747,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v15",
+        query: "investmentCalendar:v16",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

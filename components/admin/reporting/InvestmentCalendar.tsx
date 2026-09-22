@@ -135,12 +135,25 @@ interface PlacementSegmentTotals {
   byAd: Record<string, AdBreakdownEntry>;
 }
 
+interface HourlyAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de HourlyTotals más abajo — a pedido de Martín, para la tabla de franjas
+   *  horarias de HourlyPerformanceChart.tsx (mismo criterio que RegionSegmentTotals). */
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
 interface HourlyTotals {
   hour: number;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
-  byAd: Record<string, AdBreakdownEntry>;
+  /** Alcance/impresiones/clics totales de esta hora — no varían por Tipo de Resultado, sólo por
+   *  Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  clicks: number;
+  byAd: Record<string, HourlyAdBreakdownEntry>;
 }
 
 interface VideoRetentionByAge {

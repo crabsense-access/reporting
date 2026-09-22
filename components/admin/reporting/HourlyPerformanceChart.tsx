@@ -11,8 +11,10 @@
 //
 // Debajo del gráfico, un resumen en 3 franjas horarias fijas (09-20h / 21-23h / 00-08h, mismo
 // criterio que le sirve a cualquier cuenta: horario comercial extendido, noche y madrugada) con
-// inversión, participación, contactos y costo por contacto de cada franja — y el insight de
-// Claude a partir de esos mismos números.
+// Alcance/Impresiones/Clicks/Inversión/% Inv./Resultados/Costo por Resultado de cada franja — y
+// el insight de Claude a partir de esos mismos números. Alcance/Impresiones/Clicks no dependen
+// del Tipo de Resultado elegido (una impresión no "es" de un tipo puntual), sólo de Campaña/
+// Anuncio — mismo criterio que RegionAnalysis.tsx.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchHourlyTotals — e
 // InvestmentCalendar.tsx, que los pide todo junto una sola vez): breakdown
@@ -36,13 +38,50 @@ import { cn } from "@/lib/utils";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
+interface HourlyAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de HourlyTotals más abajo. */
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
 interface HourlyTotals {
   hour: number;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones/clics totales de esta hora — no varían por Tipo de Resultado, sólo por
+   * Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  clicks: number;
   /** Desglose de esta hora por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
-  byAd: Record<string, AdBreakdownEntry>;
+  byAd: Record<string, HourlyAdBreakdownEntry>;
+}
+
+/** Igual que resolveAdFilteredTotals (lib/reporting/adFilter.ts) pero para reach/impressions/
+ * clicks, que ese helper compartido no conoce (ver comentario de cabecera). Mismo criterio que
+ * resolveRegionEngagementTotals en RegionAnalysis.tsx. */
+function resolveHourlyEngagementTotals(
+  byAd: Record<string, HourlyAdBreakdownEntry>,
+  campaignId: string | null,
+  adId: string | null
+): { reach: number; impressions: number; clicks: number } | null {
+  if (adId !== null) {
+    const entry = byAd[adId];
+    return entry ? { reach: entry.reach, impressions: entry.impressions, clicks: entry.clicks } : null;
+  }
+  if (campaignId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (matching.length === 0) return null;
+  return matching.reduce(
+    (acc, entry) => ({
+      reach: acc.reach + entry.reach,
+      impressions: acc.impressions + entry.impressions,
+      clicks: acc.clicks + entry.clicks,
+    }),
+    { reach: 0, impressions: 0, clicks: 0 }
+  );
 }
 
 /** Un tipo de Resultado disponible para el combo (sólo los que tienen datos este mes — ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
@@ -158,7 +197,13 @@ export function HourlyPerformanceChart({
       // "Todos los Resultados", el gasto total de la hora/campaña/anuncio (mismo criterio "blended" que
       // el resto de la página).
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
-      return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null };
+      // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio —
+      // mismo criterio que spend (ver comentario de cabecera).
+      const engagement = hasFilter && entry ? resolveHourlyEngagementTotals(entry.byAd, campaignId, adId) : null;
+      const reach = hasFilter ? (engagement?.reach ?? 0) : (entry?.reach ?? 0);
+      const impressions = hasFilter ? (engagement?.impressions ?? 0) : (entry?.impressions ?? 0);
+      const clicks = hasFilter ? (engagement?.clicks ?? 0) : (entry?.clicks ?? 0);
+      return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null, reach, impressions, clicks };
     });
   }, [hourlyTotals, objectiveIndex, campaignId, adId]);
 
@@ -194,10 +239,16 @@ export function HourlyPerformanceChart({
       const inBand = hours.filter((h) => h.hour >= band.startHour && h.hour <= band.endHour);
       const spend = inBand.reduce((sum, h) => sum + h.spend, 0);
       const leads = inBand.reduce((sum, h) => sum + h.leads, 0);
+      const reach = inBand.reduce((sum, h) => sum + h.reach, 0);
+      const impressions = inBand.reduce((sum, h) => sum + h.impressions, 0);
+      const clicks = inBand.reduce((sum, h) => sum + h.clicks, 0);
       return {
         ...band,
         spend,
         leads,
+        reach,
+        impressions,
+        clicks,
         cpl: leads > 0 ? spend / leads : null,
         share: totalSpend > 0 ? spend / totalSpend : 0,
       };
@@ -263,7 +314,7 @@ export function HourlyPerformanceChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-2 pb-2">
+      <CardHeader className="flex flex-col gap-4 pb-2">
         <div className="flex flex-row flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">En qué momento del día se consiguen los resultados</CardTitle>
 
@@ -434,16 +485,22 @@ export function HourlyPerformanceChart({
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-1.5 pr-4 font-medium">Franja horaria</th>
+                    <th className="py-1.5 pr-4 font-medium">Alcance</th>
+                    <th className="py-1.5 pr-4 font-medium">Impresiones</th>
+                    <th className="py-1.5 pr-4 font-medium">Clicks</th>
                     <th className="py-1.5 pr-4 font-medium">Inversión</th>
-                    <th className="py-1.5 pr-4 font-medium">% del total</th>
-                    <th className="py-1.5 pr-4 font-medium">Contactos</th>
-                    <th className="py-1.5 font-medium">Costo/contacto</th>
+                    <th className="py-1.5 pr-4 font-medium">% Inv.</th>
+                    <th className="py-1.5 pr-4 font-medium">Resultados</th>
+                    <th className="py-1.5 font-medium">Costo por Resultado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bands.map((band) => (
                     <tr key={band.label} className="border-b border-border/60 last:border-0">
                       <td className="py-2 pr-4 font-medium text-foreground">{band.label}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.reach)}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.impressions)}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.clicks)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatCurrency(band.spend, currency)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatPercent(band.share)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.leads)}</td>
