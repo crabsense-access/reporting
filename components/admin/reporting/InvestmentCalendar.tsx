@@ -264,6 +264,28 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
     [objectiveMonthTotals]
   );
 
+  // Para el combo de Tipo de Resultado de VideoRetentionChart: a diferencia del resto de los
+  // gráficos con este combo, el desglose de video (VideoRetentionByAge.byAd) no tiene campos de
+  // Objetivo propios — una reproducción de video no "es" de un tipo de Resultado (ver comentario
+  // en VideoRetentionChart.tsx). Por eso acá armamos, cruzando con days[].byAd (que sí tiene
+  // objectiveLeads por anuncio), qué anuncios generaron al menos 1 Resultado de cada tipo. Elegir
+  // un Tipo de Resultado en ese gráfico no filtra "el video de ese tipo" (no existe tal cosa):
+  // filtra a los anuncios que generaron Resultados de ese tipo, y muestra el video de esos
+  // anuncios.
+  const adIdsByObjectiveIndex = useMemo(() => {
+    const map = new Map<number, Set<string>>();
+    for (const day of data?.days ?? []) {
+      for (const [adId, entry] of Object.entries(day.byAd)) {
+        entry.objectiveLeads.forEach((leads, index) => {
+          if (leads <= 0) return;
+          if (!map.has(index)) map.set(index, new Set());
+          map.get(index)!.add(adId);
+        });
+      }
+    }
+    return map;
+  }, [data]);
+
   const totals = useMemo(() => {
     const days = data?.days ?? [];
     const monthTotal = days.reduce((sum, d) => sum + d.spend, 0);
@@ -745,6 +767,8 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           {data && (
             <VideoRetentionChart
               segments={data.videoRetentionByAge}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
+              adIdsByObjectiveIndex={adIdsByObjectiveIndex}
               campaigns={data.campaigns}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}

@@ -16,12 +16,15 @@
 // Debajo del gráfico, una tabla por rango etario (Reproducciones / Llega al 25% / Al 50% / Al
 // 100%) con la mejor fila resaltada, y el insight de Claude a partir de esos mismos números.
 //
-// Dos combos de CAMPAÑA y ANUNCIO (el de Anuncio en cascada con el de Campaña — ver
-// visibleAdsForCampaign en lib/reporting/adFilter.ts) filtran el gráfico. A diferencia del resto
-// de los gráficos con estos combos, acá NO hay combo de "Tipo de Resultado": el video es una
-// métrica de engagement, no de conversión, así que su desglose por anuncio (VideoRetentionByAge.byAd)
-// no tiene campos de Objetivo — por eso se resuelve con una función propia (resolveVideoAdFilteredTotals,
-// más abajo) en vez del resolveAdFilteredTotals compartido, que sí espera esos campos.
+// Tres combos filtran el gráfico: TIPO DE RESULTADO, CAMPAÑA y ANUNCIO (el de Anuncio en
+// cascada con el de Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts), en ese
+// orden. El video es una métrica de ENGAGEMENT, no de conversión, así que su desglose por anuncio
+// (VideoRetentionByAge.byAd) no tiene campos de Objetivo propios — por eso el combo de Tipo de
+// Resultado acá no filtra "el video de ese tipo" (no existe tal cosa): filtra a los anuncios que
+// generaron al menos 1 Resultado de ese tipo (adIdsByObjectiveIndex, armado en InvestmentCalendar.tsx
+// cruzando con days[].byAd) y muestra el video de esos anuncios. Por eso se resuelve con una
+// función propia (resolveVideoAdFilteredTotals, más abajo) en vez del resolveAdFilteredTotals
+// compartido, que espera campos de Objetivo que este desglose no tiene.
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
@@ -51,22 +54,36 @@ interface VideoRetentionByAge {
   byAd: Record<string, VideoAdBreakdownEntry>;
 }
 
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
 /** Igual que resolveAdFilteredTotals en lib/reporting/adFilter.ts, pero para el desglose por
- * anuncio de video (sin campos de Objetivo — ver comentario de cabecera). */
+ * anuncio de video (sin campos de Objetivo — ver comentario de cabecera).
+ * `objectiveAdIds`: cuando no es null, sólo entran los anuncios de ese set (ver
+ * adIdsByObjectiveIndex en InvestmentCalendar.tsx) — así se resuelve el combo de Tipo de
+ * Resultado, que acá filtra POR ANUNCIO en vez de por un campo de Objetivo del video en sí. */
 function resolveVideoAdFilteredTotals(
   byAd: Record<string, VideoAdBreakdownEntry>,
   campaignId: string | null,
-  adId: string | null
+  adId: string | null,
+  objectiveAdIds: Set<string> | null
 ): { videoPlays: number; p25: number; p50: number; p75: number; p100: number } | null {
-  if (adId !== null) {
-    const entry = byAd[adId];
-    return entry ? { videoPlays: entry.videoPlays, p25: entry.p25, p50: entry.p50, p75: entry.p75, p100: entry.p100 } : null;
+  let entries = Object.entries(byAd);
+  if (objectiveAdIds !== null) {
+    entries = entries.filter(([id]) => objectiveAdIds.has(id));
   }
-  if (campaignId === null) return null;
-  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
-  if (matching.length === 0) return null;
-  return matching.reduce(
-    (acc, entry) => ({
+  if (adId !== null) {
+    const found = entries.find(([id]) => id === adId);
+    return found ? { videoPlays: found[1].videoPlays, p25: found[1].p25, p50: found[1].p50, p75: found[1].p75, p100: found[1].p100 } : null;
+  }
+  if (campaignId !== null) {
+    entries = entries.filter(([, entry]) => entry.campaignId === campaignId);
+  }
+  if (entries.length === 0) return null;
+  return entries.reduce(
+    (acc, [, entry]) => ({
       videoPlays: acc.videoPlays + entry.videoPlays,
       p25: acc.p25 + entry.p25,
       p50: acc.p50 + entry.p50,
@@ -118,6 +135,8 @@ interface AgeCurve {
 
 export function VideoRetentionChart({
   segments,
+  objectiveOptions,
+  adIdsByObjectiveIndex,
   monthIsComplete,
   clientId,
   campaigns,
@@ -125,6 +144,10 @@ export function VideoRetentionChart({
 }: {
   /** Un elemento por rango etario con reproducciones de video este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: VideoRetentionByAge[];
+  /** Tipos de Resultado con al menos 1 Resultado este mes — mismo combo que el resto de los gráficos (ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
+  objectiveOptions: ObjectiveOption[];
+  /** Por cada índice de Objetivo, el set de ad_id que generaron al menos 1 Resultado de ese tipo — ver comentario de cabecera y adIdsByObjectiveIndex en InvestmentCalendar.tsx. */
+  adIdsByObjectiveIndex: Map<number, Set<string>>;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
@@ -134,9 +157,16 @@ export function VideoRetentionChart({
   ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
+    }
+  }, [objectiveOptions, objectiveIndex]);
 
   useEffect(() => {
     if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
@@ -151,16 +181,25 @@ export function VideoRetentionChart({
     }
   }, [visibleAds, adId]);
 
+  // Anuncios que generaron al menos 1 Resultado del tipo elegido — null cuando no hay Tipo de
+  // Resultado seleccionado (sin ese filtro). Memoizado aparte para no crear un Set nuevo (cuando
+  // adIdsByObjectiveIndex no tiene el índice) en cada render, lo que invalidaría el useMemo de
+  // curves de abajo sin necesidad. Ver comentario de cabecera.
+  const objectiveAdIds = useMemo(
+    () => (objectiveIndex !== null ? (adIdsByObjectiveIndex.get(objectiveIndex) ?? new Set<string>()) : null),
+    [objectiveIndex, adIdsByObjectiveIndex]
+  );
+
   const curves = useMemo<AgeCurve[]>(() => {
     const byAge = new Map(segments.map((s) => [s.ageRange, s]));
-    const hasFilter = campaignId !== null || adId !== null;
+    const hasFilter = objectiveIndex !== null || campaignId !== null || adId !== null;
     return AGE_ORDER.map((age) => {
       const s = byAge.get(age);
       if (!s) return null;
-      // Con Campaña y/o Anuncio elegidos, el rango etario se resuelve contra SU desglose por
-      // anuncio (s.byAd) en vez del total de cuenta — mismo criterio "sin datos si nada matchea"
-      // que el resto de la página.
-      const scoped = hasFilter ? resolveVideoAdFilteredTotals(s.byAd, campaignId, adId) : null;
+      // Con Tipo de Resultado, Campaña y/o Anuncio elegidos, el rango etario se resuelve contra
+      // SU desglose por anuncio (s.byAd) en vez del total de cuenta — mismo criterio "sin datos
+      // si nada matchea" que el resto de la página.
+      const scoped = hasFilter ? resolveVideoAdFilteredTotals(s.byAd, campaignId, adId, objectiveAdIds) : null;
       const videoPlays = hasFilter ? (scoped?.videoPlays ?? 0) : s.videoPlays;
       if (videoPlays <= 0) return null;
       const source = hasFilter ? scoped! : s;
@@ -171,7 +210,7 @@ export function VideoRetentionChart({
       });
       return { ageRange: age, videoPlays, retention };
     }).filter((c): c is AgeCurve => c !== null);
-  }, [segments, campaignId, adId]);
+  }, [segments, objectiveIndex, campaignId, adId, objectiveAdIds]);
 
   const totalVideoPlays = curves.reduce((sum, c) => sum + c.videoPlays, 0);
   const hasData = curves.length > 0 && totalVideoPlays > 0;
@@ -197,6 +236,7 @@ export function VideoRetentionChart({
 
   const bestAgeByP25 = rows.length > 0 ? [...rows].sort((a, b) => b.p25 - a.p25)[0]!.ageRange : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
+  const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
 
   const insightMetrics = useMemo(() => {
     if (!hasData) return null;
@@ -208,6 +248,7 @@ export function VideoRetentionChart({
     const maxP25 = p25Values.length > 0 ? Math.max(...p25Values) : 0;
 
     return {
+      tipoDeResultado: selectedObjectiveLabel ?? "Todos los tipos",
       campania: selectedCampaignName ?? "Todas las campañas",
       reproduccionesTotales: formatNumber(totalVideoPlays),
       retencion25Rango: `${formatPercent(minP25 / 100)} – ${formatPercent(maxP25 / 100)}`,
@@ -222,7 +263,7 @@ export function VideoRetentionChart({
       peorRetencion: worst ? { edad: worst.ageRange, llega25: formatPercent(worst.p25 / 100) } : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, hasData, totalVideoPlays, selectedCampaignName]);
+  }, [rows, hasData, totalVideoPlays, selectedCampaignName, selectedObjectiveLabel]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -240,10 +281,24 @@ export function VideoRetentionChart({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-2 pb-2">
-        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-row flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">Cuánto se mira el contenido según la edad</CardTitle>
 
           <div className="flex flex-col items-stretch gap-2">
+            <select
+              aria-label="Tipo de Resultado"
+              value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+              onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los tipos</option>
+              {objectiveOptions.map((o) => (
+                <option key={o.index} value={o.index}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
             <select
               aria-label="Campaña"
               value={campaignId ?? "all"}
@@ -252,7 +307,7 @@ export function VideoRetentionChart({
                 setCampaignId(value);
                 setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
               }}
-              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todas las campañas</option>
               {campaigns.map((c) => (
@@ -266,7 +321,7 @@ export function VideoRetentionChart({
               aria-label="Anuncio"
               value={adId ?? "all"}
               onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
-              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todos los anuncios</option>
               {visibleAds.map((a) => (

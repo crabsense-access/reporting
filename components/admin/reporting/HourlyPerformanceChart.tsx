@@ -264,7 +264,7 @@ export function HourlyPerformanceChart({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-2 pb-2">
-        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-row flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">En qué momento del día se consiguen los resultados</CardTitle>
 
           <div className="flex flex-col items-stretch gap-2">
@@ -272,7 +272,7 @@ export function HourlyPerformanceChart({
               aria-label="Tipo de Resultado"
               value={objectiveIndex === null ? "all" : String(objectiveIndex)}
               onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
-              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todos los tipos</option>
               {objectiveOptions.map((o) => (
@@ -290,7 +290,7 @@ export function HourlyPerformanceChart({
                 setCampaignId(value);
                 setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
               }}
-              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todas las campañas</option>
               {campaigns.map((c) => (
@@ -304,7 +304,7 @@ export function HourlyPerformanceChart({
               aria-label="Anuncio"
               value={adId ?? "all"}
               onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
-              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todos los anuncios</option>
               {visibleAds.map((a) => (

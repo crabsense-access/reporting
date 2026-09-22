@@ -246,7 +246,7 @@ export function AudienceAnalysis({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
           <CardTitle className="text-lg font-bold text-foreground">Quién responde a los anuncios</CardTitle>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
@@ -264,7 +264,7 @@ export function AudienceAnalysis({
             aria-label="Tipo de Resultado"
             value={selectedIndex}
             onChange={(event) => setSelectedIndex(Number(event.target.value))}
-            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {visibleIndexes.map((idx) => (
               <option key={idx} value={idx}>
@@ -281,7 +281,7 @@ export function AudienceAnalysis({
               setCampaignId(value);
               setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
             }}
-            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <option value="all">Todas las campañas</option>
             {campaigns.map((c) => (
@@ -295,7 +295,7 @@ export function AudienceAnalysis({
             aria-label="Anuncio"
             value={adId ?? "all"}
             onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
-            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <option value="all">Todos los anuncios</option>
             {visibleAds.map((a) => (
