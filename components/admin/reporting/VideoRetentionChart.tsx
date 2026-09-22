@@ -1,7 +1,7 @@
 "use client";
 
 // "Cuánto se mira el contenido según la edad": curva de retención de video por rango etario —
-// % de reproducciones que llegan a cada hito de avance del video (Inicio/25%/50%/75%/100%),
+// % de reproducciones que llegan a cada hito de avance del video (Inicio/25%/50%/75%/95%/100%),
 // una línea por rango etario (18-24 a 65+). A diferencia del resto del Calendario, acá no hay
 // desglose por Objetivo ni por inversión: es una métrica de ENGAGEMENT del video en sí (cuánto se
 // mira), no de conversión — por eso no lleva toggle de "tipo de conversión" ni columna de costo.
@@ -40,6 +40,7 @@ interface VideoAdBreakdownEntry {
   p25: number;
   p50: number;
   p75: number;
+  p95: number;
   p100: number;
 }
 
@@ -49,6 +50,7 @@ interface VideoRetentionByAge {
   p25: number;
   p50: number;
   p75: number;
+  p95: number;
   p100: number;
   /** Desglose de este rango etario por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
   byAd: Record<string, VideoAdBreakdownEntry>;
@@ -69,14 +71,16 @@ function resolveVideoAdFilteredTotals(
   campaignId: string | null,
   adId: string | null,
   objectiveAdIds: Set<string> | null
-): { videoPlays: number; p25: number; p50: number; p75: number; p100: number } | null {
+): { videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number } | null {
   let entries = Object.entries(byAd);
   if (objectiveAdIds !== null) {
     entries = entries.filter(([id]) => objectiveAdIds.has(id));
   }
   if (adId !== null) {
     const found = entries.find(([id]) => id === adId);
-    return found ? { videoPlays: found[1].videoPlays, p25: found[1].p25, p50: found[1].p50, p75: found[1].p75, p100: found[1].p100 } : null;
+    return found
+      ? { videoPlays: found[1].videoPlays, p25: found[1].p25, p50: found[1].p50, p75: found[1].p75, p95: found[1].p95, p100: found[1].p100 }
+      : null;
   }
   if (campaignId !== null) {
     entries = entries.filter(([, entry]) => entry.campaignId === campaignId);
@@ -88,9 +92,10 @@ function resolveVideoAdFilteredTotals(
       p25: acc.p25 + entry.p25,
       p50: acc.p50 + entry.p50,
       p75: acc.p75 + entry.p75,
+      p95: acc.p95 + entry.p95,
       p100: acc.p100 + entry.p100,
     }),
-    { videoPlays: 0, p25: 0, p50: 0, p75: 0, p100: 0 }
+    { videoPlays: 0, p25: 0, p50: 0, p75: 0, p95: 0, p100: 0 }
   );
 }
 
@@ -109,7 +114,7 @@ const AGE_COLOR: Record<string, string> = {
 
 interface Milestone {
   label: string;
-  key: "start" | "p25" | "p50" | "p75" | "p100";
+  key: "start" | "p25" | "p50" | "p75" | "p95" | "p100";
 }
 
 const MILESTONES: Milestone[] = [
@@ -117,6 +122,7 @@ const MILESTONES: Milestone[] = [
   { label: "25%", key: "p25" },
   { label: "50%", key: "p50" },
   { label: "75%", key: "p75" },
+  { label: "95%", key: "p95" },
   { label: "100%", key: "p100" },
 ];
 
@@ -228,6 +234,8 @@ export function VideoRetentionChart({
           videoPlays: c.videoPlays,
           p25: at("p25"),
           p50: at("p50"),
+          p75: at("p75"),
+          p95: at("p95"),
           p100: at("p100"),
         };
       })
@@ -445,6 +453,8 @@ export function VideoRetentionChart({
                     <th className="py-1.5 pr-4 font-medium">Reproducciones</th>
                     <th className="py-1.5 pr-4 font-medium">Llega al 25%</th>
                     <th className="py-1.5 pr-4 font-medium">Al 50%</th>
+                    <th className="py-1.5 pr-4 font-medium">Al 75%</th>
+                    <th className="py-1.5 pr-4 font-medium">Al 95%</th>
                     <th className="py-1.5 font-medium">Al 100%</th>
                   </tr>
                 </thead>
@@ -460,6 +470,12 @@ export function VideoRetentionChart({
                         </td>
                         <td className={cn("py-2 pr-4", isBest ? "font-semibold text-foreground" : "text-muted-foreground")}>
                           {formatPercent(r.p50 / 100)}
+                        </td>
+                        <td className={cn("py-2 pr-4", isBest ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                          {formatPercent(r.p75 / 100)}
+                        </td>
+                        <td className={cn("py-2 pr-4", isBest ? "font-semibold text-foreground" : "text-muted-foreground")}>
+                          {formatPercent(r.p95 / 100)}
                         </td>
                         <td className={cn("py-2", isBest ? "font-semibold text-foreground" : "text-muted-foreground")}>
                           {formatPercent(r.p100 / 100)}

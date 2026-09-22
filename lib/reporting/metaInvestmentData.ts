@@ -696,15 +696,16 @@ async function fetchPlacementSegments(
 export interface VideoRetentionByAge {
   /** Rango etario tal cual lo devuelve Meta ("18-24", "25-34", ..., "65+"). */
   ageRange: string;
-  /** Inicios de reproducción de video ("video_play_actions" de Meta) — el 100% de referencia contra el que se miden p25/p50/p75/p100. */
+  /** Inicios de reproducción de video ("video_play_actions" de Meta) — el 100% de referencia contra el que se miden p25/p50/p75/p95/p100. */
   videoPlays: number;
-  /** Reproducciones que llegaron al 25%/50%/75%/100% de la duración del video ("video_pXX_watched_actions" de Meta). */
+  /** Reproducciones que llegaron al 25%/50%/75%/95%/100% de la duración del video ("video_pXX_watched_actions" de Meta). */
   p25: number;
   p50: number;
   p75: number;
+  p95: number;
   p100: number;
   /** Desglose de ESTE rango etario por anuncio (clave = ad_id) — para los combos de Campaña/Anuncio de VideoRetentionChart.tsx (sin Tipo de Resultado: la retención de video no se matchea por Objetivo, ver fetchVideoRetentionByAge). */
-  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p100: number }>;
+  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number }>;
 }
 
 interface MetaVideoRetentionRow {
@@ -713,6 +714,7 @@ interface MetaVideoRetentionRow {
   video_p25_watched_actions?: { action_type: string; value: string }[];
   video_p50_watched_actions?: { action_type: string; value: string }[];
   video_p75_watched_actions?: { action_type: string; value: string }[];
+  video_p95_watched_actions?: { action_type: string; value: string }[];
   video_p100_watched_actions?: { action_type: string; value: string }[];
   campaign_id?: string;
   ad_id?: string;
@@ -769,7 +771,7 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
       breakdowns: "age",
       time_range: JSON.stringify({ since, until }),
       fields:
-        "video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,campaign_id,ad_id",
+        "video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,campaign_id,ad_id",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -783,7 +785,7 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
 
     let entry = byAge.get(ageRange);
     if (!entry) {
-      entry = { ageRange, videoPlays: 0, p25: 0, p50: 0, p75: 0, p100: 0, byAd: {} };
+      entry = { ageRange, videoPlays: 0, p25: 0, p50: 0, p75: 0, p95: 0, p100: 0, byAd: {} };
       byAge.set(ageRange, entry);
     }
 
@@ -791,12 +793,14 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
     const p25 = sumActionValues(row.video_p25_watched_actions);
     const p50 = sumActionValues(row.video_p50_watched_actions);
     const p75 = sumActionValues(row.video_p75_watched_actions);
+    const p95 = sumActionValues(row.video_p95_watched_actions);
     const p100 = sumActionValues(row.video_p100_watched_actions);
 
     entry.videoPlays += videoPlays;
     entry.p25 += p25;
     entry.p50 += p50;
     entry.p75 += p75;
+    entry.p95 += p95;
     entry.p100 += p100;
 
     const adId = row.ad_id;
@@ -804,13 +808,14 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
     if (adId && campaignId) {
       let adEntry = entry.byAd[adId];
       if (!adEntry) {
-        adEntry = { campaignId, videoPlays: 0, p25: 0, p50: 0, p75: 0, p100: 0 };
+        adEntry = { campaignId, videoPlays: 0, p25: 0, p50: 0, p75: 0, p95: 0, p100: 0 };
         entry.byAd[adId] = adEntry;
       }
       adEntry.videoPlays += videoPlays;
       adEntry.p25 += p25;
       adEntry.p50 += p50;
       adEntry.p75 += p75;
+      adEntry.p95 += p95;
       adEntry.p100 += p100;
     }
   }
@@ -1392,7 +1397,7 @@ function mergeHourlyTotals(a: HourlyTotals[], b: HourlyTotals[]): HourlyTotals[]
   return Array.from(byHour.values()).sort((a, b) => a.hour - b.hour);
 }
 
-/** Suma videoPlays/p25/p50/p75/p100 por rango etario entre el tramo estable y el fresco. */
+/** Suma videoPlays/p25/p50/p75/p95/p100 por rango etario entre el tramo estable y el fresco. */
 function mergeVideoRetentionByAge(a: VideoRetentionByAge[], b: VideoRetentionByAge[]): VideoRetentionByAge[] {
   const byAge = new Map<string, VideoRetentionByAge>();
   for (const entry of [...a, ...b]) {
@@ -1404,6 +1409,7 @@ function mergeVideoRetentionByAge(a: VideoRetentionByAge[], b: VideoRetentionByA
       existing.p25 += entry.p25;
       existing.p50 += entry.p50;
       existing.p75 += entry.p75;
+      existing.p95 += entry.p95;
       existing.p100 += entry.p100;
       // byAd propio (no comparte shape con mergeByAd: sin objectiveLeads/objectiveSpend, ver
       // VideoRetentionByAge.byAd) — se suma acá mismo en vez de un helper aparte, sólo lo usa este merge.
@@ -1416,6 +1422,7 @@ function mergeVideoRetentionByAge(a: VideoRetentionByAge[], b: VideoRetentionByA
           existingAd.p25 += adEntry.p25;
           existingAd.p50 += adEntry.p50;
           existingAd.p75 += adEntry.p75;
+          existingAd.p95 += adEntry.p95;
           existingAd.p100 += adEntry.p100;
         }
       }
@@ -1527,7 +1534,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v14") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v15") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1563,6 +1570,11 @@ function mergeRealInvestmentCalendarData(
  * descartaba por género sin mapear) — no es un campo nuevo, es un cambio en qué filas arman
  * bySegment, así que una entrada ya cacheada en v13 seguiría mostrando la columna "Unknown" en
  * los recuadros de audiencia hasta que venza el TTL si no se bumpea acá.
+ *
+ * v14→v15: VideoRetentionByAge (y su byAd) suma p95 (video_p95_watched_actions, ver
+ * fetchVideoRetentionByAge) — campo nuevo, una entrada vieja en v14 no lo tiene, así que
+ * VideoRetentionChart.tsx mostraría "Al 95%" en 0/undefined hasta que venza el TTL si no se
+ * bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1578,7 +1590,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v14",
+        query: "investmentCalendar:v15",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1594,7 +1606,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v14",
+        query: "investmentCalendar:v15",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1608,7 +1620,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v14",
+        query: "investmentCalendar:v15",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1620,7 +1632,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v14",
+        query: "investmentCalendar:v15",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

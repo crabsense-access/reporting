@@ -149,8 +149,9 @@ interface VideoRetentionByAge {
   p25: number;
   p50: number;
   p75: number;
+  p95: number;
   p100: number;
-  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p100: number }>;
+  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number }>;
 }
 
 interface InvestmentCalendarResponse {
