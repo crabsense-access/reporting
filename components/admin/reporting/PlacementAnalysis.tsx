@@ -1,18 +1,20 @@
 "use client";
 
 // "Dónde se muestran los anuncios": ranking de ubicaciones de publicación (Feed, Stories, Reels,
-// video in-stream, Audience Network) por inversión, coloreado por eficiencia de CPL vs. el
-// promedio del período filtrado (mismo criterio "eficiente / promedio / ineficiente" que
-// RegionAnalysis.tsx), con el mismo toggle dinámico de Objetivo + combos de Campaña y Anuncio que
-// el resto de la página (ver AudienceAnalysis.tsx/RegionAnalysis.tsx: cualquier cantidad de
-// Objetivos, sólo se listan los que tienen al menos 1 lead este mes, con el nombre REAL del tipo de
-// Resultado como lo llama Meta Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
+// video in-stream, Audience Network) por inversión, coloreado por eficiencia de Costo por
+// Resultado vs. el promedio del período filtrado (mismo criterio "eficiente / promedio /
+// ineficiente" que RegionAnalysis.tsx), con el mismo combo dinámico de Objetivo (con "Todos los
+// tipos" — blended, suma de todos los índices — como opción por defecto, mismo criterio que
+// RegionAnalysis.tsx/LeadsByTypeTrendChart.tsx) + combos de Campaña y Anuncio que el resto de la
+// página (ver AudienceAnalysis.tsx/RegionAnalysis.tsx: cualquier cantidad de Objetivos, sólo se
+// listan los que tienen al menos 1 lead este mes, con el nombre REAL del tipo de Resultado como lo
+// llama Meta Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
 // lib/reporting/metaResultLabels.ts —, no el label que se tipea a mano al cargar el Objetivo en el
 // Admin; Anuncio en cascada con Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts).
-// Cada fila muestra % de inversión, CPL, Inversión y Leads en columnas alineadas junto a la barra
-// de eficiencia — sin tabla de detalle aparte. El insight de Claude va ANTES del gráfico (a
-// diferencia del resto de la página, donde va después) — convención propia de este gráfico, sin
-// cambios.
+// Cada fila muestra Inversión, % de inversión, Resultados y Costo por Resultado en columnas
+// alineadas junto a la barra de eficiencia — sin tabla de detalle aparte. El insight de Claude va
+// ANTES del gráfico (a diferencia del resto de la página, donde va después) — convención propia de
+// este gráfico, sin cambios.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchPlacementSegments — e
 // InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por ubicación
@@ -53,10 +55,10 @@ function tierFor(cpl: number, avgCpl: number): Tier {
   return "ineficiente";
 }
 
-// Ancho fijo por columna (% Inv., CPL, Inversión, Leads) para que los valores queden alineados
-// verticalmente entre todas las filas, sin importar cuántas ubicaciones haya ni el largo de cada
-// número — mismo criterio que RegionAnalysis.tsx.
-const METRIC_GRID_COLUMNS = "56px 72px 92px 56px";
+// Ancho fijo por columna (Inversión, % Inv., Resultados, Costo por Resultado) para que los valores
+// queden alineados verticalmente entre todas las filas, sin importar cuántas ubicaciones haya ni
+// el largo de cada número — mismo criterio que RegionAnalysis.tsx.
+const METRIC_GRID_COLUMNS = "92px 56px 64px 88px";
 
 interface PlacementSegmentTotals {
   placement: string;
@@ -98,7 +100,7 @@ export function PlacementAnalysis({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
@@ -120,14 +122,16 @@ export function PlacementAnalysis({
   // mismo criterio que en AudienceAnalysis.tsx/RegionAnalysis.tsx.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // al primero visible en vez de quedarse mostrando un ranking vacío.
+  // a "Todos los tipos" en vez de quedarse mostrando un ranking vacío.
   useEffect(() => {
-    if (objectiveOptions.length > 0 && !objectiveOptions.some((o) => o.index === selectedIndex)) {
-      setSelectedIndex(objectiveOptions[0]!.index);
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
     }
-  }, [objectiveOptions, selectedIndex]);
+  }, [objectiveOptions, objectiveIndex]);
 
-  const selectedColor = objectiveColor(selectedIndex);
+  // Con "Todos los tipos" no hay un Objetivo puntual para colorear — se usa el mismo azul de
+  // "Eficiente" (TIER_COLOR) como acento neutro, igual de espíritu que en RegionAnalysis.tsx.
+  const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : TIER_COLOR.eficiente;
   const hasFilter = campaignId !== null || adId !== null;
 
   const rows = useMemo(() => {
@@ -135,13 +139,19 @@ export function PlacementAnalysis({
     return segments
       .map((s) => {
         const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount) : null;
-        const leads = hasFilter ? (scoped?.objectiveLeads[selectedIndex] ?? 0) : (s.objectiveLeads[selectedIndex] ?? 0);
-        const spend = hasFilter ? (scoped?.objectiveSpend[selectedIndex] ?? 0) : (s.objectiveSpend[selectedIndex] ?? 0);
+        const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
+        const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
+        // Con "Todos los tipos" (objectiveIndex null) se suman TODOS los índices — mismo criterio
+        // "blended" que el resto de los gráficos con este combo (ver RegionAnalysis.tsx).
+        const leads =
+          objectiveIndex !== null ? (leadsSource?.[objectiveIndex] ?? 0) : (leadsSource ?? []).reduce((sum, v) => sum + v, 0);
+        const spend =
+          objectiveIndex !== null ? (spendSource?.[objectiveIndex] ?? 0) : (spendSource ?? []).reduce((sum, v) => sum + v, 0);
         return { placement: s.placement, leads, spend };
       })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, selectedIndex, hasFilter, campaignId, adId]);
+  }, [segments, objectiveIndex, hasFilter, campaignId, adId]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -157,7 +167,7 @@ export function PlacementAnalysis({
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
 
     return {
-      tipoCampania: objectiveOptions.find((o) => o.index === selectedIndex)?.label ?? "",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -174,7 +184,7 @@ export function PlacementAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveOptions, selectedIndex, avgCpl, totalSpend, currency, selectedCampaignName]);
+  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -190,10 +200,11 @@ export function PlacementAnalysis({
         <div className="flex flex-col items-stretch gap-2">
           <select
             aria-label="Tipo de Resultado"
-            value={selectedIndex}
-            onChange={(event) => setSelectedIndex(Number(event.target.value))}
+            value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+            onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
+            <option value="all">Todos los tipos</option>
             {objectiveOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 {o.label}
@@ -258,10 +269,10 @@ export function PlacementAnalysis({
                   className="grid text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                   style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
                 >
-                  <span>% Inv.</span>
-                  <span>CPL</span>
                   <span>Inversión</span>
-                  <span>Leads</span>
+                  <span>% Inv.</span>
+                  <span>Resultados</span>
+                  <span>Costo por Resultado</span>
                 </div>
               </div>
 
@@ -282,12 +293,12 @@ export function PlacementAnalysis({
                         </span>
                       </span>
                       <div className="grid text-right tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
+                        <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
                         <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
+                        <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.leads)}</span>
                         <span className="whitespace-nowrap text-muted-foreground">
                           {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
                         </span>
-                        <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
-                        <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.leads)}</span>
                       </div>
                     </div>
                     <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">

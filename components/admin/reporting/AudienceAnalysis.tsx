@@ -1,12 +1,12 @@
 "use client";
 
 // "Quién responde a los anuncios": leads, inversión y CPL del mes por género y rango etario, para
-// el Objetivo elegido en el toggle (mismo patrón dinámico que "Leads y CPL por tipo de campaña" —
-// ver LeadsByTypeTrendChart.tsx: cualquier cantidad de Objetivos, sólo se listan los que tienen al
-// menos 1 lead este mes; el combo muestra el nombre REAL del tipo de Resultado como lo llama Meta
-// Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
+// el Objetivo elegido en el combo, con "Todos los tipos" (blended, suma de todos los índices) como
+// opción por defecto — mismo patrón que el resto de los gráficos con este combo (ver
+// RegionAnalysis.tsx/LeadsByTypeTrendChart.tsx). El combo muestra el nombre REAL del tipo de
+// Resultado como lo llama Meta Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
 // lib/reporting/metaResultLabels.ts —, no el label que se tipea a mano al cargar el Objetivo en el
-// Admin). Gráfico de barras verticales agrupadas (Mujeres/Hombres) con el rango etario en el eje X
+// Admin. Gráfico de barras verticales agrupadas (Mujeres/Hombres) con el rango etario en el eje X
 // y la altura de cada barra codificando volumen de leads — debajo de cada rango etario, un breve
 // recuadro con el CPL, la inversión y los leads combinados de ambos géneros para esa franja, en
 // vez de una tabla de detalle aparte (mismo criterio que "Dónde se muestran los anuncios": sin
@@ -60,7 +60,17 @@ function compareAgeRanges(a: string, b: string): number {
   return ia - ib;
 }
 
+// Valor de un Objetivo puntual (index) o, con "Todos los tipos" (index null), la suma blended de
+// todos los índices — mismo criterio que el resto de los gráficos con este combo.
+function valueAt(arr: number[], index: number | null): number {
+  return index !== null ? (arr[index] ?? 0) : arr.reduce((sum, v) => sum + v, 0);
+}
+
 const BAR_AREA_HEIGHT = 112; // px — alto del área de barras (sin contar el recuadro de debajo)
+
+// Color de acento con "Todos los tipos" elegido (sin un Objetivo puntual para colorear) — mismo
+// valor que CPL_DEFAULT_COLOR/COSTO_DEFAULT_COLOR en el resto de los gráficos con este combo.
+const OBJECTIVE_DEFAULT_COLOR = "#d97706"; // amber-600
 
 interface AudienceSegmentTotals {
   gender: Gender;
@@ -103,7 +113,7 @@ export function AudienceAnalysis({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
@@ -125,12 +135,12 @@ export function AudienceAnalysis({
   // que las opciones no cambian según el filtro elegido — mismo criterio que en InvestmentTrendChart.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // al primero visible en vez de quedarse mostrando un desglose vacío.
+  // a "Todos los tipos" en vez de quedarse mostrando un desglose vacío.
   useEffect(() => {
-    if (objectiveOptions.length > 0 && !objectiveOptions.some((o) => o.index === selectedIndex)) {
-      setSelectedIndex(objectiveOptions[0]!.index);
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
     }
-  }, [objectiveOptions, selectedIndex]);
+  }, [objectiveOptions, objectiveIndex]);
 
   // Con Campaña y/o Anuncio elegidos, cada segmento se resuelve contra SU desglose por anuncio
   // (byAd) — un segmento sin ningún anuncio que matchee el filtro simplemente no aparece (ver
@@ -154,17 +164,17 @@ export function AudienceAnalysis({
   );
 
   const typeLeads = useMemo(
-    () => effectiveSegments.reduce((sum, s) => sum + (s.objectiveLeads[selectedIndex] ?? 0), 0),
-    [effectiveSegments, selectedIndex]
+    () => effectiveSegments.reduce((sum, s) => sum + valueAt(s.objectiveLeads, objectiveIndex), 0),
+    [effectiveSegments, objectiveIndex]
   );
   const typeSpend = useMemo(
-    () => effectiveSegments.reduce((sum, s) => sum + (s.objectiveSpend[selectedIndex] ?? 0), 0),
-    [effectiveSegments, selectedIndex]
+    () => effectiveSegments.reduce((sum, s) => sum + valueAt(s.objectiveSpend, objectiveIndex), 0),
+    [effectiveSegments, objectiveIndex]
   );
   const avgCpl = typeLeads > 0 ? typeSpend / typeLeads : 0;
-  const selectedColor = objectiveColor(selectedIndex);
+  const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : OBJECTIVE_DEFAULT_COLOR;
 
-  const maxLeads = Math.max(...effectiveSegments.map((s) => s.objectiveLeads[selectedIndex] ?? 0), 1);
+  const maxLeads = Math.max(...effectiveSegments.map((s) => valueAt(s.objectiveLeads, objectiveIndex)), 1);
 
   // Totales combinados (Mujeres + Hombres) por rango etario, para el recuadro debajo de cada
   // grupo de barras — la altura de las barras sigue mostrando el desglose por género.
@@ -174,12 +184,12 @@ export function AudienceAnalysis({
     for (const s of effectiveSegments) {
       const entry = map.get(s.ageRange);
       if (entry) {
-        entry.leads += s.objectiveLeads[selectedIndex] ?? 0;
-        entry.spend += s.objectiveSpend[selectedIndex] ?? 0;
+        entry.leads += valueAt(s.objectiveLeads, objectiveIndex);
+        entry.spend += valueAt(s.objectiveSpend, objectiveIndex);
       }
     }
     return map;
-  }, [effectiveSegments, ageRanges, selectedIndex]);
+  }, [effectiveSegments, ageRanges, objectiveIndex]);
 
   const genderTotals = useMemo(() => {
     const totals: Record<Gender, { leads: number; spend: number }> = {
@@ -187,11 +197,11 @@ export function AudienceAnalysis({
       hombres: { leads: 0, spend: 0 },
     };
     for (const s of effectiveSegments) {
-      totals[s.gender].leads += s.objectiveLeads[selectedIndex] ?? 0;
-      totals[s.gender].spend += s.objectiveSpend[selectedIndex] ?? 0;
+      totals[s.gender].leads += valueAt(s.objectiveLeads, objectiveIndex);
+      totals[s.gender].spend += valueAt(s.objectiveSpend, objectiveIndex);
     }
     return totals;
-  }, [effectiveSegments, selectedIndex]);
+  }, [effectiveSegments, objectiveIndex]);
 
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
 
@@ -200,8 +210,8 @@ export function AudienceAnalysis({
       .map((s) => ({
         gender: s.gender,
         ageRange: s.ageRange,
-        leads: s.objectiveLeads[selectedIndex] ?? 0,
-        spend: s.objectiveSpend[selectedIndex] ?? 0,
+        leads: valueAt(s.objectiveLeads, objectiveIndex),
+        spend: valueAt(s.objectiveSpend, objectiveIndex),
       }))
       .filter((s) => s.leads > 0)
       .map((s) => ({ ...s, cpl: s.spend / s.leads }));
@@ -213,7 +223,7 @@ export function AudienceAnalysis({
     const totalLeads = typeLeads > 0 ? typeLeads : 1;
 
     return {
-      tipoCampania: objectiveOptions.find((o) => o.index === selectedIndex)?.label ?? "",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       leadsTotales: formatNumber(typeLeads),
@@ -242,7 +252,7 @@ export function AudienceAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSegments, selectedIndex, objectiveOptions, avgCpl, typeLeads, genderTotals, currency, selectedCampaignName]);
+  }, [effectiveSegments, objectiveIndex, objectiveOptions, avgCpl, typeLeads, genderTotals, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -262,10 +272,11 @@ export function AudienceAnalysis({
         <div className="flex flex-col items-stretch gap-2">
           <select
             aria-label="Tipo de Resultado"
-            value={selectedIndex}
-            onChange={(event) => setSelectedIndex(Number(event.target.value))}
+            value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+            onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
+            <option value="all">Todos los tipos</option>
             {objectiveOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 {o.label}
@@ -322,7 +333,7 @@ export function AudienceAnalysis({
                   <div className="flex w-full items-end justify-center gap-1.5" style={{ height: BAR_AREA_HEIGHT }}>
                     {GENDERS.map((gender) => {
                       const segment = rowSegments.find((s) => s.gender === gender);
-                      const leads = segment?.objectiveLeads[selectedIndex] ?? 0;
+                      const leads = segment ? valueAt(segment.objectiveLeads, objectiveIndex) : 0;
                       const color = GENDER_COLOR[gender];
                       const heightPct = leads > 0 ? Math.max(6, Math.round((leads / maxLeads) * 100)) : 0;
                       return (
