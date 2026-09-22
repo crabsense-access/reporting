@@ -73,6 +73,8 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, para cuando se selecciona un tipo de Resultado puntual (ver bloque "Performance de Resultados"). */
   objectiveInteractions: number[];
   objectiveClicks: number[];
+  /** Desglose de este día por campaña — ver lib/reporting/metaInvestmentData.ts. Usado por el combo de campaña de InvestmentTrendChart. */
+  byCampaign: Record<string, { spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
 interface DetectedActionType {
@@ -119,6 +121,8 @@ interface InvestmentCalendarResponse {
   objectiveActionTypes: (string | null)[];
   /** Alcance real y deduplicado del mes a nivel de toda la cuenta — no se puede filtrar por tipo de Resultado (ver fetchMonthlyReach en metaInvestmentData.ts). */
   monthlyReach: number;
+  /** Campañas con gasto este mes, ordenadas por gasto descendente — combo de campaña de InvestmentTrendChart. */
+  campaigns: { id: string; name: string }[];
   detectedActionTypes: DetectedActionType[];
   days: DailyRealTotals[];
   audienceSegments: AudienceSegmentTotals[];
@@ -668,6 +672,8 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                 month={selectedMonthDate}
                 monthIsComplete={!isCurrentMonth}
                 clientId={clientId}
+                objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
+                campaigns={data.campaigns}
               />
               <LeadsByTypeTrendChart
                 days={data.days}

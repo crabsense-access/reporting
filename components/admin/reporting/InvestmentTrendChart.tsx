@@ -1,23 +1,28 @@
 "use client";
 
-// Gráfico de tendencia diaria: barras de Inversión (eje Y izquierdo) +
-// línea de CPL o Leads, a elección del usuario (eje Y derecho) — eje X con
-// los días del mes en curso. Va debajo del resumen del mes y arriba del
+// Gráfico de tendencia diaria: barras de Inversión (eje Y izquierdo) + línea de Cantidad o Costo
+// por Resultado de un tipo de Resultado (o de todos agregados), a elección del usuario (eje Y
+// derecho) — eje X con los días del mes en curso. Va debajo del resumen del mes y arriba del
 // calendario semanal.
 //
-// Es un chart de doble eje a propósito: Inversión (decenas/cientos de
-// dólares) y CPL (unos pocos dólares) o Leads (decenas de leads) viven en
-// escalas muy distintas, así que un solo eje dejaría una de las dos series
-// ilegible — este es el mismo patrón que usan Meta Ads Manager / Google Ads
-// para "gasto vs. métrica de eficiencia" por día.
+// Es un chart de doble eje a propósito: Inversión (decenas/cientos de dólares) y Costo por
+// Resultado (unos pocos dólares) o Cantidad (decenas de Resultados) viven en escalas muy
+// distintas, así que un solo eje dejaría una de las dos series ilegible — este es el mismo patrón
+// que usan Meta Ads Manager / Google Ads para "gasto vs. métrica de eficiencia" por día.
 //
-// Está hecho a mano con SVG (sin librería de gráficos, siguiendo la
-// convención del resto del dashboard). Recibe los datos reales del mes (ver
-// components/admin/reporting/InvestmentCalendar.tsx, que los pide una sola vez a
-// /api/clients/[id]/investment-calendar y los reparte entre este chart y
-// LeadsByTypeTrendChart) — ya no llama a mockDailySpend/mockDailyLeads.
+// DINÁMICO por Objetivo (índice 0..N-1, ver lib/reporting/metaInvestmentData.ts) — a pedido de
+// Martín, reemplaza al viejo toggle fijo Leads/CPL (agregaba los 3 tipos legado) por un combo de
+// tipo de Resultado ("Todos los tipos" incluido) + un toggle Cantidad/Costo por Resultado que
+// aplica al tipo elegido. Se le suma un segundo combo de CAMPAÑA: al elegir una, TODO el gráfico
+// (barras de Inversión Y línea de Resultados) se filtra a esa campaña puntual — ambos filtros
+// componen entre sí (ver DailyRealTotals.byCampaign).
+//
+// Está hecho a mano con SVG (sin librería de gráficos, siguiendo la convención del resto del
+// dashboard). Recibe los datos reales del mes (ver components/admin/reporting/InvestmentCalendar.tsx,
+// que los pide una sola vez a /api/clients/[id]/investment-calendar y los reparte entre este
+// chart y LeadsByTypeTrendChart).
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -25,16 +30,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber } from "@/lib/format";
-import { LEAD_TYPES, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
+import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 
 interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
-  leadsByType: Record<LeadType, number>;
-  spendByType: Record<LeadType, number>;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  /** Desglose de este día por campaña (clave = campaign_id) — ver metaInvestmentData.ts. */
+  byCampaign: Record<string, { spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
-type SecondaryMetric = "cpl" | "leads";
+/** Un tipo de Resultado disponible para el combo (sólo los que tienen datos este mes — ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
+type Submetric = "cantidad" | "costo";
 
 interface DayPoint {
   date: Date;
@@ -56,8 +69,12 @@ const INNER_W = VIEW_W - PAD.left - PAD.right;
 const INNER_H = VIEW_H - PAD.top - PAD.bottom;
 const TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 
-const SECONDARY_LABEL: Record<SecondaryMetric, string> = { cpl: "CPL", leads: "Leads" };
-const SECONDARY_COLOR: Record<SecondaryMetric, string> = { cpl: "#d97706", leads: "#0284c7" }; // amber-600 / sky-600
+const SUBMETRIC_LABEL: Record<Submetric, string> = { costo: "Costo por Resultado", cantidad: "Cantidad" };
+// Colores por default (sin tipo de Resultado elegido, "Todos los tipos"): mismo criterio que el
+// viejo toggle CPL/Leads (amber para costo, sky para cantidad). Con un tipo puntual elegido, el
+// color pasa a ser el de ESE Objetivo (objectiveColor) para que se identifique con el resto del
+// tablero — ver secondaryColor más abajo.
+const SUBMETRIC_DEFAULT_COLOR: Record<Submetric, string> = { costo: "#d97706", cantidad: "#0284c7" }; // amber-600 / sky-600
 
 function roundedTopBarPath(x: number, yTop: number, width: number, yBottom: number, radius: number) {
   const r = Math.min(radius, (yBottom - yTop) / 2, width / 2);
@@ -65,8 +82,8 @@ function roundedTopBarPath(x: number, yTop: number, width: number, yBottom: numb
   return `M ${x},${yBottom} L ${x},${yTop + r} Q ${x},${yTop} ${x + r},${yTop} L ${x + width - r},${yTop} Q ${x + width},${yTop} ${x + width},${yTop + r} L ${x + width},${yBottom} Z`;
 }
 
-function formatSecondary(metric: SecondaryMetric, value: number, currency: string) {
-  return metric === "cpl" ? formatSecondaryCurrency(value, currency) : formatNumber(value);
+function formatSecondary(submetric: Submetric, value: number, currency: string) {
+  return submetric === "costo" ? formatSecondaryCurrency(value, currency) : formatNumber(value);
 }
 
 /** Devuelve el elemento de `items` con mayor (o menor) `value(item)`, o null si la lista está vacía — usado para armar las métricas que se le pasan a Claude para la leyenda de hallazgos. */
@@ -135,6 +152,8 @@ export function InvestmentTrendChart({
   month,
   monthIsComplete,
   clientId,
+  objectiveOptions,
+  campaigns,
 }: {
   days: DailyRealTotals[];
   currency: string;
@@ -143,11 +162,33 @@ export function InvestmentTrendChart({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Tipos de Resultado con datos este mes, para el combo — ver visibleObjectiveTotals en InvestmentCalendar.tsx. */
+  objectiveOptions: ObjectiveOption[];
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
 }) {
-  const [metric, setMetric] = useState<SecondaryMetric>("cpl");
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [submetric, setSubmetric] = useState<Submetric>("costo");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const today = useMemo(() => new Date(), []);
+
+  // El tipo/campaña elegidos son específicos del mes que se está mirando (pueden no tener datos
+  // en el mes nuevo) — si al cambiar de mes la selección ya no está entre las opciones vigentes,
+  // se cae de vuelta a "Todos los tipos"/"Todas las campañas" en vez de quedar en un estado que
+  // ya no existe.
+  useEffect(() => {
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
+    }
+  }, [objectiveOptions, objectiveIndex]);
+
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
 
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
 
@@ -160,13 +201,29 @@ export function InvestmentTrendChart({
       const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
       const dateKey = format(date, "yyyy-MM-dd");
       const entry = byDate.get(dateKey);
-      const hasData = Boolean(entry);
-      const spend = entry?.spend ?? 0;
-      const leads = entry ? LEAD_TYPES.reduce((sum, type) => sum + entry.leadsByType[type], 0) : 0;
-      result.push({ date, day, spend, leads, cpl: hasData && leads > 0 ? spend / leads : null, hasData });
+      // Con una campaña elegida, el día se resuelve contra SU desglose (entry.byCampaign[id]) en
+      // vez del total de cuenta — si esa campaña no tuvo ninguna fila ese día (no arrancó
+      // todavía, está pausada, etc.), el día queda sin datos para ella, no en 0 (mismo criterio
+      // que ya usa `days` para "sin datos" a nivel de cuenta completa).
+      const campaignEntry = campaignId !== null ? entry?.byCampaign[campaignId] : undefined;
+      const hasData = campaignId !== null ? Boolean(campaignEntry) : Boolean(entry);
+      const spend = campaignId !== null ? (campaignEntry?.spend ?? 0) : (entry?.spend ?? 0);
+      const objectiveLeadsSource = campaignId !== null ? campaignEntry?.objectiveLeads : entry?.objectiveLeads;
+      const objectiveSpendSource = campaignId !== null ? campaignEntry?.objectiveSpend : entry?.objectiveSpend;
+      const leads = hasData
+        ? objectiveIndex !== null
+          ? (objectiveLeadsSource?.[objectiveIndex] ?? 0)
+          : (objectiveLeadsSource ?? []).reduce((sum, v) => sum + v, 0)
+        : 0;
+      // Costo por Resultado: con un tipo puntual elegido, el gasto atribuido a ESE tipo
+      // (objectiveSpend[i]); con "Todos los tipos", el gasto TOTAL del día/campaña sobre el total
+      // de Resultados matcheados — mismo criterio "blended" que ya usa el resumen del mes
+      // (monthTotal/monthLeads en InvestmentCalendar.tsx).
+      const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
+      result.push({ date, day, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null, hasData });
     }
     return result;
-  }, [month, byDate]);
+  }, [month, byDate, objectiveIndex, campaignId]);
 
   const daysInMonth = points.length;
   const slot = INNER_W / daysInMonth;
@@ -178,9 +235,9 @@ export function InvestmentTrendChart({
   const avgSpend = spendValues.length > 0 ? spendValues.reduce((sum, v) => sum + v, 0) / spendValues.length : null;
   const secondaryValues = points
     .filter((p) => p.hasData)
-    .map((p) => (metric === "cpl" ? p.cpl : p.leads))
+    .map((p) => (submetric === "costo" ? p.cpl : p.leads))
     .filter((v): v is number => v !== null);
-  const maxSecondary = Math.max(...secondaryValues, metric === "cpl" ? 5 : 5) * 1.15;
+  const maxSecondary = Math.max(...secondaryValues, submetric === "costo" ? 5 : 5) * 1.15;
   const avgSecondary =
     secondaryValues.length > 0 ? secondaryValues.reduce((sum, v) => sum + v, 0) / secondaryValues.length : null;
 
@@ -190,7 +247,7 @@ export function InvestmentTrendChart({
 
   const linePoints = points
     .map((p, i) => {
-      const value = metric === "cpl" ? p.cpl : p.hasData ? p.leads : null;
+      const value = submetric === "costo" ? p.cpl : p.hasData ? p.leads : null;
       if (value === null) return null;
       return { x: xAt(i), y: yRightAt(value), index: i, value };
     })
@@ -203,7 +260,7 @@ export function InvestmentTrendChart({
     return acc + `${i === 0 || isGap ? "M" : "L"} ${p.x},${p.y} `;
   }, "");
 
-  // Día con el valor máximo y mínimo de la métrica secundaria (CPL o Leads)
+  // Día con el valor máximo y mínimo de la métrica secundaria (Cantidad o Costo por Resultado)
   // entre los días con datos — se marcan en el gráfico para que se vea de
   // un vistazo cuándo fue el mejor/peor día.
   let maxPoint: (typeof linePoints)[number] | null = null;
@@ -214,16 +271,20 @@ export function InvestmentTrendChart({
   }
   const hasDistinctExtremes = linePoints.length > 1 && maxPoint !== null && minPoint !== null && maxPoint.index !== minPoint.index;
 
-  const secondaryColor = SECONDARY_COLOR[metric];
+  const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
+  const secondaryColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : SUBMETRIC_DEFAULT_COLOR[submetric];
+  const secondaryLabel = SUBMETRIC_LABEL[submetric];
+  const secondaryLegend = `${secondaryLabel} · ${selectedObjectiveLabel ?? "Todos los tipos"}`;
 
-  // Métricas para la leyenda de hallazgos (independientes del toggle CPL/Leads, así no hace falta
-  // volver a pedirle el resumen a Claude cada vez que el usuario cambia de métrica secundaria).
+  // Métricas para la leyenda de hallazgos (independientes de los combos/toggle, así no hace falta
+  // volver a pedirle el resumen a Claude cada vez que el usuario cambia de vista).
   const insightMetrics = useMemo(() => {
     const withData = points.filter((p) => p.hasData);
     const totalSpend = withData.reduce((sum, p) => sum + p.spend, 0);
     const avgSpendAll = withData.length > 0 ? totalSpend / withData.length : null;
-    const totalLeadsAll = withData.reduce((sum, p) => sum + p.leads, 0);
-    const avgLeadsAll = withData.length > 0 ? totalLeadsAll / withData.length : null;
+    const totalResultadosAll = withData.reduce((sum, p) => sum + p.leads, 0);
+    const avgResultadosAll = withData.length > 0 ? totalResultadosAll / withData.length : null;
     const cplPoints = withData.filter((p): p is DayPoint & { cpl: number } => p.cpl !== null);
     const avgCplAll = cplPoints.length > 0 ? cplPoints.reduce((sum, p) => sum + p.cpl, 0) / cplPoints.length : null;
 
@@ -231,10 +292,12 @@ export function InvestmentTrendChart({
     const minSpendPoint = pickExtreme(withData, (p) => p.spend, "min");
     const maxCplPoint = pickExtreme(cplPoints, (p) => p.cpl, "max");
     const minCplPoint = pickExtreme(cplPoints, (p) => p.cpl, "min");
-    const maxLeadsPoint = pickExtreme(withData, (p) => p.leads, "max");
+    const maxResultadosPoint = pickExtreme(withData, (p) => p.leads, "max");
 
     return {
       mes: format(month, "MMMM yyyy", { locale: es }),
+      tipoDeResultado: selectedObjectiveLabel ?? "Todos los tipos",
+      campania: selectedCampaignName ?? "Todas las campañas",
       diasConDatos: withData.length,
       inversionTotal: formatCurrency(totalSpend, currency),
       inversionPromedioDiaria: avgSpendAll !== null ? formatCurrency(avgSpendAll, currency) : null,
@@ -244,18 +307,20 @@ export function InvestmentTrendChart({
       inversionMinima: minSpendPoint
         ? { fecha: format(minSpendPoint.date, "d MMM", { locale: es }), valor: formatCurrency(minSpendPoint.spend, currency) }
         : null,
-      leadsTotales: totalLeadsAll,
-      leadsPromedioDiario: avgLeadsAll !== null ? Math.round(avgLeadsAll) : null,
-      leadsPico: maxLeadsPoint ? { fecha: format(maxLeadsPoint.date, "d MMM", { locale: es }), valor: maxLeadsPoint.leads } : null,
-      cplPromedio: avgCplAll !== null ? formatCurrency(avgCplAll, currency, 2) : null,
-      cplMasBajo: minCplPoint
+      resultadosTotales: totalResultadosAll,
+      resultadosPromedioDiario: avgResultadosAll !== null ? Math.round(avgResultadosAll) : null,
+      resultadosPico: maxResultadosPoint
+        ? { fecha: format(maxResultadosPoint.date, "d MMM", { locale: es }), valor: maxResultadosPoint.leads }
+        : null,
+      costoPorResultadoPromedio: avgCplAll !== null ? formatCurrency(avgCplAll, currency, 2) : null,
+      costoPorResultadoMasBajo: minCplPoint
         ? { fecha: format(minCplPoint.date, "d MMM", { locale: es }), valor: formatCurrency(minCplPoint.cpl, currency, 2) }
         : null,
-      cplMasAlto: maxCplPoint
+      costoPorResultadoMasAlto: maxCplPoint
         ? { fecha: format(maxCplPoint.date, "d MMM", { locale: es }), valor: formatCurrency(maxCplPoint.cpl, currency, 2) }
         : null,
     };
-  }, [points, month, currency]);
+  }, [points, month, currency, selectedObjectiveLabel, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -281,25 +346,55 @@ export function InvestmentTrendChart({
               <span className="h-2 w-2 rounded-sm bg-primary/70" /> Inversión
             </span>
             <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} /> {SECONDARY_LABEL[metric]}
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} /> {secondaryLegend}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-          {(["cpl", "leads"] as SecondaryMetric[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setMetric(option)}
-              className={cn(
-                "rounded px-3 py-1 text-xs font-bold transition-colors",
-                metric === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {SECONDARY_LABEL[option]}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Tipo de Resultado"
+            value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+            onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todos los tipos</option>
+            {objectiveOptions.map((o) => (
+              <option key={o.index} value={o.index}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Campaña"
+            value={campaignId ?? "all"}
+            onChange={(event) => setCampaignId(event.target.value === "all" ? null : event.target.value)}
+            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todas las campañas</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="flex items-center gap-1 rounded-md bg-muted p-1">
+            {(["costo", "cantidad"] as Submetric[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSubmetric(option)}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-bold transition-colors",
+                  submetric === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {SUBMETRIC_LABEL[option]}
+              </button>
+            ))}
+          </div>
         </div>
       </CardHeader>
 
@@ -331,7 +426,7 @@ export function InvestmentTrendChart({
                     {formatCurrency(maxSpend * frac, currency, 0)}
                   </text>
                   <text x={VIEW_W - PAD.right + 8} y={y} textAnchor="start" dominantBaseline="middle" className="fill-muted-foreground text-[9px]">
-                    {metric === "cpl" ? formatCurrency(maxSecondary * frac, currency, 0) : formatNumber(Math.round(maxSecondary * frac))}
+                    {submetric === "costo" ? formatCurrency(maxSecondary * frac, currency, 0) : formatNumber(Math.round(maxSecondary * frac))}
                   </text>
                 </g>
               );
@@ -377,7 +472,7 @@ export function InvestmentTrendChart({
               );
             })}
 
-            {/* Línea de la métrica secundaria (CPL o Leads) */}
+            {/* Línea de la métrica secundaria (Cantidad o Costo por Resultado) */}
             {linePath && <path d={linePath} fill="none" stroke={secondaryColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
             {linePoints.map((p) => (
               <circle key={p.index} cx={p.x} cy={p.y} r={2.5} fill={secondaryColor} />
@@ -394,7 +489,7 @@ export function InvestmentTrendChart({
                       ? maxPoint.y - (POINT_PILL_HEIGHT + POINT_PILL_GAP)
                       : maxPoint.y + POINT_PILL_GAP
                   }
-                  label={`Máx ${format(points[maxPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(metric, maxPoint.value, currency)}`}
+                  label={`Máx ${format(points[maxPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(submetric, maxPoint.value, currency)}`}
                   color={secondaryColor}
                 />
                 <circle cx={minPoint.x} cy={minPoint.y} r={4} fill={secondaryColor} className="stroke-background" strokeWidth={2} />
@@ -405,7 +500,7 @@ export function InvestmentTrendChart({
                       ? minPoint.y + POINT_PILL_GAP
                       : minPoint.y - (POINT_PILL_HEIGHT + POINT_PILL_GAP)
                   }
-                  label={`Mín ${format(points[minPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(metric, minPoint.value, currency)}`}
+                  label={`Mín ${format(points[minPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(submetric, minPoint.value, currency)}`}
                   color={secondaryColor}
                 />
               </>
@@ -417,7 +512,7 @@ export function InvestmentTrendChart({
               <AvgPill
                 xRight={VIEW_W - PAD.right}
                 yTop={yRightAt(avgSecondary) - AVG_PILL_HEIGHT / 2}
-                label={`Promedio: ${formatSecondary(metric, avgSecondary, currency)}`}
+                label={`Promedio: ${formatSecondary(submetric, avgSecondary, currency)}`}
                 fill={secondaryColor}
               />
             )}
@@ -452,10 +547,10 @@ export function InvestmentTrendChart({
             {hovered?.hasData && hoverX !== null && (
               <>
                 <circle cx={hoverX} cy={yLeftAt(hovered.spend)} r={3.5} className="fill-primary stroke-background" strokeWidth={1.5} />
-                {hovered.cpl !== null && metric === "cpl" && (
+                {hovered.cpl !== null && submetric === "costo" && (
                   <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={3.5} fill={secondaryColor} className="stroke-background" strokeWidth={1.5} />
                 )}
-                {metric === "leads" && (
+                {submetric === "cantidad" && (
                   <circle cx={hoverX} cy={yRightAt(hovered.leads)} r={3.5} fill={secondaryColor} className="stroke-background" strokeWidth={1.5} />
                 )}
               </>
@@ -481,10 +576,14 @@ export function InvestmentTrendChart({
                   </span>
                   <span className="flex items-center justify-between gap-3 text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> {SECONDARY_LABEL[metric]}
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> {secondaryLabel}
                     </span>
                     <span className="font-medium text-foreground">
-                      {metric === "cpl" ? (hovered.cpl !== null ? formatSecondary("cpl", hovered.cpl, currency) : "0") : formatSecondary("leads", hovered.leads, currency)}
+                      {submetric === "costo"
+                        ? hovered.cpl !== null
+                          ? formatSecondary("costo", hovered.cpl, currency)
+                          : "0"
+                        : formatSecondary("cantidad", hovered.leads, currency)}
                     </span>
                   </span>
                 </>

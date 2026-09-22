@@ -139,6 +139,13 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, pero de Interacciones/Clics — para cuando se selecciona un tipo de Resultado puntual. */
   objectiveInteractions: number[];
   objectiveClicks: number[];
+  /**
+   * Desglose de ESTE día por campaña (clave = campaign_id) — para el combo de campaña del
+   * gráfico "Inversión y rendimiento por día" (ver InvestmentTrendChart.tsx). Sólo entran acá
+   * las campañas que tuvieron alguna fila ese día; una campaña ausente ese día se interpreta como
+   * "sin datos" (no simplemente 0), igual que ya hace `days` a nivel de cuenta completa.
+   */
+  byCampaign: Record<string, { spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
 export interface RealInvestmentCalendarData {
@@ -160,6 +167,8 @@ export interface RealInvestmentCalendarData {
   objectiveLabels: string[];
   /** Alcance real y deduplicado del mes (o del tramo, si es un tramo "estable"/"fresco" — ver mergeRealInvestmentCalendarData), a nivel de TODA la cuenta — ver fetchMonthlyReach. No se puede filtrar por tipo de Resultado (ver comentario ahí). */
   monthlyReach: number;
+  /** Campañas con al menos 1 fila de gasto este mes, ordenadas por gasto descendente — para el combo de campaña de InvestmentTrendChart.tsx (ver DailyRealTotals.byCampaign). */
+  campaigns: { id: string; name: string }[];
   /**
    * El action_type REAL de Meta que más matcheó este mes para cada Objetivo (mismo índice que
    * objectiveLabels), o null si ese Objetivo no matcheó nada. Se usa para mostrar el nombre real
@@ -208,6 +217,8 @@ interface MetaCampaignDayRow {
   date_start?: string;
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  campaign_id?: string;
+  campaign_name?: string;
 }
 
 interface MetaCampaignInsightsResponse {
@@ -564,7 +575,7 @@ export async function fetchRealInvestmentCalendarData(
           level: "campaign",
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
-          fields: "spend,actions",
+          fields: "spend,actions,campaign_id,campaign_name",
           limit: "500",
         },
         metaConfig.system_user_token
@@ -585,6 +596,11 @@ export async function fetchRealInvestmentCalendarData(
   // más abajo). Normalmente es uno solo, pero si el evento configurado matchea de forma laxa más
   // de un action_type real distinto en el mes, nos quedamos con el que más aportó.
   const objectiveActionTypeTotals = new Map<number, Map<string, number>>();
+  // Nombre y gasto total del mes de cada campaña vista — para armar `campaigns` (el combo del
+  // gráfico de tendencia diaria) ordenado por relevancia (gasto) al final, sin tener que
+  // recorrer `byDate` de nuevo.
+  const campaignNames = new Map<string, string>();
+  const campaignSpendTotals = new Map<string, number>();
 
   for (const row of insights.data) {
     const dateKey = row.date_start;
@@ -603,12 +619,30 @@ export async function fetchRealInvestmentCalendarData(
         clicks: 0,
         objectiveInteractions: objectives.map(() => 0),
         objectiveClicks: objectives.map(() => 0),
+        byCampaign: {},
       };
       byDate.set(dateKey, entry);
     }
 
     const spend = Number(row.spend ?? 0);
     entry.spend += spend;
+
+    // Desglose por campaña de ESTA fila (spend siempre; objectiveLeads/objectiveSpend recién más
+    // abajo, sólo si la fila matchea algún Objetivo) — se arma para TODAS las filas con
+    // campaign_id, aunque no matcheen ningún Objetivo, porque el combo de campaña filtra también
+    // las barras de Inversión (gasto), no sólo la línea de Resultados.
+    const campaignId = row.campaign_id;
+    let campaignEntry: { spend: number; objectiveLeads: number[]; objectiveSpend: number[] } | undefined;
+    if (campaignId) {
+      campaignNames.set(campaignId, row.campaign_name?.trim() || campaignNames.get(campaignId) || campaignId);
+      campaignSpendTotals.set(campaignId, (campaignSpendTotals.get(campaignId) ?? 0) + spend);
+      campaignEntry = entry.byCampaign[campaignId];
+      if (!campaignEntry) {
+        campaignEntry = { spend: 0, objectiveLeads: objectives.map(() => 0), objectiveSpend: objectives.map(() => 0) };
+        entry.byCampaign[campaignId] = campaignEntry;
+      }
+      campaignEntry.spend += spend;
+    }
 
     const actions = row.actions ?? [];
     for (const action of actions) {
@@ -637,6 +671,10 @@ export async function fetchRealInvestmentCalendarData(
       entry.objectiveSpend[matchedIndex] = (entry.objectiveSpend[matchedIndex] ?? 0) + spend;
       entry.objectiveInteractions[matchedIndex] = (entry.objectiveInteractions[matchedIndex] ?? 0) + interactionsValue;
       entry.objectiveClicks[matchedIndex] = (entry.objectiveClicks[matchedIndex] ?? 0) + clicksValue;
+      if (campaignEntry) {
+        campaignEntry.objectiveLeads[matchedIndex] = (campaignEntry.objectiveLeads[matchedIndex] ?? 0) + value;
+        campaignEntry.objectiveSpend[matchedIndex] = (campaignEntry.objectiveSpend[matchedIndex] ?? 0) + spend;
+      }
       matchedObjectiveIndexes.add(matchedIndex);
 
       const actionTypeTotals = objectiveActionTypeTotals.get(matchedIndex) ?? new Map<string, number>();
@@ -653,6 +691,12 @@ export async function fetchRealInvestmentCalendarData(
   }
 
   const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Campañas del combo de InvestmentTrendChart.tsx, ordenadas por gasto total del mes descendente
+  // (las más relevantes primero) — ver el comentario de `campaigns` en la interfaz de arriba.
+  const campaigns = Array.from(campaignNames.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => (campaignSpendTotals.get(b.id) ?? 0) - (campaignSpendTotals.get(a.id) ?? 0));
 
   // El action_type real dominante de cada Objetivo este mes (mayor valor total acumulado) — ver
   // el comentario de objectiveActionTypes en la interfaz de arriba.
@@ -697,6 +741,7 @@ export async function fetchRealInvestmentCalendarData(
     objectiveLabels,
     objectiveActionTypes,
     monthlyReach,
+    campaigns,
     detectedActionTypes,
     days,
     audienceSegments,
@@ -851,6 +896,7 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
     videoRetentionByAge: data.videoRetentionByAge ?? [],
     objectiveActionTypes: data.objectiveActionTypes ?? [],
     monthlyReach: data.monthlyReach ?? 0,
+    campaigns: data.campaigns ?? [],
   };
 }
 
@@ -861,6 +907,16 @@ function mergeObjectiveActionTypes(
 ): (string | null)[] {
   const length = Math.max(stable.length, fresh.length);
   return Array.from({ length }, (_, i) => stable[i] ?? fresh[i] ?? null);
+}
+
+/** Une las campañas de los dos tramos por id — se queda con el orden de `stable` (ya viene ordenado por gasto de la mayor parte del mes) y agrega al final las que sólo aparecieron en `fresh` (hoy), si hay alguna campaña nueva que arrancó justo hoy. */
+function mergeCampaigns(
+  stable: { id: string; name: string }[],
+  fresh: { id: string; name: string }[]
+): { id: string; name: string }[] {
+  const seen = new Set(stable.map((c) => c.id));
+  const onlyInFresh = fresh.filter((c) => !seen.has(c.id));
+  return [...stable, ...onlyInFresh];
 }
 
 function mergeRealInvestmentCalendarData(
@@ -883,6 +939,7 @@ function mergeRealInvestmentCalendarData(
     // (hasta ayer) como hoy se lo cuenta en los dos. El error queda acotado a ese único límite de
     // día en vez de acumularse día a día como pasaría sumando el alcance diario de todo el mes.
     monthlyReach: stable.monthlyReach + fresh.monthlyReach,
+    campaigns: mergeCampaigns(stable.campaigns, fresh.campaigns),
   };
 }
 
@@ -905,7 +962,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v8") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v9") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -930,7 +987,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v8",
+        query: "investmentCalendar:v9",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -946,7 +1003,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v8",
+        query: "investmentCalendar:v9",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -960,7 +1017,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v8",
+        query: "investmentCalendar:v9",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -972,7 +1029,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v8",
+        query: "investmentCalendar:v9",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
