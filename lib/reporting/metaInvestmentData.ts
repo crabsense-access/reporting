@@ -99,13 +99,13 @@ function looseMatchesEvent(actionType: string, eventName: string): boolean {
 function findMatchedObjective(
   actions: { action_type: string; value: string }[],
   objectiveEvents: string[]
-): { index: number; value: number } | null {
+): { index: number; value: number; actionType: string } | null {
   for (let i = 0; i < objectiveEvents.length; i += 1) {
     const eventName = objectiveEvents[i];
     if (!eventName) continue;
     const action = actions.find((a) => exactMatchesEvent(a.action_type, eventName));
     if (action && Number(action.value ?? 0) > 0) {
-      return { index: i, value: Number(action.value ?? 0) };
+      return { index: i, value: Number(action.value ?? 0), actionType: action.action_type };
     }
   }
   for (let i = 0; i < objectiveEvents.length; i += 1) {
@@ -113,7 +113,7 @@ function findMatchedObjective(
     if (!eventName) continue;
     const action = actions.find((a) => looseMatchesEvent(a.action_type, eventName));
     if (action && Number(action.value ?? 0) > 0) {
-      return { index: i, value: Number(action.value ?? 0) };
+      return { index: i, value: Number(action.value ?? 0), actionType: action.action_type };
     }
   }
   return null;
@@ -151,6 +151,15 @@ export interface RealInvestmentCalendarData {
    */
   /** Leyenda de CADA Objetivo cargado, en orden (índice alineado con objectiveLeads/objectiveSpend de cada día) — a diferencia de typeLabels, no está limitado a 3. */
   objectiveLabels: string[];
+  /**
+   * El action_type REAL de Meta que más matcheó este mes para cada Objetivo (mismo índice que
+   * objectiveLabels), o null si ese Objetivo no matcheó nada. Se usa para mostrar el nombre real
+   * del tipo de Resultado como lo llama Meta (ver lib/reporting/metaResultLabels.ts) en vez del
+   * label que se tipeó a mano en el Admin — ese label queda como fallback cuando el action_type
+   * no está en la tabla de traducción (ej. una conversión personalizada, que Meta nombra con el
+   * nombre que le pusieron en Events Manager, no recuperable desde acá).
+   */
+  objectiveActionTypes: (string | null)[];
   detectedActionTypes: { actionType: string; count: number }[];
   days: DailyRealTotals[];
   /** Un elemento por cada combinación género+rango etario con datos este mes (ver AudienceAnalysis.tsx) — objectiveLeads/objectiveSpend con el mismo índice que objectiveLabels. */
@@ -508,6 +517,11 @@ export async function fetchRealInvestmentCalendarData(
   const byDate = new Map<string, DailyRealTotals>();
   const rawActionTypeTotals = new Map<string, number>();
   const matchedObjectiveIndexes = new Set<number>();
+  // Por Objetivo, cuánto valor total aportó cada action_type real que matcheó este mes — para
+  // quedarnos, al final, con el action_type "dominante" de cada Objetivo (ver objectiveActionTypes
+  // más abajo). Normalmente es uno solo, pero si el evento configurado matchea de forma laxa más
+  // de un action_type real distinto en el mes, nos quedamos con el que más aportó.
+  const objectiveActionTypeTotals = new Map<number, Map<string, number>>();
 
   for (const row of insights.data) {
     const dateKey = row.date_start;
@@ -541,10 +555,14 @@ export async function fetchRealInvestmentCalendarData(
     // matchea en orden se queda con la fila entera.
     const matched = findMatchedObjective(actions, objectiveEvents);
     if (matched) {
-      const { index: matchedIndex, value } = matched;
+      const { index: matchedIndex, value, actionType } = matched;
       entry.objectiveLeads[matchedIndex] = (entry.objectiveLeads[matchedIndex] ?? 0) + value;
       entry.objectiveSpend[matchedIndex] = (entry.objectiveSpend[matchedIndex] ?? 0) + spend;
       matchedObjectiveIndexes.add(matchedIndex);
+
+      const actionTypeTotals = objectiveActionTypeTotals.get(matchedIndex) ?? new Map<string, number>();
+      actionTypeTotals.set(actionType, (actionTypeTotals.get(actionType) ?? 0) + value);
+      objectiveActionTypeTotals.set(matchedIndex, actionTypeTotals);
 
       // Espejo legado: sólo si el Objetivo matcheado es uno de los primeros 3.
       if (matchedIndex < LEAD_TYPES.length) {
@@ -556,6 +574,22 @@ export async function fetchRealInvestmentCalendarData(
   }
 
   const days = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  // El action_type real dominante de cada Objetivo este mes (mayor valor total acumulado) — ver
+  // el comentario de objectiveActionTypes en la interfaz de arriba.
+  const objectiveActionTypes: (string | null)[] = objectives.map((_, index) => {
+    const totals = objectiveActionTypeTotals.get(index);
+    if (!totals || totals.size === 0) return null;
+    let bestActionType: string | null = null;
+    let bestValue = -1;
+    for (const [actionType, value] of totals.entries()) {
+      if (value > bestValue) {
+        bestActionType = actionType;
+        bestValue = value;
+      }
+    }
+    return bestActionType;
+  });
 
   const detectedActionTypes =
     configuredTypeCount > 0 && matchedObjectiveIndexes.size < configuredTypeCount
@@ -582,6 +616,7 @@ export async function fetchRealInvestmentCalendarData(
     typeLabels,
     configuredTypeCount,
     objectiveLabels,
+    objectiveActionTypes,
     detectedActionTypes,
     days,
     audienceSegments,
@@ -734,7 +769,17 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
     regionSegments: data.regionSegments ?? [],
     hourlyTotals: data.hourlyTotals ?? [],
     videoRetentionByAge: data.videoRetentionByAge ?? [],
+    objectiveActionTypes: data.objectiveActionTypes ?? [],
   };
+}
+
+/** Junta objectiveActionTypes de un tramo "estable" (más días, prioridad) con uno "fresco" (hoy) — se queda con el de `stable` cuando lo tiene, y sólo cae a `fresh` para un Objetivo que todavía no había matcheado nada en el tramo estable. */
+function mergeObjectiveActionTypes(
+  stable: (string | null)[],
+  fresh: (string | null)[]
+): (string | null)[] {
+  const length = Math.max(stable.length, fresh.length);
+  return Array.from({ length }, (_, i) => stable[i] ?? fresh[i] ?? null);
 }
 
 function mergeRealInvestmentCalendarData(
@@ -751,6 +796,7 @@ function mergeRealInvestmentCalendarData(
     regionSegments: mergeRegionSegments(stable.regionSegments, fresh.regionSegments),
     hourlyTotals: mergeHourlyTotals(stable.hourlyTotals, fresh.hourlyTotals),
     videoRetentionByAge: mergeVideoRetentionByAge(stable.videoRetentionByAge, fresh.videoRetentionByAge),
+    objectiveActionTypes: mergeObjectiveActionTypes(stable.objectiveActionTypes, fresh.objectiveActionTypes),
   };
 }
 
@@ -773,7 +819,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v5") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v6") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -793,7 +839,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v5",
+        query: "investmentCalendar:v6",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -809,7 +855,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v5",
+        query: "investmentCalendar:v6",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -823,7 +869,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v5",
+        query: "investmentCalendar:v6",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -835,7 +881,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v5",
+        query: "investmentCalendar:v6",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

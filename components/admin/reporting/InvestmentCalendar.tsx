@@ -43,6 +43,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { LEAD_TYPE_COLOR, LEAD_TYPES, objectiveColor, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
+import { resolveResultLabel } from "@/lib/reporting/metaResultLabels";
 import { AudienceAnalysis } from "@/components/admin/reporting/AudienceAnalysis";
 import { VideoRetentionChart } from "@/components/admin/reporting/VideoRetentionChart";
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
@@ -107,6 +108,9 @@ interface InvestmentCalendarResponse {
   typeLabels: Record<LeadType, string>;
   configuredTypeCount: number;
   objectiveLabels: string[];
+  /** action_type real de Meta que matcheó cada Objetivo este mes (mismo índice que objectiveLabels),
+   *  o null si no matcheó nada — ver lib/reporting/metaResultLabels.ts. */
+  objectiveActionTypes: (string | null)[];
   detectedActionTypes: DetectedActionType[];
   days: DailyRealTotals[];
   audienceSegments: AudienceSegmentTotals[];
@@ -200,10 +204,14 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
   const objectiveMonthTotals = useMemo(() => {
     const days = data?.days ?? [];
     const labels = data?.objectiveLabels ?? [];
+    const actionTypes = data?.objectiveActionTypes ?? [];
     return labels.map((label, index) => {
       const leads = days.reduce((sum, d) => sum + (d.objectiveLeads[index] ?? 0), 0);
       const spend = days.reduce((sum, d) => sum + (d.objectiveSpend[index] ?? 0), 0);
-      return { index, label, leads, spend, cpl: leads > 0 ? spend / leads : 0 };
+      // Nombre real del tipo de Resultado como lo muestra Meta Ads Manager, con el label cargado
+      // a mano en el Admin como fallback (ver lib/reporting/metaResultLabels.ts).
+      const resolvedLabel = resolveResultLabel(actionTypes[index] ?? null, label);
+      return { index, label: resolvedLabel, leads, spend, cpl: leads > 0 ? spend / leads : 0 };
     });
   }, [data]);
 
