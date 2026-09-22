@@ -154,6 +154,21 @@ const META_GENDER_TO_LABEL: Record<string, "mujeres" | "hombres"> = {
   male: "hombres",
 };
 
+/**
+ * Desglose por anuncio de DailyRealTotals — el shape de siempre (campaignId/spend/objectiveLeads/
+ * objectiveSpend) más reach/impressions/totalClicks — a pedido de Martín, para las columnas de
+ * Alcance/Impresiones/Clicks de la tabla de WeekdayPerformanceChart.tsx.
+ */
+interface DailyAdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  reach: number;
+  impressions: number;
+  totalClicks: number;
+}
+
 export interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
@@ -168,6 +183,13 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, pero de Interacciones/Clics — para cuando se selecciona un tipo de Resultado puntual. */
   objectiveInteractions: number[];
   objectiveClicks: number[];
+  /** Alcance/impresiones/clics TOTALES (el campo "clicks" de Meta, TODOS los clics — a diferencia
+   * de `clicks` arriba, que son sólo los del enlace/link_click) de este día — no varían por Tipo
+   * de Resultado, sólo por Campaña/Anuncio (ver byAd) — a pedido de Martín, para la tabla de
+   * WeekdayPerformanceChart.tsx, mismo criterio que RegionSegmentTotals.reach/impressions/clicks. */
+  reach: number;
+  impressions: number;
+  totalClicks: number;
   /**
    * Desglose de ESTE día por anuncio (clave = ad_id) — para los combos de Campaña/Anuncio de los
    * gráficos con filtro (InvestmentTrendChart.tsx, LeadsByTypeTrendChart.tsx,
@@ -176,7 +198,7 @@ export interface DailyRealTotals {
    * anuncios que tuvieron alguna fila ese día; un anuncio ausente ese día se interpreta como "sin
    * datos" (no simplemente 0), igual que ya hace `days` a nivel de cuenta completa.
    */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, DailyAdBreakdownEntry>;
 }
 
 export interface RealInvestmentCalendarData {
@@ -344,6 +366,14 @@ interface MetaCampaignDayRow {
   campaign_name?: string;
   ad_id?: string;
   ad_name?: string;
+  /** Alcance/impresiones/clics de ESTA fila (día+anuncio) para el período pedido — a pedido de
+   *  Martín, para la tabla de WeekdayPerformanceChart.tsx. "clicks" acá es el campo TOTAL de Meta
+   *  (todos los clics), distinto del "link_click" que ya se extraía de `actions` — ver
+   *  DailyRealTotals.totalClicks. No se matchean por Objetivo, quedan como totales del día (y del
+   *  anuncio, en byAd). */
+  reach?: string;
+  impressions?: string;
+  clicks?: string;
 }
 
 interface MetaCampaignInsightsResponse {
@@ -979,7 +1009,8 @@ export async function fetchRealInvestmentCalendarData(
           level: "ad",
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
-          fields: "spend,actions,campaign_id,campaign_name,ad_id,ad_name",
+          // reach/impressions/clicks sumados a pedido de Martín — ver MetaCampaignDayRow.
+          fields: "spend,actions,campaign_id,campaign_name,ad_id,ad_name,reach,impressions,clicks",
           limit: "5000",
         },
         metaConfig.system_user_token
@@ -1028,6 +1059,9 @@ export async function fetchRealInvestmentCalendarData(
         clicks: 0,
         objectiveInteractions: objectives.map(() => 0),
         objectiveClicks: objectives.map(() => 0),
+        reach: 0,
+        impressions: 0,
+        totalClicks: 0,
         byAd: {},
       };
       byDate.set(dateKey, entry);
@@ -1035,6 +1069,12 @@ export async function fetchRealInvestmentCalendarData(
 
     const spend = Number(row.spend ?? 0);
     entry.spend += spend;
+    const rowReach = Number(row.reach ?? 0);
+    const rowImpressions = Number(row.impressions ?? 0);
+    const rowTotalClicks = Number(row.clicks ?? 0);
+    entry.reach += rowReach;
+    entry.impressions += rowImpressions;
+    entry.totalClicks += rowTotalClicks;
 
     // Desglose por anuncio de ESTA fila (spend siempre; objectiveLeads/objectiveSpend recién más
     // abajo, sólo si la fila matchea algún Objetivo) — se arma para TODAS las filas con
@@ -1042,7 +1082,7 @@ export async function fetchRealInvestmentCalendarData(
     // filtran también las barras de Inversión (gasto), no sólo la línea de Resultados.
     const campaignId = row.campaign_id;
     const adId = row.ad_id;
-    let adEntry: { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] } | undefined;
+    let adEntry: DailyAdBreakdownEntry | undefined;
     if (campaignId) {
       campaignNames.set(campaignId, row.campaign_name?.trim() || campaignNames.get(campaignId) || campaignId);
       campaignSpendTotals.set(campaignId, (campaignSpendTotals.get(campaignId) ?? 0) + spend);
@@ -1053,10 +1093,21 @@ export async function fetchRealInvestmentCalendarData(
       adSpendTotals.set(adId, (adSpendTotals.get(adId) ?? 0) + spend);
       adEntry = entry.byAd[adId];
       if (!adEntry) {
-        adEntry = { campaignId, spend: 0, objectiveLeads: objectives.map(() => 0), objectiveSpend: objectives.map(() => 0) };
+        adEntry = {
+          campaignId,
+          spend: 0,
+          objectiveLeads: objectives.map(() => 0),
+          objectiveSpend: objectives.map(() => 0),
+          reach: 0,
+          impressions: 0,
+          totalClicks: 0,
+        };
         entry.byAd[adId] = adEntry;
       }
       adEntry.spend += spend;
+      adEntry.reach += rowReach;
+      adEntry.impressions += rowImpressions;
+      adEntry.totalClicks += rowTotalClicks;
     }
 
     const actions = row.actions ?? [];
@@ -1644,7 +1695,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v16") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v17") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1690,6 +1741,12 @@ function mergeRealInvestmentCalendarData(
  * HourlyAdBreakdownEntry) — campos nuevos, una entrada vieja en v15 no los tiene, así que la
  * tabla de franjas horarias de HourlyPerformanceChart.tsx mostraría Alcance/Impresiones/Clicks en
  * 0/undefined hasta que venza el TTL si no se bumpea acá.
+ *
+ * v16→v17: DailyRealTotals (y su byAd) suma reach/impressions/totalClicks (ver
+ * fetchRealInvestmentCalendarData y DailyAdBreakdownEntry) — campos nuevos, una entrada vieja en
+ * v16 no los tiene, así que la tabla de WeekdayPerformanceChart.tsx (que se arma a partir de
+ * `days`, no de un fetch propio) mostraría Alcance/Impresiones/Clicks en 0/undefined hasta que
+ * venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1705,7 +1762,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v16",
+        query: "investmentCalendar:v17",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1721,7 +1778,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v16",
+        query: "investmentCalendar:v17",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1735,7 +1792,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v16",
+        query: "investmentCalendar:v17",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1747,7 +1804,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v16",
+        query: "investmentCalendar:v17",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

@@ -60,6 +60,18 @@ const ZERO_BY_TYPE: Record<LeadType, number> = LEAD_TYPES.reduce(
   {} as Record<LeadType, number>
 );
 
+interface DailyAdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  /** Ver comentario de DailyRealTotals más abajo — a pedido de Martín, para la tabla de
+   *  WeekdayPerformanceChart.tsx (mismo criterio que RegionSegmentTotals). */
+  reach: number;
+  impressions: number;
+  totalClicks: number;
+}
+
 export interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
@@ -73,8 +85,14 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, para cuando se selecciona un tipo de Resultado puntual (ver bloque "Performance de Resultados"). */
   objectiveInteractions: number[];
   objectiveClicks: number[];
+  /** Alcance/impresiones/clics TOTALES de este día (el campo "clicks" de Meta, distinto del
+   *  "clicks" de arriba que son sólo los del enlace/link_click) — no varían por Tipo de Resultado,
+   *  sólo por Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  totalClicks: number;
   /** Desglose de este día por anuncio — ver lib/reporting/metaInvestmentData.ts. Usado por los combos de Campaña/Anuncio de los gráficos con filtro. */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, DailyAdBreakdownEntry>;
 }
 
 interface DetectedActionType {

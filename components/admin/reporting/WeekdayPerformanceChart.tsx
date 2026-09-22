@@ -15,8 +15,10 @@
 // que en HourlyPerformanceChart (nunca hardcodeado).
 //
 // Debajo del gráfico, un resumen en 2 franjas fijas (Lunes a viernes / Sábado y domingo) con
-// inversión, participación, contactos y costo por contacto — y el insight de Claude a partir de
-// esos mismos números.
+// Alcance/Impresiones/Clicks/Inversión/% Inv./Resultados/Costo por Resultado — y el insight de
+// Claude a partir de esos mismos números. Alcance/Impresiones/Clicks no dependen del Tipo de
+// Resultado elegido (una impresión no "es" de un tipo puntual), sólo de Campaña/Anuncio — mismo
+// criterio que HourlyPerformanceChart.tsx/RegionAnalysis.tsx.
 //
 // A pedido de Martín, mismo combo de 3 filtros (Tipo de Resultado, con "Todos los Resultados" como
 // default + Campaña + Anuncio en cascada) que HourlyPerformanceChart.tsx — ver
@@ -32,13 +34,50 @@ import { cn } from "@/lib/utils";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
+interface DailyAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de DailyRealTotals más abajo. */
+  reach: number;
+  impressions: number;
+  totalClicks: number;
+}
+
 interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones/clics TOTALES de este día (el campo "clicks" de Meta, todos los clics) —
+   * no varían por Tipo de Resultado, sólo por Campaña/Anuncio (ver byAd) — ver metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  totalClicks: number;
   /** Desglose de este día por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
-  byAd: Record<string, AdBreakdownEntry>;
+  byAd: Record<string, DailyAdBreakdownEntry>;
+}
+
+/** Igual que resolveAdFilteredTotals (lib/reporting/adFilter.ts) pero para reach/impressions/
+ * totalClicks, que ese helper compartido no conoce (ver comentario de cabecera). Mismo criterio
+ * que resolveRegionEngagementTotals en RegionAnalysis.tsx. */
+function resolveDailyEngagementTotals(
+  byAd: Record<string, DailyAdBreakdownEntry>,
+  campaignId: string | null,
+  adId: string | null
+): { reach: number; impressions: number; totalClicks: number } | null {
+  if (adId !== null) {
+    const entry = byAd[adId];
+    return entry ? { reach: entry.reach, impressions: entry.impressions, totalClicks: entry.totalClicks } : null;
+  }
+  if (campaignId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (matching.length === 0) return null;
+  return matching.reduce(
+    (acc, entry) => ({
+      reach: acc.reach + entry.reach,
+      impressions: acc.impressions + entry.impressions,
+      totalClicks: acc.totalClicks + entry.totalClicks,
+    }),
+    { reach: 0, impressions: 0, totalClicks: 0 }
+  );
 }
 
 /** Un tipo de Resultado disponible para el combo (sólo los que tienen datos este mes — ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
@@ -152,8 +191,11 @@ export function WeekdayPerformanceChart({
   }, [visibleAds, adId]);
 
   const weekdays = useMemo(() => {
-    const totals = new Map<number, { spend: number; leads: number; cplSpend: number }>();
-    for (let w = 0; w < 7; w += 1) totals.set(w, { spend: 0, leads: 0, cplSpend: 0 });
+    const totals = new Map<
+      number,
+      { spend: number; leads: number; cplSpend: number; reach: number; impressions: number; totalClicks: number }
+    >();
+    for (let w = 0; w < 7; w += 1) totals.set(w, { spend: 0, leads: 0, cplSpend: 0, reach: 0, impressions: 0, totalClicks: 0 });
     const hasFilter = campaignId !== null || adId !== null;
 
     for (const day of days) {
@@ -179,14 +221,31 @@ export function WeekdayPerformanceChart({
       // "Todos los Resultados", el gasto total del día/campaña/anuncio (mismo criterio "blended" que el
       // resto de la página).
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
+      // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio —
+      // mismo criterio que spend (ver comentario de cabecera).
+      const engagement = hasFilter ? resolveDailyEngagementTotals(day.byAd, campaignId, adId) : null;
+      const reach = hasFilter ? (engagement?.reach ?? 0) : day.reach;
+      const impressions = hasFilter ? (engagement?.impressions ?? 0) : day.impressions;
+      const totalClicks = hasFilter ? (engagement?.totalClicks ?? 0) : day.totalClicks;
       entry.spend += spend;
       entry.leads += leads;
       entry.cplSpend += cplSpend;
+      entry.reach += reach;
+      entry.impressions += impressions;
+      entry.totalClicks += totalClicks;
     }
 
     return WEEKDAY_ORDER.map((weekday) => {
       const entry = totals.get(weekday)!;
-      return { weekday, spend: entry.spend, leads: entry.leads, cpl: entry.leads > 0 ? entry.cplSpend / entry.leads : null };
+      return {
+        weekday,
+        spend: entry.spend,
+        leads: entry.leads,
+        cpl: entry.leads > 0 ? entry.cplSpend / entry.leads : null,
+        reach: entry.reach,
+        impressions: entry.impressions,
+        totalClicks: entry.totalClicks,
+      };
     });
   }, [days, objectiveIndex, campaignId, adId]);
 
@@ -221,10 +280,16 @@ export function WeekdayPerformanceChart({
       const inBand = weekdays.filter((w) => band.weekdays.includes(w.weekday));
       const spend = inBand.reduce((sum, w) => sum + w.spend, 0);
       const leads = inBand.reduce((sum, w) => sum + w.leads, 0);
+      const reach = inBand.reduce((sum, w) => sum + w.reach, 0);
+      const impressions = inBand.reduce((sum, w) => sum + w.impressions, 0);
+      const totalClicks = inBand.reduce((sum, w) => sum + w.totalClicks, 0);
       return {
         ...band,
         spend,
         leads,
+        reach,
+        impressions,
+        totalClicks,
         cpl: leads > 0 ? spend / leads : null,
         share: totalSpend > 0 ? spend / totalSpend : 0,
       };
@@ -292,7 +357,7 @@ export function WeekdayPerformanceChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-2 pb-2">
+      <CardHeader className="flex flex-col gap-4 pb-2">
         <div className="flex flex-row flex-wrap items-start justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">Qué día de la semana rinde mejor</CardTitle>
 
@@ -463,16 +528,22 @@ export function WeekdayPerformanceChart({
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-1.5 pr-4 font-medium">Franja</th>
+                    <th className="py-1.5 pr-4 font-medium">Alcance</th>
+                    <th className="py-1.5 pr-4 font-medium">Impresiones</th>
+                    <th className="py-1.5 pr-4 font-medium">Clicks</th>
                     <th className="py-1.5 pr-4 font-medium">Inversión</th>
-                    <th className="py-1.5 pr-4 font-medium">% del total</th>
-                    <th className="py-1.5 pr-4 font-medium">Contactos</th>
-                    <th className="py-1.5 font-medium">Costo/contacto</th>
+                    <th className="py-1.5 pr-4 font-medium">% Inv.</th>
+                    <th className="py-1.5 pr-4 font-medium">Resultados</th>
+                    <th className="py-1.5 font-medium">Costo por Resultado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bands.map((band) => (
                     <tr key={band.label} className="border-b border-border/60 last:border-0">
                       <td className="py-2 pr-4 font-medium text-foreground">{band.label}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.reach)}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.impressions)}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.totalClicks)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatCurrency(band.spend, currency)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatPercent(band.share)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.leads)}</td>
