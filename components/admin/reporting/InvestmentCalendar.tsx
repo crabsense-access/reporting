@@ -163,6 +163,9 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
     [monthOptions, selectedMonth]
   );
   const isCurrentMonth = selectedMonth === monthOptions[0]!.value;
+  // Mes anterior (ej. agosto mientras estamos en septiembre) — el único, además del actual, que
+  // por ahora se puede elegir (ver el `disabled` del <option> más abajo).
+  const previousMonthValue = monthOptions[1]!.value;
 
   useEffect(() => {
     let cancelled = false;
@@ -457,15 +460,19 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           <select
             value={selectedMonth}
             onChange={(event) => setSelectedMonth(event.target.value)}
-            title="Por el momento sólo se puede ver el mes en curso — los meses anteriores están grisados"
+            title="Por el momento sólo se pueden ver el mes en curso y el mes anterior — el resto está grisado"
             className="h-9 w-fit rounded-md border border-input bg-background px-2.5 text-lg font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {monthOptions.map((opt) => (
-              // Por ahora, a pedido de Martín, sólo se puede ELEGIR el mes en curso (el primero
-              // de la lista) — el resto se listan igual (para que se vea qué meses existen) pero
-              // grisados y sin poder seleccionarlos (sacar este `disabled` cuando se habilite de
-              // nuevo la selección de mes).
-              <option key={opt.value} value={opt.value} disabled={opt.value !== monthOptions[0]!.value}>
+              // Por ahora, a pedido de Martín, sólo se pueden ELEGIR el mes en curso y el
+              // anterior (agosto, mientras estamos en septiembre) — el resto se listan igual
+              // (para que se vea qué meses existen) pero grisados y sin poder seleccionarlos
+              // (sacar este `disabled` cuando se habilite de nuevo la selección de mes completa).
+              <option
+                key={opt.value}
+                value={opt.value}
+                disabled={opt.value !== monthOptions[0]!.value && opt.value !== previousMonthValue}
+              >
                 {opt.label}
               </option>
             ))}
