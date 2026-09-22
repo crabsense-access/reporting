@@ -510,65 +510,42 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
               </div>
               {monthlyBudget && <BudgetBar spent={monthTotal} budget={monthlyBudget} currency={currency} showBudgetLabel />}
 
-              <div className="grid grid-cols-1 gap-6 border-t border-border pt-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-bold text-muted-foreground">Leads</span>
-                    <span className="text-2xl font-semibold text-foreground">{formatNumber(monthLeads)}</span>
-                  </div>
-                  <TypeColumnChart
-                    title="Leads por tipo"
-                    items={visibleObjectiveTotals.map((o) => ({
-                      key: String(o.index),
-                      label: o.label,
-                      value: o.leads,
-                      color: objectiveColor(o.index),
-                    }))}
-                    formatValue={(v) => formatNumber(v)}
-                  />
+              {/* Una scorecard POR TIPO de Resultado (Objetivo) en vez de las 3 fijas de antes
+                  (Leads/CPL/Resultados) — a pedido de Martín. Cada una lleva su valor, el Costo
+                  por Resultado de ESE tipo, y su propia tendencia diaria. Sólo entran acá los
+                  Objetivos con al menos 1 Resultado este mes (visibleObjectiveTotals), igual que
+                  el resto del tablero. En filas de a 4 (ROW_SIZE más abajo); si la última fila
+                  queda incompleta (1, 2 o 3 tarjetas), esas tarjetas se reparten el ancho
+                  completo por igual en vez de quedar angostas — por eso el grid de cada fila usa
+                  su propio gridTemplateColumns según cuántas tarjetas tiene, no uno fijo de 4. */}
+              {visibleObjectiveTotals.length === 0 ? (
+                <p className="border-t border-border pt-3 text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
+              ) : (
+                <div className="flex flex-col gap-6 border-t border-border pt-3">
+                  {chunk(visibleObjectiveTotals, RESULT_SCORECARD_ROW_SIZE).map((row, rowIndex) => (
+                    <div
+                      key={rowIndex}
+                      className="grid gap-6"
+                      style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+                    >
+                      {row.map((o) => (
+                        <div key={o.index} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-bold text-muted-foreground">{o.label}</span>
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                              <span className="text-2xl font-semibold text-foreground">{formatNumber(o.leads)}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {o.leads > 0 ? `${formatCurrency(o.cpl, currency, 2)} por resultado` : "s/d por resultado"}
+                              </span>
+                            </div>
+                          </div>
+                          <DailyTypeBarChart days={data?.days ?? []} objectiveIndex={o.index} color={objectiveColor(o.index)} />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
-                <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-bold text-muted-foreground">CPL</span>
-                    <span className="text-2xl font-semibold text-foreground">
-                      {monthLeads > 0 ? formatCurrency(monthTotal / monthLeads, currency, 2) : "s/d"}
-                    </span>
-                  </div>
-                  <TypeColumnChart
-                    title="CPL por tipo"
-                    items={visibleObjectiveTotals.map((o) => ({
-                      key: String(o.index),
-                      label: o.label,
-                      value: o.cpl,
-                      color: objectiveColor(o.index),
-                    }))}
-                    formatValue={(v) => (v > 0 ? formatCurrency(v, currency, 2) : "0")}
-                  />
-                </div>
-                {/* "Resultados": el conteo que matchea el evento configurado en cada Objetivo (ver
-                    lib/reporting/metaInvestmentData.ts) — hoy coincide numéricamente con "Leads"
-                    porque los Objetivos de este cliente son todos de generación de leads, pero es
-                    la misma noción de "Resultado" de Meta Ads aplicada a CUALQUIER Objetivo (no
-                    asume que el evento configurado sea necesariamente un lead). A pedido de
-                    Martín, lleva además la tendencia diaria (chica) de esta métrica. */}
-                <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-sm font-bold text-muted-foreground">Resultados</span>
-                    <span className="text-2xl font-semibold text-foreground">{formatNumber(monthLeads)}</span>
-                  </div>
-                  <TypeColumnChart
-                    title="Resultados por tipo"
-                    items={visibleObjectiveTotals.map((o) => ({
-                      key: String(o.index),
-                      label: o.label,
-                      value: o.leads,
-                      color: objectiveColor(o.index),
-                    }))}
-                    formatValue={(v) => formatNumber(v)}
-                  />
-                  <DailyResultsMiniChart days={data?.days ?? []} objectiveLabels={data?.objectiveLabels ?? []} />
-                </div>
-              </div>
+              )}
 
               <div className="flex flex-col gap-2 border-t border-border pt-3">
                 <span className="text-lg font-bold text-foreground">Resumen ejecutivo</span>
@@ -666,85 +643,41 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
   );
 }
 
-/** Gráfico de columnas: un tipo de campaña por columna (eje X) y su valor como altura de la barra (eje Y), con el valor mostrado arriba de cada barra. */
-interface TypeColumnItem {
-  key: string;
-  label: string;
-  value: number;
-  color: string;
-}
+/** Cuántas scorecards de Resultado entran por fila (ver el grid más arriba). */
+const RESULT_SCORECARD_ROW_SIZE = 4;
 
-/** Gráfico de columnas dinámico: una columna por Objetivo con leads > 0 este mes (los que no
- * tuvieron ningún lead simplemente no aparecen — ver visibleObjectiveTotals más arriba), en vez
- * de las 3 columnas fijas de antes. */
-function TypeColumnChart({
-  title,
-  items,
-  formatValue,
-}: {
-  title: string;
-  items: TypeColumnItem[];
-  formatValue: (value: number) => string;
-}) {
-  if (items.length === 0) {
-    return (
-      <div className="flex flex-col gap-2">
-        <span className="text-xs text-muted-foreground">{title}</span>
-        <p className="text-xs text-muted-foreground">Todavía no hay leads este mes.</p>
-      </div>
-    );
+/** Parte `items` en grupos de a lo sumo `size`, en orden. El último grupo puede quedar incompleto. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const groups: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    groups.push(items.slice(i, i + size));
   }
-
-  const max = Math.max(...items.map((item) => item.value), 1);
-  const columns = { gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` };
-
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-xs text-muted-foreground">{title}</span>
-      <div className="grid items-end gap-3" style={{ height: 110, ...columns }}>
-        {items.map((item) => {
-          const heightPct = item.value > 0 ? Math.max(6, (item.value / max) * 100) : 0;
-          return (
-            <div key={item.key} className="flex h-full flex-col items-center justify-end gap-1">
-              <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-foreground">{formatValue(item.value)}</span>
-              <div className="w-full rounded-t-sm" style={{ height: `${heightPct}%`, backgroundColor: item.color }} />
-            </div>
-          );
-        })}
-      </div>
-      <div className="grid gap-3 border-t border-border pt-1.5" style={columns}>
-        {items.map((item) => (
-          <span key={item.key} className="text-center text-[10px] leading-tight text-muted-foreground">
-            {item.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+  return groups;
 }
 
 /**
- * Mini gráfico de barras apiladas por día, para la tendencia diaria de "Resultados" dentro de su
- * propia scorecard (ver el grid de Leads/CPL/Resultados más arriba) — versión chica de la misma
- * idea que LeadsByTypeTrendChart.tsx (barras apiladas por Objetivo), sin ejes ni leyenda propia:
- * los colores y las etiquetas de cada Objetivo ya se ven arriba, en el TypeColumnChart de la
- * misma tarjeta, así que acá alcanza con el tooltip al pasar el mouse para identificar cada tipo.
+ * Mini gráfico de barras diario de UN solo Objetivo (un color, sin apilar) — la tendencia diaria
+ * dentro de la scorecard de ese tipo de Resultado (ver el grid más arriba). Sin ejes ni leyenda
+ * propia: el color y el nombre del tipo ya están en el encabezado de la misma tarjeta: acá
+ * alcanza con el tooltip al pasar el mouse para leer el valor de un día puntual.
  */
-function DailyResultsMiniChart({
+function DailyTypeBarChart({
   days,
-  objectiveLabels,
+  objectiveIndex,
+  color,
 }: {
   days: DailyRealTotals[];
-  objectiveLabels: string[];
+  objectiveIndex: number;
+  color: string;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  if (days.length === 0 || objectiveLabels.length === 0) return null;
+  if (days.length === 0) return null;
 
-  const dayTotals = days.map((d) => d.objectiveLeads.reduce((sum, v) => sum + (v ?? 0), 0));
-  const max = Math.max(...dayTotals, 1);
+  const values = days.map((d) => d.objectiveLeads[objectiveIndex] ?? 0);
+  const max = Math.max(...values, 1);
   const hovered = hoverIndex !== null ? days[hoverIndex] : null;
-  const hoveredTotal = hoverIndex !== null ? (dayTotals[hoverIndex] ?? 0) : 0;
+  const hoveredValue = hoverIndex !== null ? (values[hoverIndex] ?? 0) : 0;
   // Evita que el tooltip se corte contra el borde derecho de la tarjeta cuando se pasa el mouse
   // por los últimos días del mes.
   const tooltipFromRightEdge = hoverIndex !== null && hoverIndex > days.length * 0.7;
@@ -756,29 +689,20 @@ function DailyResultsMiniChart({
         {hovered && (
           <div
             className={cn(
-              "pointer-events-none absolute bottom-full z-10 mb-1.5 flex flex-col gap-0.5 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1.5 text-[11px] shadow-md",
+              "pointer-events-none absolute bottom-full z-10 mb-1.5 flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-background px-2 py-1.5 text-[11px] shadow-md",
               tooltipFromRightEdge ? "-translate-x-full" : ""
             )}
             style={{ left: `${(hoverIndex! / Math.max(days.length - 1, 1)) * 100}%` }}
           >
             <span className="font-semibold text-foreground">{format(parseISO(hovered.date), "d MMM", { locale: es })}</span>
-            {objectiveLabels.map((label, i) => {
-              const value = hovered.objectiveLeads[i] ?? 0;
-              if (value <= 0) return null;
-              return (
-                <span key={i} className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: objectiveColor(i) }} />
-                  {label}: <span className="font-medium text-foreground">{formatNumber(value)}</span>
-                </span>
-              );
-            })}
-            {hoveredTotal <= 0 && <span className="text-muted-foreground">Sin resultados</span>}
+            <span className="text-muted-foreground">·</span>
+            <span className="font-medium text-foreground">{formatNumber(hoveredValue)}</span>
           </div>
         )}
         <div className="flex h-12 items-end gap-px">
           {days.map((day, i) => {
-            const total = dayTotals[i] ?? 0;
-            const heightPct = total > 0 ? Math.max(6, (total / max) * 100) : 2;
+            const value = values[i] ?? 0;
+            const heightPct = value > 0 ? Math.max(6, (value / max) * 100) : 2;
             return (
               <div
                 key={day.date}
@@ -787,15 +711,9 @@ function DailyResultsMiniChart({
                 onMouseLeave={() => setHoverIndex(null)}
               >
                 <div
-                  className="flex w-full flex-col-reverse overflow-hidden rounded-t-[2px] bg-muted"
-                  style={{ height: `${heightPct}%` }}
-                >
-                  {total > 0 &&
-                    day.objectiveLeads.map((value, ti) => {
-                      if (!value) return null;
-                      return <div key={ti} style={{ height: `${(value / total) * 100}%`, backgroundColor: objectiveColor(ti) }} />;
-                    })}
-                </div>
+                  className={cn("w-full rounded-t-[2px]", value <= 0 && "bg-muted")}
+                  style={value > 0 ? { height: `${heightPct}%`, backgroundColor: color } : { height: `${heightPct}%` }}
+                />
               </div>
             );
           })}
