@@ -391,22 +391,22 @@ export function AudienceAnalysis({
 
                   <span className="text-xs font-semibold text-foreground">{ageRange}</span>
 
-                  <div className="flex w-full flex-col items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-2 text-center">
-                    <div className="flex flex-col items-center">
+                  <div className="flex w-full flex-col divide-y divide-border rounded-md border border-border bg-muted/40 px-2 py-1 text-center">
+                    <div className="flex flex-col items-center gap-0.5 py-2">
                       <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.leads)}</span>
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultados</span>
                     </div>
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center gap-0.5 py-2">
                       <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">
                         {combinedCpl !== null ? formatCurrency(combinedCpl, currency, 2) : "0"}
                       </span>
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Costo por Resultado</span>
                     </div>
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center gap-0.5 py-2">
                       <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.reach)}</span>
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Alcance</span>
                     </div>
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center gap-0.5 py-2">
                       <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.impressions)}</span>
                       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Impresiones</span>
                     </div>

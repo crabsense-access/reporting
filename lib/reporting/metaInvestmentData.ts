@@ -409,7 +409,10 @@ async function fetchAudienceSegments(
   for (const row of insights.data) {
     const gender = row.gender ? META_GENDER_TO_LABEL[row.gender] : undefined;
     const ageRange = row.age;
-    if (!gender || !ageRange) continue; // "unknown" u otro valor sin mapear: se descarta.
+    // "unknown" (edad no identificada por Meta) u otro valor sin mapear: se descarta — a pedido de
+    // Martín, no tiene sentido un recuadro de "Quién responde a los anuncios" para gente sin edad
+    // conocida.
+    if (!gender || !ageRange || ageRange.toLowerCase() === "unknown") continue;
 
     const key = `${gender}|${ageRange}`;
     let entry = bySegment.get(key);
