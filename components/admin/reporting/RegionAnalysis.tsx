@@ -19,7 +19,7 @@
 //
 // TRES combos filtran el ranking y los hallazgos, en ese orden: TIPO DE RESULTADO, CAMPAÑA y
 // ANUNCIO (mismo patrón en cascada que InvestmentTrendChart — ver visibleAdsForCampaign y
-// resolveAdFilteredTotals en lib/reporting/adFilter.ts), con "Todos los tipos" como opción del
+// resolveAdFilteredTotals en lib/reporting/adFilter.ts), con "Todos los Resultados" como opción del
 // primero (antes forzaba un tipo puntual siempre elegido — a pedido de Martín, ahora es igual al
 // resto de los gráficos con este combo) y sus valores con el nombre REAL del tipo de Resultado
 // como lo llama Meta Ads Manager (ver objectiveOptions más abajo y resolveResultLabel en
@@ -142,7 +142,7 @@ export function RegionAnalysis({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
@@ -164,14 +164,14 @@ export function RegionAnalysis({
   // mismo criterio que en AudienceAnalysis.tsx.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // a "Todos los tipos" en vez de quedarse mostrando un ranking vacío.
+  // a "Todos los Resultados" en vez de quedarse mostrando un ranking vacío.
   useEffect(() => {
     if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
       setObjectiveIndex(null);
     }
   }, [objectiveOptions, objectiveIndex]);
 
-  // Con "Todos los tipos" no hay un Objetivo puntual para colorear — se usa el mismo azul de
+  // Con "Todos los Resultados" no hay un Objetivo puntual para colorear — se usa el mismo azul de
   // "Eficiente" (TIER_COLOR) como acento neutro, igual de espíritu que LINE_COLOR/COSTO_DEFAULT_COLOR
   // en el resto de los gráficos con este combo.
   const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : TIER_COLOR.eficiente;
@@ -185,7 +185,7 @@ export function RegionAnalysis({
         const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount) : null;
         const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
         const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
-        // Con "Todos los tipos" (objectiveIndex null) se suman TODOS los índices — mismo criterio
+        // Con "Todos los Resultados" (objectiveIndex null) se suman TODOS los índices — mismo criterio
         // "blended" que el resto de los gráficos con este combo (ver InvestmentTrendChart.tsx).
         const leads =
           objectiveIndex !== null ? (leadsSource?.[objectiveIndex] ?? 0) : (leadsSource ?? []).reduce((sum, v) => sum + v, 0);
@@ -218,7 +218,7 @@ export function RegionAnalysis({
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
 
     return {
-      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los Resultados",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -261,7 +261,7 @@ export function RegionAnalysis({
             onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="all">Todos los tipos</option>
+            <option value="all">Todos los Resultados</option>
             {objectiveOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 {o.label}

@@ -1,7 +1,7 @@
 "use client";
 
 // "Quién responde a los anuncios": leads, inversión y CPL del mes por género y rango etario, para
-// el Objetivo elegido en el combo, con "Todos los tipos" (blended, suma de todos los índices) como
+// el Objetivo elegido en el combo, con "Todos los Resultados" (blended, suma de todos los índices) como
 // opción por defecto — mismo patrón que el resto de los gráficos con este combo (ver
 // RegionAnalysis.tsx/LeadsByTypeTrendChart.tsx). El combo muestra el nombre REAL del tipo de
 // Resultado como lo llama Meta Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
@@ -60,7 +60,7 @@ function compareAgeRanges(a: string, b: string): number {
   return ia - ib;
 }
 
-// Valor de un Objetivo puntual (index) o, con "Todos los tipos" (index null), la suma blended de
+// Valor de un Objetivo puntual (index) o, con "Todos los Resultados" (index null), la suma blended de
 // todos los índices — mismo criterio que el resto de los gráficos con este combo.
 function valueAt(arr: number[], index: number | null): number {
   return index !== null ? (arr[index] ?? 0) : arr.reduce((sum, v) => sum + v, 0);
@@ -68,7 +68,7 @@ function valueAt(arr: number[], index: number | null): number {
 
 const BAR_AREA_HEIGHT = 112; // px — alto del área de barras (sin contar el recuadro de debajo)
 
-// Color de acento con "Todos los tipos" elegido (sin un Objetivo puntual para colorear) — mismo
+// Color de acento con "Todos los Resultados" elegido (sin un Objetivo puntual para colorear) — mismo
 // valor que CPL_DEFAULT_COLOR/COSTO_DEFAULT_COLOR en el resto de los gráficos con este combo.
 const OBJECTIVE_DEFAULT_COLOR = "#d97706"; // amber-600
 
@@ -113,7 +113,7 @@ export function AudienceAnalysis({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
@@ -135,7 +135,7 @@ export function AudienceAnalysis({
   // que las opciones no cambian según el filtro elegido — mismo criterio que en InvestmentTrendChart.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // a "Todos los tipos" en vez de quedarse mostrando un desglose vacío.
+  // a "Todos los Resultados" en vez de quedarse mostrando un desglose vacío.
   useEffect(() => {
     if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
       setObjectiveIndex(null);
@@ -223,7 +223,7 @@ export function AudienceAnalysis({
     const totalLeads = typeLeads > 0 ? typeLeads : 1;
 
     return {
-      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los Resultados",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       leadsTotales: formatNumber(typeLeads),
@@ -276,7 +276,7 @@ export function AudienceAnalysis({
             onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="all">Todos los tipos</option>
+            <option value="all">Todos los Resultados</option>
             {objectiveOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 {o.label}

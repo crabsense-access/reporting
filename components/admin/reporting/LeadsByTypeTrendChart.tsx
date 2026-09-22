@@ -3,10 +3,10 @@
 // Gráfico de tendencia diaria de Leads segmentados por Objetivo (barras apiladas por Objetivo,
 // eje Y izquierdo) — mismo patrón que InvestmentTrendChart (barras + línea, doble eje, SVG a
 // mano) pero con Leads como métrica principal y el CPL del Objetivo elegido como métrica
-// secundaria (línea, eje Y derecho). El combo de Tipo de Resultado (con "Todos los tipos" como
+// secundaria (línea, eje Y derecho). El combo de Tipo de Resultado (con "Todos los Resultados" como
 // default, igual que el resto de los gráficos con este combo) sólo afecta la LÍNEA de CPL: las
 // barras apiladas siempre muestran TODOS los Objetivos visibles a la vez, elegido lo que se elija
-// — con "Todos los tipos" la línea pasa a mostrar el CPL blended (gasto total / leads totales del
+// — con "Todos los Resultados" la línea pasa a mostrar el CPL blended (gasto total / leads totales del
 // día, mismo criterio que InvestmentTrendChart). El tooltip siempre muestra el desglose de
 // cantidad y CPL de todos los Objetivos visibles, sea cual sea el elegido para la línea. Va
 // debajo de "Inversión y rendimiento por día".
@@ -114,7 +114,7 @@ function AvgPill({ xRight, yMid, label, fill }: { xRight: number; yMid: number; 
 const POINT_PILL_HEIGHT = 19;
 const POINT_PILL_GAP = 9;
 
-// Color de la línea/pill de CPL con "Todos los tipos" elegido (sin un Objetivo puntual para
+// Color de la línea/pill de CPL con "Todos los Resultados" elegido (sin un Objetivo puntual para
 // colorear) — mismo valor que COSTO_DEFAULT_COLOR en InvestmentTrendChart.tsx, para que el
 // acento de "blended" se vea igual en los dos gráficos.
 const CPL_DEFAULT_COLOR = "#d97706"; // amber-600
@@ -167,7 +167,7 @@ export function LeadsByTypeTrendChart({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -208,7 +208,7 @@ export function LeadsByTypeTrendChart({
   }, [objectiveOptions]);
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // a "Todos los tipos" en vez de quedarse mostrando un CPL vacío.
+  // a "Todos los Resultados" en vez de quedarse mostrando un CPL vacío.
   useEffect(() => {
     if (objectiveIndex !== null && !visibleIndexes.includes(objectiveIndex)) {
       setObjectiveIndex(null);
@@ -267,7 +267,7 @@ export function LeadsByTypeTrendChart({
 
   const cplSeries = points.map((p) => {
     if (!p.hasData) return null;
-    // Con "Todos los tipos" (objectiveIndex null), CPL blended: gasto total / leads totales del
+    // Con "Todos los Resultados" (objectiveIndex null), CPL blended: gasto total / leads totales del
     // día — mismo criterio que InvestmentTrendChart.tsx.
     const leads = objectiveIndex !== null ? (p.objectiveLeads[objectiveIndex] ?? 0) : p.totalLeads;
     const spend =
@@ -396,7 +396,7 @@ export function LeadsByTypeTrendChart({
             onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="all">Todos los tipos</option>
+            <option value="all">Todos los Resultados</option>
             {visibleIndexes.map((idx) => (
               <option key={idx} value={idx}>
                 {labelByIndex[idx]}

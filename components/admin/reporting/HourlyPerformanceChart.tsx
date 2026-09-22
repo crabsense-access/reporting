@@ -19,7 +19,7 @@
 // "hourly_stats_aggregated_by_advertiser_time_zone" a nivel anuncio, matcheado por Objetivo con
 // el mismo criterio que el resto de la página.
 //
-// A pedido de Martín este gráfico SÍ suma un combo de "Tipo de Resultado" (con "Todos los tipos"
+// A pedido de Martín este gráfico SÍ suma un combo de "Tipo de Resultado" (con "Todos los Resultados"
 // combinados como default, igual que antes) además de los de CAMPAÑA y ANUNCIO — mismo patrón en
 // cascada de 3 combos que InvestmentTrendChart.tsx (nullable objectiveIndex/campaignId/adId, "todos"
 // como opción real, no un índice forzado — ver visibleAdsForCampaign/resolveAdFilteredTotals en
@@ -113,7 +113,7 @@ export function HourlyPerformanceChart({
   ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
@@ -155,7 +155,7 @@ export function HourlyPerformanceChart({
           : (objectiveLeadsSource ?? []).reduce((sum, v) => sum + v, 0)
         : 0;
       // Costo por Contacto: con un tipo puntual elegido, el gasto atribuido a ESE tipo; con
-      // "Todos los tipos", el gasto total de la hora/campaña/anuncio (mismo criterio "blended" que
+      // "Todos los Resultados", el gasto total de la hora/campaña/anuncio (mismo criterio "blended" que
       // el resto de la página).
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
       return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null };
@@ -209,7 +209,7 @@ export function HourlyPerformanceChart({
 
   const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
-  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los Resultados";
   const lineColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : LINE_COLOR;
 
   const insightMetrics = useMemo(() => {
@@ -274,7 +274,7 @@ export function HourlyPerformanceChart({
               onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <option value="all">Todos los tipos</option>
+              <option value="all">Todos los Resultados</option>
               {objectiveOptions.map((o) => (
                 <option key={o.index} value={o.index}>
                   {o.label}

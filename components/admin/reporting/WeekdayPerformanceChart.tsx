@@ -18,7 +18,7 @@
 // inversión, participación, contactos y costo por contacto — y el insight de Claude a partir de
 // esos mismos números.
 //
-// A pedido de Martín, mismo combo de 3 filtros (Tipo de Resultado, con "Todos los tipos" como
+// A pedido de Martín, mismo combo de 3 filtros (Tipo de Resultado, con "Todos los Resultados" como
 // default + Campaña + Anuncio en cascada) que HourlyPerformanceChart.tsx — ver
 // visibleAdsForCampaign/resolveAdFilteredTotals en lib/reporting/adFilter.ts. Cada día se resuelve
 // primero contra SU desglose por anuncio (day.byAd) antes de agruparlo en su día de la semana.
@@ -127,7 +127,7 @@ export function WeekdayPerformanceChart({
   ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
@@ -176,7 +176,7 @@ export function WeekdayPerformanceChart({
       const leads =
         objectiveIndex !== null ? (objectiveLeadsSource?.[objectiveIndex] ?? 0) : sumObjectiveLeads(objectiveLeadsSource ?? []);
       // Costo por Contacto: con un tipo puntual elegido, el gasto atribuido a ESE tipo; con
-      // "Todos los tipos", el gasto total del día/campaña/anuncio (mismo criterio "blended" que el
+      // "Todos los Resultados", el gasto total del día/campaña/anuncio (mismo criterio "blended" que el
       // resto de la página).
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
       entry.spend += spend;
@@ -236,7 +236,7 @@ export function WeekdayPerformanceChart({
 
   const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
-  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los Resultados";
   const lineColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : LINE_COLOR;
 
   const insightMetrics = useMemo(() => {
@@ -303,7 +303,7 @@ export function WeekdayPerformanceChart({
               onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <option value="all">Todos los tipos</option>
+              <option value="all">Todos los Resultados</option>
               {objectiveOptions.map((o) => (
                 <option key={o.index} value={o.index}>
                   {o.label}

@@ -11,7 +11,7 @@
 // métrica de eficiencia" por día.
 //
 // DINÁMICO por Objetivo (índice 0..N-1, ver lib/reporting/metaInvestmentData.ts): un combo de
-// "Tipo de Resultado" (con "Todos los tipos" por default) filtra qué se grafica, y dos combos más
+// "Tipo de Resultado" (con "Todos los Resultados" por default) filtra qué se grafica, y dos combos más
 // de CAMPAÑA y ANUNCIO filtran AMBAS series (barras de Cantidad y línea de Costo) — el de Anuncio
 // se acota en cascada a la Campaña elegida (ver visibleAdsForCampaign en lib/reporting/adFilter.ts)
 // y, sin Campaña elegida, lista todos los anuncios con gasto este mes. Los 3 filtros componen
@@ -73,7 +73,7 @@ const INNER_W = VIEW_W - PAD.left - PAD.right;
 const INNER_H = VIEW_H - PAD.top - PAD.bottom;
 const TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 
-// Color del Costo por Resultado cuando no hay un tipo puntual elegido ("Todos los tipos") — con
+// Color del Costo por Resultado cuando no hay un tipo puntual elegido ("Todos los Resultados") — con
 // un tipo elegido, la línea toma el color de ESE Objetivo (objectiveColor) para identificarse con
 // el resto del tablero (ver secondaryColor más abajo). Las barras de Cantidad usan siempre el
 // primary del tema (fill-primary / fill-primary·45), igual que el resto de las barras del
@@ -168,7 +168,7 @@ export function InvestmentTrendChart({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -177,7 +177,7 @@ export function InvestmentTrendChart({
 
   // El tipo/campaña/anuncio elegidos son específicos del mes que se está mirando (pueden no tener
   // datos en el mes nuevo) — si al cambiar de mes la selección ya no está entre las opciones
-  // vigentes, se cae de vuelta a "Todos los tipos"/"Todas las campañas"/"Todos los anuncios" en
+  // vigentes, se cae de vuelta a "Todos los Resultados"/"Todas las campañas"/"Todos los anuncios" en
   // vez de quedar en un estado que ya no existe.
   useEffect(() => {
     if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
@@ -229,7 +229,7 @@ export function InvestmentTrendChart({
           : (objectiveLeadsSource ?? []).reduce((sum, v) => sum + v, 0)
         : 0;
       // Costo por Resultado: con un tipo puntual elegido, el gasto atribuido a ESE tipo
-      // (objectiveSpend[i]); con "Todos los tipos", el gasto TOTAL del día/campaña/anuncio sobre
+      // (objectiveSpend[i]); con "Todos los Resultados", el gasto TOTAL del día/campaña/anuncio sobre
       // el total de Resultados matcheados — mismo criterio "blended" que ya usa el resumen del
       // mes (monthTotal/monthLeads en InvestmentCalendar.tsx).
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
@@ -285,7 +285,7 @@ export function InvestmentTrendChart({
   const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
   const secondaryColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : COSTO_DEFAULT_COLOR;
-  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los Resultados";
   const cantidadLegend = `Cantidad · ${tipoLabel}`;
   const costoLegend = `Costo por Resultado · ${tipoLabel}`;
 
@@ -361,7 +361,7 @@ export function InvestmentTrendChart({
               onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <option value="all">Todos los tipos</option>
+              <option value="all">Todos los Resultados</option>
               {objectiveOptions.map((o) => (
                 <option key={o.index} value={o.index}>
                   {o.label}

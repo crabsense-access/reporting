@@ -157,7 +157,7 @@ export function VideoRetentionChart({
   ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
@@ -248,7 +248,7 @@ export function VideoRetentionChart({
     const maxP25 = p25Values.length > 0 ? Math.max(...p25Values) : 0;
 
     return {
-      tipoDeResultado: selectedObjectiveLabel ?? "Todos los tipos",
+      tipoDeResultado: selectedObjectiveLabel ?? "Todos los Resultados",
       campania: selectedCampaignName ?? "Todas las campañas",
       reproduccionesTotales: formatNumber(totalVideoPlays),
       retencion25Rango: `${formatPercent(minP25 / 100)} – ${formatPercent(maxP25 / 100)}`,
@@ -291,7 +291,7 @@ export function VideoRetentionChart({
               onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
-              <option value="all">Todos los tipos</option>
+              <option value="all">Todos los Resultados</option>
               {objectiveOptions.map((o) => (
                 <option key={o.index} value={o.index}>
                   {o.label}

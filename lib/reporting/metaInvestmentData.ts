@@ -228,7 +228,7 @@ export interface RealInvestmentCalendarData {
 export interface HourlyTotals {
   /** Hora del día en el huso horario de la cuenta publicitaria, 0-23. */
   hour: number;
-  /** Inversión TOTAL de esa hora (todas las filas, matcheen o no algún Objetivo) — usado para "Todos los tipos"; con un Objetivo puntual elegido se usa objectiveSpend[i] en su lugar (ver HourlyPerformanceChart.tsx). */
+  /** Inversión TOTAL de esa hora (todas las filas, matcheen o no algún Objetivo) — usado para "Todos los Resultados"; con un Objetivo puntual elegido se usa objectiveSpend[i] en su lugar (ver HourlyPerformanceChart.tsx). */
   spend: number;
   /** Objetivos configurados, mismo criterio de matching e índice que audienceSegments/regionSegments — a pedido de Martín, HourlyPerformanceChart ahora también filtra por Tipo de Resultado (antes combinaba todos los Objetivos en un único total). */
   objectiveLeads: number[];

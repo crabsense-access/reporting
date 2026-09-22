@@ -14,11 +14,8 @@
 // Cada fila muestra Inversión, % de inversión, Resultados y Costo por Resultado en columnas
 // alineadas a la derecha (separadas entre sí) junto a la barra de eficiencia — la barra ocupa sólo
 // el ancho de la columna de ubicación, no se mete debajo de las columnas numéricas — sin tabla de
-// detalle aparte. Los títulos de las últimas 2 columnas son dinámicos: con un Objetivo puntual
-// elegido muestran su nombre ("Clientes potenciales"/"Costo por Clientes potenciales" en vez de
-// "Resultados"/"Costo por Resultado"); con "Todos los tipos" quedan genéricos. El insight de Claude
-// va ANTES del gráfico (a diferencia del resto de la página, donde va después) — convención propia
-// de este gráfico, sin cambios.
+// detalle aparte. El insight de Claude va ANTES del gráfico (a diferencia del resto de la página,
+// donde va después) — convención propia de este gráfico, sin cambios.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchPlacementSegments — e
 // InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por ubicación
@@ -105,7 +102,7 @@ export function PlacementAnalysis({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
@@ -127,23 +124,17 @@ export function PlacementAnalysis({
   // mismo criterio que en AudienceAnalysis.tsx/RegionAnalysis.tsx.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
-  // a "Todos los tipos" en vez de quedarse mostrando un ranking vacío.
+  // a "Todos los Resultados" en vez de quedarse mostrando un ranking vacío.
   useEffect(() => {
     if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
       setObjectiveIndex(null);
     }
   }, [objectiveOptions, objectiveIndex]);
 
-  // Con "Todos los tipos" no hay un Objetivo puntual para colorear — se usa el mismo azul de
+  // Con "Todos los Resultados" no hay un Objetivo puntual para colorear — se usa el mismo azul de
   // "Eficiente" (TIER_COLOR) como acento neutro, igual de espíritu que en RegionAnalysis.tsx.
   const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : TIER_COLOR.eficiente;
   const hasFilter = campaignId !== null || adId !== null;
-
-  // Títulos dinámicos de las últimas 2 columnas: con un Objetivo puntual elegido, muestran su
-  // nombre real en vez del genérico "Resultados"/"Costo por Resultado".
-  const selectedLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
-  const resultadosHeader = selectedLabel ?? "Resultados";
-  const costoPorResultadoHeader = selectedLabel ? `Costo por ${selectedLabel}` : "Costo por Resultado";
 
   const rows = useMemo(() => {
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
@@ -152,7 +143,7 @@ export function PlacementAnalysis({
         const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount) : null;
         const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
         const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
-        // Con "Todos los tipos" (objectiveIndex null) se suman TODOS los índices — mismo criterio
+        // Con "Todos los Resultados" (objectiveIndex null) se suman TODOS los índices — mismo criterio
         // "blended" que el resto de los gráficos con este combo (ver RegionAnalysis.tsx).
         const leads =
           objectiveIndex !== null ? (leadsSource?.[objectiveIndex] ?? 0) : (leadsSource ?? []).reduce((sum, v) => sum + v, 0);
@@ -178,7 +169,7 @@ export function PlacementAnalysis({
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
 
     return {
-      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los Resultados",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -215,7 +206,7 @@ export function PlacementAnalysis({
             onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="all">Todos los tipos</option>
+            <option value="all">Todos los Resultados</option>
             {objectiveOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 {o.label}
@@ -282,8 +273,8 @@ export function PlacementAnalysis({
                 >
                   <span>Inversión</span>
                   <span>% Inv.</span>
-                  <span>{resultadosHeader}</span>
-                  <span>{costoPorResultadoHeader}</span>
+                  <span>Resultados</span>
+                  <span>Costo por Resultado</span>
                 </div>
               </div>
 
