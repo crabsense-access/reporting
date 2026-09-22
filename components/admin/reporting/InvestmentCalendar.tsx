@@ -97,11 +97,24 @@ interface AudienceSegmentTotals {
   byAd: Record<string, AdBreakdownEntry>;
 }
 
+interface RegionAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de RegionSegmentTotals más abajo — a pedido de Martín, para la tabla de
+   *  RegionAnalysis.tsx. Ningún otro segmento tiene estos 3 campos todavía. */
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
 interface RegionSegmentTotals {
   region: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
-  byAd: Record<string, AdBreakdownEntry>;
+  /** Alcance/impresiones/clics totales de la región — no varían por Tipo de Resultado, sólo por
+   *  Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  clicks: number;
+  byAd: Record<string, RegionAdBreakdownEntry>;
 }
 
 interface PlacementSegmentTotals {

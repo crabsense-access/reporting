@@ -247,20 +247,44 @@ export interface AudienceSegmentTotals {
   byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
+/**
+ * Desglose por anuncio de RegionSegmentTotals — igual al shared AdBreakdownEntry (ver
+ * lib/reporting/adFilter.ts) más reach/impressions/clicks, que ningún otro segmento (audience/
+ * hourly/placement) tiene todavía, así que se define acá en vez de sumarlo al tipo compartido.
+ */
+export interface RegionAdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  reach: number;
+  impressions: number;
+  clicks: number;
+}
+
 export interface RegionSegmentTotals {
   /** Nombre de provincia/región tal cual lo devuelve Meta (ej. "Buenos Aires", "Cordoba"). */
   region: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones/clics TOTALES de esta región en el período — a diferencia de
+   *  objectiveLeads/objectiveSpend, no varían según el Tipo de Resultado elegido (ver comentario
+   *  de MetaRegionRow), sólo según el filtro de Campaña/Anuncio (ver byAd). */
+  reach: number;
+  impressions: number;
+  clicks: number;
   /**
    * Desglose de ESTE segmento por anuncio (clave = ad_id), mismo criterio que
    * DailyRealTotals.byAd — para los combos de Campaña/Anuncio de RegionAnalysis.tsx. Limitación
    * conocida (mismo espíritu que el bucket "Sin provincia asignada" — ver
    * withUnassignedRegionBucket más abajo): el pseudo-segmento "Sin provincia asignada" siempre
    * queda con byAd vacío, así que al filtrar por Campaña/Anuncio esos leads sin provincia no
-   * aparecen (en vez de reconciliarse, como sí se reconcilian en el total SIN filtro).
+   * aparecen (en vez de reconciliarse, como sí se reconcilian en el total SIN filtro) — mismo
+   * criterio para reach/impressions/clicks, que tampoco se reconcilian ahí (ver
+   * withUnassignedRegionBucket: no hay un total diario de alcance/impresiones para diferenciar
+   * contra lo asignado, a diferencia de leads/spend que sí salen de `days`).
    */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, RegionAdBreakdownEntry>;
 }
 
 export interface PlacementSegmentTotals {
@@ -307,6 +331,14 @@ interface MetaRegionRow {
   region?: string;
   campaign_id?: string;
   ad_id?: string;
+  /** Alcance/impresiones/clics de ESTA fila (región+anuncio) para el período pedido — a pedido de
+   *  Martín, para sumar estas 3 columnas a la tabla de "De dónde son los leads" (RegionAnalysis.tsx).
+   *  A diferencia de objectiveLeads/objectiveSpend, no se matchean por Objetivo: una impresión o un
+   *  clic no "es" de un tipo de Resultado puntual, así que quedan como totales de la región (y del
+   *  anuncio, en byAd), sin desglose por índice de Objetivo — ver RegionSegmentTotals. */
+  reach?: string;
+  impressions?: string;
+  clicks?: string;
 }
 
 interface MetaRegionInsightsResponse {
@@ -388,11 +420,12 @@ async function fetchRegionSegments(
     `${accountId}/insights`,
     {
       // Ver comentario de fetchAudienceSegments (mismo criterio: level "ad" + limit alto para
-      // poder armar byAd, con la misma limitación conocida de paginación).
+      // poder armar byAd, con la misma limitación conocida de paginación). reach/impressions/clicks
+      // sumados a pedido de Martín — ver MetaRegionRow.
       level: "ad",
       breakdowns: "region",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id",
+      fields: "spend,actions,campaign_id,ad_id,reach,impressions,clicks",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -406,17 +439,57 @@ async function fetchRegionSegments(
 
     let entry = byRegion.get(region);
     if (!entry) {
-      entry = { region, objectiveLeads: objectives.map(() => 0), objectiveSpend: objectives.map(() => 0), byAd: {} };
+      entry = {
+        region,
+        objectiveLeads: objectives.map(() => 0),
+        objectiveSpend: objectives.map(() => 0),
+        reach: 0,
+        impressions: 0,
+        clicks: 0,
+        byAd: {},
+      };
       byRegion.set(region, entry);
     }
 
     const spend = Number(row.spend ?? 0);
+    const reach = Number(row.reach ?? 0);
+    const impressions = Number(row.impressions ?? 0);
+    const clicks = Number(row.clicks ?? 0);
     const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
     }
-    addRowToByAd(entry.byAd, row.ad_id, row.campaign_id, spend, matched, objectives.length);
+    entry.reach += reach;
+    entry.impressions += impressions;
+    entry.clicks += clicks;
+
+    // No se usa el addRowToByAd compartido acá: su byAd no tiene reach/impressions/clicks (lo
+    // comparten fetchAudienceSegments/fetchHourlyTotals/fetchPlacementSegments, que no piden esos
+    // campos), así que se arma la entrada completa acá mismo con el shape de RegionAdBreakdownEntry.
+    if (row.ad_id && row.campaign_id) {
+      let adEntry = entry.byAd[row.ad_id];
+      if (!adEntry) {
+        adEntry = {
+          campaignId: row.campaign_id,
+          spend: 0,
+          objectiveLeads: Array.from({ length: objectives.length }, () => 0),
+          objectiveSpend: Array.from({ length: objectives.length }, () => 0),
+          reach: 0,
+          impressions: 0,
+          clicks: 0,
+        };
+        entry.byAd[row.ad_id] = adEntry;
+      }
+      adEntry.spend += spend;
+      if (matched) {
+        adEntry.objectiveLeads[matched.index] = (adEntry.objectiveLeads[matched.index] ?? 0) + matched.value;
+        adEntry.objectiveSpend[matched.index] = (adEntry.objectiveSpend[matched.index] ?? 0) + spend;
+      }
+      adEntry.reach += reach;
+      adEntry.impressions += impressions;
+      adEntry.clicks += clicks;
+    }
   }
 
   return Array.from(byRegion.values());
@@ -1000,7 +1073,18 @@ function withUnassignedRegionBucket(
     ...regionSegments,
     // byAd vacío a propósito: ver el comentario de RegionSegmentTotals.byAd más arriba (limitación
     // conocida, mismo espíritu que ya tenía este bucket antes del combo de Campaña/Anuncio).
-    { region: UNASSIGNED_REGION_LABEL, objectiveLeads: unassignedLeads, objectiveSpend: unassignedSpend, byAd: {} },
+    // reach/impressions/clicks en 0: a diferencia de leads/spend, `days` no trae un total diario de
+    // alcance/impresiones contra el cual reconciliar lo no asignado a ninguna provincia, así que
+    // este bucket sencillamente no las suma (mismo espíritu que byAd vacío).
+    {
+      region: UNASSIGNED_REGION_LABEL,
+      objectiveLeads: unassignedLeads,
+      objectiveSpend: unassignedSpend,
+      reach: 0,
+      impressions: 0,
+      clicks: 0,
+      byAd: {},
+    },
   ];
 }
 
@@ -1083,6 +1167,41 @@ function mergeAudienceSegments(a: AudienceSegmentTotals[], b: AudienceSegmentTot
   return Array.from(bySegment.values());
 }
 
+/** Igual que mergeByAd (ver arriba) pero para RegionAdBreakdownEntry — reach/impressions/clicks
+ *  no las tiene el shape compartido, así que RegionAnalysis.tsx necesita su propio merge. */
+function mergeRegionByAd(
+  a: Record<string, RegionAdBreakdownEntry>,
+  b: Record<string, RegionAdBreakdownEntry>
+): Record<string, RegionAdBreakdownEntry> {
+  const result: Record<string, RegionAdBreakdownEntry> = {};
+  for (const [adId, adEntry] of [...Object.entries(a), ...Object.entries(b)]) {
+    let existing = result[adId];
+    if (!existing) {
+      existing = {
+        campaignId: adEntry.campaignId,
+        spend: 0,
+        objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
+        objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
+        reach: 0,
+        impressions: 0,
+        clicks: 0,
+      };
+      result[adId] = existing;
+    }
+    existing.spend += adEntry.spend;
+    existing.reach += adEntry.reach;
+    existing.impressions += adEntry.impressions;
+    existing.clicks += adEntry.clicks;
+    adEntry.objectiveLeads.forEach((value, i) => {
+      existing!.objectiveLeads[i] = (existing!.objectiveLeads[i] ?? 0) + value;
+    });
+    adEntry.objectiveSpend.forEach((value, i) => {
+      existing!.objectiveSpend[i] = (existing!.objectiveSpend[i] ?? 0) + value;
+    });
+  }
+  return result;
+}
+
 /** Igual que mergeAudienceSegments pero por provincia/región. */
 function mergeRegionSegments(a: RegionSegmentTotals[], b: RegionSegmentTotals[]): RegionSegmentTotals[] {
   const byRegion = new Map<string, RegionSegmentTotals>();
@@ -1093,6 +1212,9 @@ function mergeRegionSegments(a: RegionSegmentTotals[], b: RegionSegmentTotals[])
         region: segment.region,
         objectiveLeads: [...segment.objectiveLeads],
         objectiveSpend: [...segment.objectiveSpend],
+        reach: segment.reach,
+        impressions: segment.impressions,
+        clicks: segment.clicks,
         byAd: segment.byAd,
       };
       byRegion.set(segment.region, entry);
@@ -1103,7 +1225,10 @@ function mergeRegionSegments(a: RegionSegmentTotals[], b: RegionSegmentTotals[])
       segment.objectiveSpend.forEach((value, i) => {
         entry!.objectiveSpend[i] = (entry!.objectiveSpend[i] ?? 0) + value;
       });
-      entry.byAd = mergeByAd(entry.byAd, segment.byAd);
+      entry.reach += segment.reach;
+      entry.impressions += segment.impressions;
+      entry.clicks += segment.clicks;
+      entry.byAd = mergeRegionByAd(entry.byAd, segment.byAd);
     }
   }
   return Array.from(byRegion.values());
@@ -1297,7 +1422,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v11") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v12") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1318,6 +1443,10 @@ function mergeRealInvestmentCalendarData(
  * withResultsOnlyEntities) — mismo campo, mismo tipo, pero el criterio de qué entra cambió, así
  * que una entrada vieja en v10 seguiría listando campañas/anuncios sin Resultados en los combos
  * hasta que venza el TTL si no se bumpea acá.
+ *
+ * v11→v12: RegionSegmentTotals (y su byAd) suman reach/impressions/clicks (ver fetchRegionSegments
+ * y RegionAdBreakdownEntry) — campos nuevos, una entrada vieja en v11 no los tiene, así que
+ * RegionAnalysis.tsx los mostraría en 0/undefined hasta que venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1333,7 +1462,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v11",
+        query: "investmentCalendar:v12",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1349,7 +1478,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v11",
+        query: "investmentCalendar:v12",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1363,7 +1492,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v11",
+        query: "investmentCalendar:v12",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1375,7 +1504,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v11",
+        query: "investmentCalendar:v12",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
