@@ -3,9 +3,13 @@
 // Gráfico de tendencia diaria de Leads segmentados por Objetivo (barras apiladas por Objetivo,
 // eje Y izquierdo) — mismo patrón que InvestmentTrendChart (barras + línea, doble eje, SVG a
 // mano) pero con Leads como métrica principal y el CPL del Objetivo elegido como métrica
-// secundaria (línea, eje Y derecho). El tooltip siempre muestra el desglose de cantidad y CPL de
-// todos los Objetivos visibles, sea cual sea el elegido para la línea. Va debajo de "Inversión y
-// rendimiento por día".
+// secundaria (línea, eje Y derecho). El combo de Tipo de Resultado (con "Todos los tipos" como
+// default, igual que el resto de los gráficos con este combo) sólo afecta la LÍNEA de CPL: las
+// barras apiladas siempre muestran TODOS los Objetivos visibles a la vez, elegido lo que se elija
+// — con "Todos los tipos" la línea pasa a mostrar el CPL blended (gasto total / leads totales del
+// día, mismo criterio que InvestmentTrendChart). El tooltip siempre muestra el desglose de
+// cantidad y CPL de todos los Objetivos visibles, sea cual sea el elegido para la línea. Va
+// debajo de "Inversión y rendimiento por día".
 //
 // DINÁMICO por Objetivo (índice 0..N-1, ver lib/reporting/metaInvestmentData.ts): a diferencia de
 // la versión anterior (3 tipos fijos, LeadType), acá se muestra CUALQUIER cantidad de Objetivos
@@ -107,6 +111,11 @@ function AvgPill({ xRight, yMid, label, fill }: { xRight: number; yMid: number; 
 const POINT_PILL_HEIGHT = 19;
 const POINT_PILL_GAP = 9;
 
+// Color de la línea/pill de CPL con "Todos los tipos" elegido (sin un Objetivo puntual para
+// colorear) — mismo valor que COSTO_DEFAULT_COLOR en InvestmentTrendChart.tsx, para que el
+// acento de "blended" se vea igual en los dos gráficos.
+const CPL_DEFAULT_COLOR = "#d97706"; // amber-600
+
 function PointPill({ x, yTop, label, color }: { x: number; yTop: number; label: string; color: string }) {
   const height = POINT_PILL_HEIGHT;
   const width = label.length * 5 + 14;
@@ -145,7 +154,7 @@ export function LeadsByTypeTrendChart({
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
   ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -187,13 +196,13 @@ export function LeadsByTypeTrendChart({
     [objectiveLabels, objectiveMonthLeads]
   );
 
-  // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads),
-  // cae al primero visible en vez de quedarse mostrando un CPL vacío.
+  // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
+  // a "Todos los tipos" en vez de quedarse mostrando un CPL vacío.
   useEffect(() => {
-    if (visibleIndexes.length > 0 && !visibleIndexes.includes(selectedIndex)) {
-      setSelectedIndex(visibleIndexes[0]!);
+    if (objectiveIndex !== null && !visibleIndexes.includes(objectiveIndex)) {
+      setObjectiveIndex(null);
     }
-  }, [visibleIndexes, selectedIndex]);
+  }, [visibleIndexes, objectiveIndex]);
 
   // Mapa inverso label -> índice, para poder colorear cada tarjeta de hallazgo por su propio
   // Objetivo (el "tipo" que devuelve Claude es el label configurado, no un índice).
@@ -243,8 +252,11 @@ export function LeadsByTypeTrendChart({
 
   const cplSeries = points.map((p) => {
     if (!p.hasData) return null;
-    const leads = p.objectiveLeads[selectedIndex] ?? 0;
-    const spend = p.objectiveSpend[selectedIndex] ?? 0;
+    // Con "Todos los tipos" (objectiveIndex null), CPL blended: gasto total / leads totales del
+    // día — mismo criterio que InvestmentTrendChart.tsx.
+    const leads = objectiveIndex !== null ? (p.objectiveLeads[objectiveIndex] ?? 0) : p.totalLeads;
+    const spend =
+      objectiveIndex !== null ? (p.objectiveSpend[objectiveIndex] ?? 0) : p.objectiveSpend.reduce((sum, v) => sum + v, 0);
     return leads > 0 ? spend / leads : null;
   });
   const cplValues = cplSeries.filter((v): v is number => v !== null);
@@ -275,7 +287,7 @@ export function LeadsByTypeTrendChart({
   }
   const hasDistinctExtremes = linePoints.length > 1 && maxPoint !== null && minPoint !== null && maxPoint.index !== minPoint.index;
 
-  const selectedColor = objectiveColor(selectedIndex);
+  const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : CPL_DEFAULT_COLOR;
 
   // Métricas para la leyenda de hallazgos (desglose por Objetivo visible, independiente del que
   // esté seleccionado para la línea de CPL) — se le pasan ya formateadas a Claude.
@@ -337,9 +349,15 @@ export function LeadsByTypeTrendChart({
   const hoverX = hoverIndex !== null ? xAt(hoverIndex) : null;
   const tooltipLeft = hoverX !== null ? `${(hoverX / VIEW_W) * 100}%` : "0%";
   const tooltipFromRightEdge = hoverX !== null && hoverX > VIEW_W * 0.72;
-  const hoveredSelectedLeads = hovered ? (hovered.objectiveLeads[selectedIndex] ?? 0) : 0;
-  const hoveredSelectedCpl =
-    hovered && hoveredSelectedLeads > 0 ? (hovered.objectiveSpend[selectedIndex] ?? 0) / hoveredSelectedLeads : null;
+  const hoveredSelectedLeads = hovered
+    ? (objectiveIndex !== null ? (hovered.objectiveLeads[objectiveIndex] ?? 0) : hovered.totalLeads)
+    : 0;
+  const hoveredSelectedSpend = hovered
+    ? objectiveIndex !== null
+      ? (hovered.objectiveSpend[objectiveIndex] ?? 0)
+      : hovered.objectiveSpend.reduce((sum, v) => sum + v, 0)
+    : 0;
+  const hoveredSelectedCpl = hoveredSelectedLeads > 0 ? hoveredSelectedSpend / hoveredSelectedLeads : null;
 
   return (
     <Card>
@@ -358,10 +376,11 @@ export function LeadsByTypeTrendChart({
         <div className="flex flex-col items-stretch gap-2">
           <select
             aria-label="Tipo de Resultado"
-            value={selectedIndex}
-            onChange={(event) => setSelectedIndex(Number(event.target.value))}
+            value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+            onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
+            <option value="all">Todos los tipos</option>
             {visibleIndexes.map((idx) => (
               <option key={idx} value={idx}>
                 {objectiveLabels[idx]}
