@@ -143,6 +143,7 @@ export interface DailyRealTotals {
 
 export interface RealInvestmentCalendarData {
   currency: string;
+  /** Presupuesto DEL MES consultado (ver resolveMonthlyBudget) — null si ese mes no tiene ni una entrada propia en monthly_budgets ni un monthly_budget legado cargado. */
   monthlyBudget: number | null;
   /** Leyenda a mostrar por tipo — el label del objetivo configurado, o un fallback genérico si ese slot no tiene objetivo. */
   typeLabels: Record<LeadType, string>;
@@ -518,6 +519,18 @@ const FALLBACK_TYPE_LABEL: Record<LeadType, string> = {
   formMeta: "Objetivo 3 (sin configurar)",
 };
 
+/**
+ * Presupuesto configurado para el mes de `monthStart` (clave "yyyy-MM" en monthly_budgets) — si
+ * ese mes puntual no tiene su propia entrada, cae al viejo monthly_budget único (legado, sin
+ * historial), y si tampoco hay eso, no hay presupuesto cargado para ese mes.
+ */
+function resolveMonthlyBudget(metaConfig: MetaAdsConfig, monthStart: Date): number | null {
+  const monthKey = format(monthStart, "yyyy-MM");
+  const forMonth = metaConfig.monthly_budgets?.[monthKey];
+  if (typeof forMonth === "number") return forMonth;
+  return typeof metaConfig.monthly_budget === "number" ? metaConfig.monthly_budget : null;
+}
+
 export async function fetchRealInvestmentCalendarData(
   metaConfig: MetaAdsConfig,
   monthStart: Date,
@@ -678,7 +691,7 @@ export async function fetchRealInvestmentCalendarData(
 
   return {
     currency: accountInfo.currency ?? "USD",
-    monthlyBudget: typeof metaConfig.monthly_budget === "number" ? metaConfig.monthly_budget : null,
+    monthlyBudget: resolveMonthlyBudget(metaConfig, monthStart),
     typeLabels,
     configuredTypeCount,
     objectiveLabels,

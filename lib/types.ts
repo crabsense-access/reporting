@@ -59,13 +59,24 @@ export interface MetaAdsConfig {
   /** Objetivos configurados para este cliente en Meta Ads (arranca vacío — se cargan de a uno por vez, ver MetaAdsConfigForm). */
   objectives?: MetaAdsObjective[];
   /**
-   * Presupuesto mensual de este cliente en Meta Ads, cargado a mano (no hay ningún campo
-   * equivalente en la Marketing API — el "monthly budget" de una cuenta o campaña ahí es otra
-   * cosa, y cambia si se pausan/reactivan campañas). Se usa en el Calendario de inversión (ver
-   * components/admin/reporting/InvestmentCalendar.tsx) para la comparación "gasto vs.
-   * presupuesto" — si no está cargado, esa comparación no se muestra.
+   * @deprecated Legado: presupuesto único "vigente", sin historial por mes — antes de
+   * monthly_budgets (ver abajo) era el único campo, así que un cambio pisaba también la
+   * comparación de los meses ya pasados. Se mantiene sólo como FALLBACK para un mes que todavía
+   * no tenga su propia entrada en monthly_budgets (ver resolveMonthlyBudget en
+   * lib/reporting/metaInvestmentData.ts) — el form ya no lo edita directamente.
    */
   monthly_budget?: number;
+  /**
+   * Presupuesto mensual de este cliente en Meta Ads, cargado a mano, POR MES (clave "yyyy-MM",
+   * valor en la moneda de la cuenta de Meta Ads) — no hay ningún campo equivalente en la
+   * Marketing API (el "monthly budget" de una cuenta o campaña ahí es otra cosa, y cambia si se
+   * pausan/reactivan campañas). Guardarlo por mes permite que cada mes del Calendario de
+   * inversión (ver components/admin/reporting/InvestmentCalendar.tsx) muestre la comparación
+   * "gasto vs. presupuesto" con el presupuesto que correspondía EN ESE MOMENTO, no el más
+   * reciente cargado. Si un mes no tiene entrada acá, se cae a monthly_budget (legado); si
+   * tampoco hay eso, la comparación no se muestra.
+   */
+  monthly_budgets?: Record<string, number>;
   /**
    * System User token de Meta Ads propio de este cliente (Marketing API).
    * Si no está seteado, fetchMetaGraphApi cae al token de agencia compartido

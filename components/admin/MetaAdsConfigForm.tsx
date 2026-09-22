@@ -13,6 +13,18 @@ import { saveMetaAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions
 import { normalizeMetaAdAccountId } from "@/lib/meta-ads/config";
 import type { MetaAdsConfig, MetaAdsObjective } from "@/lib/types";
 
+/** Una fila del editor de presupuesto por mes (ver monthlyBudgets) — amount queda como texto crudo del input hasta el guardado, igual que el resto de los inputs numéricos de este form. */
+interface MonthlyBudgetRow {
+  month: string; // yyyy-MM
+  amount: string;
+}
+
+/** Mes actual en formato "yyyy-MM" (mismo formato que usa el Calendario de inversión para las claves de monthly_budgets) — sin date-fns acá para no sumar una dependencia sólo por esto. */
+function currentMonthValue(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 interface MetaAdsConfigFormProps {
   clientId: string;
   dataSourceId: string | null;
@@ -32,9 +44,22 @@ export function MetaAdsConfigForm({
   const [enabled, setEnabled] = useState(Boolean(initialConfig?.ad_account_id));
   const [adAccountId, setAdAccountId] = useState(initialConfig?.ad_account_id ?? "");
   const [objectives, setObjectives] = useState<MetaAdsObjective[]>(initialConfig?.objectives ?? []);
-  const [monthlyBudget, setMonthlyBudget] = useState(
-    initialConfig?.monthly_budget !== undefined ? String(initialConfig.monthly_budget) : ""
-  );
+  // Presupuesto POR MES (antes era un único valor "vigente" que pisaba los meses pasados — ver
+  // monthly_budgets en lib/types.ts). Si el cliente todavía no tiene ninguna entrada por mes pero
+  // sí tiene el viejo monthly_budget cargado, se precarga como el presupuesto del mes actual para
+  // no perder ese dato: Martín sólo tiene que confirmarlo (o ajustarlo) al guardar.
+  const [monthlyBudgets, setMonthlyBudgets] = useState<MonthlyBudgetRow[]>(() => {
+    const stored = initialConfig?.monthly_budgets;
+    if (stored && Object.keys(stored).length > 0) {
+      return Object.entries(stored)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .map(([month, amount]) => ({ month, amount: String(amount) }));
+    }
+    if (initialConfig?.monthly_budget !== undefined) {
+      return [{ month: currentMonthValue(), amount: String(initialConfig.monthly_budget) }];
+    }
+    return [];
+  });
   const [tokenInput, setTokenInput] = useState("");
   const [tokenStored, setTokenStored] = useState(hasStoredToken);
   const [clearToken, setClearToken] = useState(false);
@@ -54,22 +79,42 @@ export function MetaAdsConfigForm({
     setObjectives((prev) => [...prev, { event: "", label: "" }]);
   }
 
+  function updateMonthlyBudgetRow(index: number, field: "month" | "amount", value: string) {
+    setMonthlyBudgets((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  }
+
+  function removeMonthlyBudgetRow(index: number) {
+    setMonthlyBudgets((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function addMonthlyBudgetRow() {
+    setMonthlyBudgets((prev) => [...prev, { month: currentMonthValue(), amount: "" }]);
+  }
+
   function handleSave() {
     const normalizedAccountId = normalizeMetaAdAccountId(adAccountId);
     const cleanObjectives = objectives
       .map((objective) => ({ event: objective.event.trim(), label: objective.label.trim() }))
       .filter((objective) => objective.event.length > 0 || objective.label.length > 0);
 
-    const trimmedBudget = monthlyBudget.trim();
-    const parsedBudget = trimmedBudget ? Number(trimmedBudget) : null;
-    const cleanBudget = parsedBudget !== null && Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : undefined;
+    // Sólo entran filas con mes Y monto válidos (>0) — una fila a medio cargar (mes sin monto, o
+    // viceversa) se descarta en silencio al guardar, igual que ya hacen los Objetivos vacíos.
+    const cleanMonthlyBudgets: Record<string, number> = {};
+    for (const row of monthlyBudgets) {
+      const month = row.month.trim();
+      const amount = Number(row.amount.trim());
+      if (month && Number.isFinite(amount) && amount > 0) {
+        cleanMonthlyBudgets[month] = amount;
+      }
+    }
+    const hasMonthlyBudgets = Object.keys(cleanMonthlyBudgets).length > 0;
 
     const config =
       enabled && normalizedAccountId
         ? {
             ad_account_id: normalizedAccountId,
             objectives: cleanObjectives,
-            ...(cleanBudget !== undefined ? { monthly_budget: cleanBudget } : {}),
+            ...(hasMonthlyBudgets ? { monthly_budgets: cleanMonthlyBudgets } : {}),
           }
         : null;
 
@@ -236,22 +281,59 @@ export function MetaAdsConfigForm({
               </Button>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="meta-ads-monthly-budget">Presupuesto mensual</Label>
-              <Input
-                id="meta-ads-monthly-budget"
-                type="number"
-                min="0"
-                step="1"
-                value={monthlyBudget}
-                onChange={(event) => setMonthlyBudget(event.target.value)}
-                placeholder="Ej: 6000"
-              />
-              <p className="text-xs text-muted-foreground">
-                Presupuesto mensual acordado con el cliente para esta cuenta (en la moneda de la
-                cuenta de Meta Ads). Se usa para la comparación &quot;gasto vs. presupuesto&quot; del
-                Calendario de inversión — se recarga a mano cada vez que cambie.
-              </p>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <Label>Presupuesto mensual</Label>
+                <p className="text-xs text-muted-foreground">
+                  Presupuesto acordado con el cliente para esta cuenta (en la moneda de la cuenta de
+                  Meta Ads), cargado MES A MES: cada mes queda con su propio presupuesto, así que un
+                  cambio para el mes en curso no pisa la comparación &quot;gasto vs. presupuesto&quot;
+                  de los meses ya pasados en el Calendario de inversión.
+                </p>
+              </div>
+
+              {monthlyBudgets.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+                    <span className="flex-1">Mes</span>
+                    <span className="flex-1">Presupuesto</span>
+                    <span className="w-9 shrink-0" />
+                  </div>
+                  {monthlyBudgets.map((row, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <Input
+                        aria-label={`Mes del presupuesto ${index + 1}`}
+                        type="month"
+                        value={row.month}
+                        onChange={(event) => updateMonthlyBudgetRow(index, "month", event.target.value)}
+                      />
+                      <Input
+                        aria-label={`Monto del presupuesto ${index + 1}`}
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={row.amount}
+                        onChange={(event) => updateMonthlyBudgetRow(index, "amount", event.target.value)}
+                        placeholder="Ej: 6000"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeMonthlyBudgetRow(index)}
+                        aria-label="Quitar presupuesto"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <Button type="button" variant="outline" size="sm" className="self-start" onClick={addMonthlyBudgetRow}>
+                <Plus className="h-4 w-4" />
+                Agregar mes
+              </Button>
             </div>
           </div>
         ) : (
