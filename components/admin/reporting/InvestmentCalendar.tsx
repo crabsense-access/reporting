@@ -67,6 +67,12 @@ export interface DailyRealTotals {
   spendByType: Record<LeadType, number>;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Interacciones (post_engagement) y Clics en el enlace (link_click) de TODAS las filas del día, matcheen o no algún Objetivo — ver lib/reporting/metaInvestmentData.ts. */
+  interactions: number;
+  clicks: number;
+  /** Mismo desglose que objectiveLeads/objectiveSpend, para cuando se selecciona un tipo de Resultado puntual (ver bloque "Performance de Resultados"). */
+  objectiveInteractions: number[];
+  objectiveClicks: number[];
 }
 
 interface DetectedActionType {
@@ -111,6 +117,8 @@ interface InvestmentCalendarResponse {
   /** action_type real de Meta que matcheó cada Objetivo este mes (mismo índice que objectiveLabels),
    *  o null si no matcheó nada — ver lib/reporting/metaResultLabels.ts. */
   objectiveActionTypes: (string | null)[];
+  /** Alcance real y deduplicado del mes a nivel de toda la cuenta — no se puede filtrar por tipo de Resultado (ver fetchMonthlyReach en metaInvestmentData.ts). */
+  monthlyReach: number;
   detectedActionTypes: DetectedActionType[];
   days: DailyRealTotals[];
   audienceSegments: AudienceSegmentTotals[];
@@ -161,6 +169,10 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
   const [data, setData] = useState<InvestmentCalendarResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Tipo de Resultado seleccionado en las scorecards de "Resultados" (clickeando de nuevo la
+  // misma se des-selecciona) — maneja qué muestra el bloque "Performance de Resultados" de abajo
+  // (ver performanceMetrics). null = sin selección, se muestran los totales de la cuenta.
+  const [selectedObjectiveIndex, setSelectedObjectiveIndex] = useState<number | null>(null);
 
   const selectedMonthDate = useMemo(
     () => monthOptions.find((opt) => opt.value === selectedMonth)?.date ?? monthOptions[0]!.date,
@@ -197,6 +209,12 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
     };
   }, [clientId, selectedMonth]);
 
+  // El tipo de Resultado seleccionado es específico del mes que se está mirando (puede no tener
+  // resultados en el mes nuevo) — se limpia la selección cada vez que se cambia de mes.
+  useEffect(() => {
+    setSelectedObjectiveIndex(null);
+  }, [selectedMonth]);
+
   // Totales del mes por Objetivo, TODOS los que estén cargados (no sólo los primeros 3) — ver
   // comentario en lib/reporting/metaInvestmentData.ts. Alimenta el resumen (Leads/CPL totales,
   // que ahora reflejan cualquier Objetivo nuevo que se sume en el Admin) y los gráficos "Leads por
@@ -232,6 +250,34 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
   }, [data, objectiveMonthTotals]);
 
   const { monthTotal, monthLeads, monthLeadsByType, monthSpendByType } = totals;
+
+  // Métricas del bloque "Performance de Resultados" (ver el JSX más abajo): sin selección, son el
+  // total REAL de toda la cuenta este mes (mismo criterio que monthTotal/monthLeads arriba); con
+  // un tipo de Resultado seleccionado, se recalculan sólo con las filas que atribuimos a ESE
+  // Objetivo (mismo criterio de atribución que ya usan Leads/Gasto — ver objectiveInteractions/
+  // objectiveClicks en metaInvestmentData.ts). El Costo por Resultado reutiliza el CPL que ya
+  // calcula objectiveMonthTotals/monthTotal-monthLeads, no lo recalcula de cero.
+  const performanceMetrics = useMemo(() => {
+    const days = data?.days ?? [];
+    if (selectedObjectiveIndex === null) {
+      return {
+        label: null as string | null,
+        interactions: days.reduce((sum, d) => sum + d.interactions, 0),
+        clicks: days.reduce((sum, d) => sum + d.clicks, 0),
+        costPerResult: monthLeads > 0 ? monthTotal / monthLeads : 0,
+        hasCostPerResult: monthLeads > 0,
+      };
+    }
+    const selected = objectiveMonthTotals.find((o) => o.index === selectedObjectiveIndex);
+    return {
+      label: selected?.label ?? null,
+      interactions: days.reduce((sum, d) => sum + (d.objectiveInteractions[selectedObjectiveIndex] ?? 0), 0),
+      clicks: days.reduce((sum, d) => sum + (d.objectiveClicks[selectedObjectiveIndex] ?? 0), 0),
+      costPerResult: selected?.cpl ?? 0,
+      hasCostPerResult: (selected?.leads ?? 0) > 0,
+    };
+  }, [data, selectedObjectiveIndex, objectiveMonthTotals, monthTotal, monthLeads]);
+
   const currency = data?.currency ?? "USD";
   const monthlyBudget = data?.monthlyBudget ?? null;
   const typeLabels = data?.typeLabels;
@@ -525,35 +571,85 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                   el resto del tablero. En filas de a 4 (ROW_SIZE más abajo); si la última fila
                   queda incompleta (1, 2 o 3 tarjetas), esas tarjetas se reparten el ancho
                   completo por igual en vez de quedar angostas — por eso el grid de cada fila usa
-                  su propio gridTemplateColumns según cuántas tarjetas tiene, no uno fijo de 4. */}
-              {visibleObjectiveTotals.length === 0 ? (
-                <p className="border-t border-border pt-3 text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
-              ) : (
-                <div className="flex flex-col gap-6 border-t border-border pt-3">
-                  {chunk(visibleObjectiveTotals, RESULT_SCORECARD_ROW_SIZE).map((row, rowIndex) => (
-                    <div
-                      key={rowIndex}
-                      className="grid gap-6"
-                      style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
-                    >
-                      {row.map((o) => (
-                        <div key={o.index} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm font-bold text-muted-foreground">{o.label}</span>
-                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                              <span className="text-2xl font-semibold text-foreground">{formatNumber(o.leads)}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {o.leads > 0 ? `${formatCurrency(o.cpl, currency, 2)} por resultado` : "s/d por resultado"}
-                              </span>
-                            </div>
-                          </div>
-                          <DailyTypeBarChart days={data?.days ?? []} objectiveIndex={o.index} color={objectiveColor(o.index)} />
-                        </div>
-                      ))}
-                    </div>
-                  ))}
+                  su propio gridTemplateColumns según cuántas tarjetas tiene, no uno fijo de 4.
+                  Son clickeables: seleccionan/des-seleccionan un tipo (toggle) y ese estado
+                  maneja el bloque "Performance de Resultados" de abajo. */}
+              <div className="flex flex-col gap-3 border-t border-border pt-3">
+                <span className="text-lg font-bold text-foreground">Resultados</span>
+                {visibleObjectiveTotals.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
+                ) : (
+                  <div className="flex flex-col gap-6">
+                    {chunk(visibleObjectiveTotals, RESULT_SCORECARD_ROW_SIZE).map((row, rowIndex) => (
+                      <div
+                        key={rowIndex}
+                        className="grid gap-6"
+                        style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+                      >
+                        {row.map((o) => {
+                          const isSelected = o.index === selectedObjectiveIndex;
+                          return (
+                            <button
+                              key={o.index}
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => setSelectedObjectiveIndex(isSelected ? null : o.index)}
+                              className={cn(
+                                "flex flex-col gap-3 rounded-lg border p-3 text-left transition-colors",
+                                isSelected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:border-primary/40"
+                              )}
+                            >
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-sm font-bold text-muted-foreground">{o.label}</span>
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <span className="text-2xl font-semibold text-foreground">{formatNumber(o.leads)}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {o.leads > 0 ? `${formatCurrency(o.cpl, currency, 2)} por resultado` : "s/d por resultado"}
+                                  </span>
+                                </div>
+                              </div>
+                              <DailyTypeBarChart days={data?.days ?? []} objectiveIndex={o.index} color={objectiveColor(o.index)} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* "Performance de Resultados": 4 tarjetas fijas (a diferencia de las de arriba, que
+                  son una por tipo). Por default muestran el total real de TODA la cuenta este mes
+                  (mismo criterio que monthTotal/monthLeads); al seleccionar un tipo de Resultado
+                  arriba, Interacciones/Clicks/Costo por Resultado se recalculan para ESE tipo y
+                  "Total(es)" se reemplaza por su nombre (ver performanceMetrics). Alcance es la
+                  excepción: Meta no permite deduplicar el alcance por tipo de conversión sin
+                  perder la cuenta real de personas únicas, así que siempre muestra el total de la
+                  cuenta, seleccionés lo que seleccionés (ver fetchMonthlyReach). */}
+              <div className="flex flex-col gap-3 border-t border-border pt-3">
+                <span className="text-lg font-bold text-foreground">Performance de Resultados</span>
+                <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+                  <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
+                    <span className="text-sm font-bold text-muted-foreground">Alcance</span>
+                    <span className="text-2xl font-semibold text-foreground">{formatNumber(data?.monthlyReach ?? 0)}</span>
+                    <span className="text-xs text-muted-foreground">Total de la cuenta (no varía por tipo)</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
+                    <span className="text-sm font-bold text-muted-foreground">Interacciones {performanceMetrics.label ?? "totales"}</span>
+                    <span className="text-2xl font-semibold text-foreground">{formatNumber(performanceMetrics.interactions)}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
+                    <span className="text-sm font-bold text-muted-foreground">Clicks {performanceMetrics.label ?? "totales"}</span>
+                    <span className="text-2xl font-semibold text-foreground">{formatNumber(performanceMetrics.clicks)}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
+                    <span className="text-sm font-bold text-muted-foreground">Costo por Resultado {performanceMetrics.label ?? "total"}</span>
+                    <span className="text-2xl font-semibold text-foreground">
+                      {performanceMetrics.hasCostPerResult ? formatCurrency(performanceMetrics.costPerResult, currency, 2) : "s/d"}
+                    </span>
+                  </div>
                 </div>
-              )}
+              </div>
 
               <div className="flex flex-col gap-2 border-t border-border pt-3">
                 <span className="text-lg font-bold text-foreground">Resumen ejecutivo</span>

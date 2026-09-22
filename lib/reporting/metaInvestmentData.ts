@@ -133,6 +133,12 @@ export interface DailyRealTotals {
   /** Leads/gasto por Objetivo, TODOS los que estén cargados (índice alineado con MetaAdsConfig.objectives) — ver comentario arriba del archivo. */
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Interacciones (post_engagement) y Clics en el enlace (link_click) de TODAS las filas del día, matcheen o no algún Objetivo — para el bloque "Performance de Resultados" sin ningún tipo seleccionado. */
+  interactions: number;
+  clicks: number;
+  /** Mismo desglose que objectiveLeads/objectiveSpend, pero de Interacciones/Clics — para cuando se selecciona un tipo de Resultado puntual. */
+  objectiveInteractions: number[];
+  objectiveClicks: number[];
 }
 
 export interface RealInvestmentCalendarData {
@@ -151,6 +157,8 @@ export interface RealInvestmentCalendarData {
    */
   /** Leyenda de CADA Objetivo cargado, en orden (índice alineado con objectiveLeads/objectiveSpend de cada día) — a diferencia de typeLabels, no está limitado a 3. */
   objectiveLabels: string[];
+  /** Alcance real y deduplicado del mes (o del tramo, si es un tramo "estable"/"fresco" — ver mergeRealInvestmentCalendarData), a nivel de TODA la cuenta — ver fetchMonthlyReach. No se puede filtrar por tipo de Resultado (ver comentario ahí). */
+  monthlyReach: number;
   /**
    * El action_type REAL de Meta que más matcheó este mes para cada Objetivo (mismo índice que
    * objectiveLabels), o null si ese Objetivo no matcheó nada. Se usa para mostrar el nombre real
@@ -420,6 +428,12 @@ function sumActionValues(actions?: { action_type: string; value: string }[]): nu
   return actions.reduce((sum, action) => sum + Number(action.value ?? 0), 0);
 }
 
+/** Valor de UN action_type puntual dentro del array `actions` de una fila de Insights (0 si no aparece) — a diferencia de sumActionValues, que suma TODO un array ya filtrado a una sola métrica (ej. video_play_actions), acá `actions` trae mezclados leads/clicks/interacciones/etc. y hay que buscar el que corresponde. */
+function findActionValue(actions: { action_type: string; value: string }[], actionType: string): number {
+  const action = actions.find((a) => a.action_type === actionType);
+  return action ? Number(action.value ?? 0) : 0;
+}
+
 /**
  * Desglose por edad de la retención de video del mes completo [since, until], a nivel CAMPAÑA.
  * A diferencia de fetchAudienceSegments/fetchRegionSegments/fetchHourlyTotals, esto NO se matchea
@@ -464,6 +478,40 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
   return Array.from(byAge.values());
 }
 
+interface MetaAccountReachRow {
+  reach?: string;
+}
+
+interface MetaAccountReachInsightsResponse {
+  data: MetaAccountReachRow[];
+}
+
+/**
+ * Alcance REAL y deduplicado del rango [since, until] a nivel de CUENTA completa, en una sola fila
+ * (sin time_increment, sin desglose por campaña ni por día) — a diferencia del resto de las
+ * métricas de este archivo, el alcance no es una suma: si se pidiera por día o por campaña y se
+ * sumaran los resultados, a la misma persona alcanzada más de una vez se la contaría de nuevo cada
+ * vez. Por eso se pide UNA sola vez para todo el rango, tal como lo calcula Meta Ads Manager para
+ * el total del mes.
+ *
+ * Limitación conocida (aceptada con Martín): no se puede partir por tipo de Resultado sin perder
+ * esta deduplicación, así que el Alcance del Calendario de inversión SIEMPRE muestra este total de
+ * cuenta, no cambia según el tipo de Resultado seleccionado (ver InvestmentCalendar.tsx, bloque
+ * "Performance de Resultados").
+ */
+async function fetchMonthlyReach(metaConfig: MetaAdsConfig, since: string, until: string): Promise<number> {
+  const accountId = metaConfig.ad_account_id;
+  const insights = await fetchMetaGraphApi<MetaAccountReachInsightsResponse>(
+    `${accountId}/insights`,
+    {
+      time_range: JSON.stringify({ since, until }),
+      fields: "reach",
+    },
+    metaConfig.system_user_token
+  );
+  return Number(insights.data[0]?.reach ?? 0);
+}
+
 const FALLBACK_TYPE_LABEL: Record<LeadType, string> = {
   chat: "Objetivo 1 (sin configurar)",
   formLanding: "Objetivo 2 (sin configurar)",
@@ -495,24 +543,26 @@ export async function fetchRealInvestmentCalendarData(
   const since = format(monthStart, "yyyy-MM-dd");
   const until = format(lastDataDate, "yyyy-MM-dd");
 
-  const [insights, accountInfo, audienceSegments, regionSegments, hourlyTotals, videoRetentionByAge] = await Promise.all([
-    fetchMetaGraphApi<MetaCampaignInsightsResponse>(
-      `${accountId}/insights`,
-      {
-        level: "campaign",
-        time_increment: "1",
-        time_range: JSON.stringify({ since, until }),
-        fields: "spend,actions",
-        limit: "500",
-      },
-      metaConfig.system_user_token
-    ),
-    fetchMetaGraphApi<{ currency?: string }>(accountId, { fields: "currency" }, metaConfig.system_user_token),
-    fetchAudienceSegments(metaConfig, objectives, objectiveEvents, since, until),
-    fetchRegionSegments(metaConfig, objectives, objectiveEvents, since, until),
-    fetchHourlyTotals(metaConfig, objectiveEvents, since, until),
-    fetchVideoRetentionByAge(metaConfig, since, until),
-  ]);
+  const [insights, accountInfo, audienceSegments, regionSegments, hourlyTotals, videoRetentionByAge, monthlyReach] =
+    await Promise.all([
+      fetchMetaGraphApi<MetaCampaignInsightsResponse>(
+        `${accountId}/insights`,
+        {
+          level: "campaign",
+          time_increment: "1",
+          time_range: JSON.stringify({ since, until }),
+          fields: "spend,actions",
+          limit: "500",
+        },
+        metaConfig.system_user_token
+      ),
+      fetchMetaGraphApi<{ currency?: string }>(accountId, { fields: "currency" }, metaConfig.system_user_token),
+      fetchAudienceSegments(metaConfig, objectives, objectiveEvents, since, until),
+      fetchRegionSegments(metaConfig, objectives, objectiveEvents, since, until),
+      fetchHourlyTotals(metaConfig, objectiveEvents, since, until),
+      fetchVideoRetentionByAge(metaConfig, since, until),
+      fetchMonthlyReach(metaConfig, since, until),
+    ]);
 
   const byDate = new Map<string, DailyRealTotals>();
   const rawActionTypeTotals = new Map<string, number>();
@@ -536,6 +586,10 @@ export async function fetchRealInvestmentCalendarData(
         spendByType: zeroByType(),
         objectiveLeads: objectives.map(() => 0),
         objectiveSpend: objectives.map(() => 0),
+        interactions: 0,
+        clicks: 0,
+        objectiveInteractions: objectives.map(() => 0),
+        objectiveClicks: objectives.map(() => 0),
       };
       byDate.set(dateKey, entry);
     }
@@ -551,6 +605,16 @@ export async function fetchRealInvestmentCalendarData(
       }
     }
 
+    // Interacciones/Clicks de ESTA fila, matchee o no algún Objetivo — alimentan el total "de toda
+    // la cuenta" del bloque Performance de Resultados cuando no hay ningún tipo seleccionado (ver
+    // InvestmentCalendar.tsx). Es la única parte de Performance que SÍ es una suma directa de Meta
+    // (a diferencia del Alcance — ver fetchMonthlyReach), porque interacciones y clics sí son
+    // acumulables fila a fila sin duplicar personas.
+    const interactionsValue = findActionValue(actions, "post_engagement");
+    const clicksValue = findActionValue(actions, "link_click");
+    entry.interactions += interactionsValue;
+    entry.clicks += clicksValue;
+
     // Ver findMatchedObjective arriba: exacto primero, "contiene" después, el primero que
     // matchea en orden se queda con la fila entera.
     const matched = findMatchedObjective(actions, objectiveEvents);
@@ -558,6 +622,8 @@ export async function fetchRealInvestmentCalendarData(
       const { index: matchedIndex, value, actionType } = matched;
       entry.objectiveLeads[matchedIndex] = (entry.objectiveLeads[matchedIndex] ?? 0) + value;
       entry.objectiveSpend[matchedIndex] = (entry.objectiveSpend[matchedIndex] ?? 0) + spend;
+      entry.objectiveInteractions[matchedIndex] = (entry.objectiveInteractions[matchedIndex] ?? 0) + interactionsValue;
+      entry.objectiveClicks[matchedIndex] = (entry.objectiveClicks[matchedIndex] ?? 0) + clicksValue;
       matchedObjectiveIndexes.add(matchedIndex);
 
       const actionTypeTotals = objectiveActionTypeTotals.get(matchedIndex) ?? new Map<string, number>();
@@ -617,6 +683,7 @@ export async function fetchRealInvestmentCalendarData(
     configuredTypeCount,
     objectiveLabels,
     objectiveActionTypes,
+    monthlyReach,
     detectedActionTypes,
     days,
     audienceSegments,
@@ -770,6 +837,7 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
     hourlyTotals: data.hourlyTotals ?? [],
     videoRetentionByAge: data.videoRetentionByAge ?? [],
     objectiveActionTypes: data.objectiveActionTypes ?? [],
+    monthlyReach: data.monthlyReach ?? 0,
   };
 }
 
@@ -797,6 +865,11 @@ function mergeRealInvestmentCalendarData(
     hourlyTotals: mergeHourlyTotals(stable.hourlyTotals, fresh.hourlyTotals),
     videoRetentionByAge: mergeVideoRetentionByAge(stable.videoRetentionByAge, fresh.videoRetentionByAge),
     objectiveActionTypes: mergeObjectiveActionTypes(stable.objectiveActionTypes, fresh.objectiveActionTypes),
+    // Suma de los dos tramos (ver fetchMonthlyReach) — aproximación aceptada: dentro de cada
+    // tramo el alcance está bien deduplicado, pero a alguien alcanzado tanto en el tramo estable
+    // (hasta ayer) como hoy se lo cuenta en los dos. El error queda acotado a ese único límite de
+    // día en vez de acumularse día a día como pasaría sumando el alcance diario de todo el mes.
+    monthlyReach: stable.monthlyReach + fresh.monthlyReach,
   };
 }
 
@@ -819,7 +892,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v6") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v7") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -839,7 +912,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v6",
+        query: "investmentCalendar:v7",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -855,7 +928,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v6",
+        query: "investmentCalendar:v7",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -869,7 +942,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v6",
+        query: "investmentCalendar:v7",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -881,7 +954,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v6",
+        query: "investmentCalendar:v7",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
