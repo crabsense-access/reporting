@@ -1,21 +1,23 @@
 "use client";
 
-// Gráfico de tendencia diaria: barras de Inversión (eje Y izquierdo) + línea de Cantidad o Costo
-// por Resultado de un tipo de Resultado (o de todos agregados), a elección del usuario (eje Y
-// derecho) — eje X con los días del mes en curso. Va debajo del resumen del mes y arriba del
-// calendario semanal.
+// Gráfico de tendencia diaria: barras de Cantidad de Resultados (eje Y izquierdo) + línea de
+// Costo por Resultado (eje Y derecho) de un tipo de Resultado puntual (o de todos agregados, a
+// elección del usuario) — eje X con los días del mes en curso. Va debajo del resumen del mes y
+// arriba del calendario semanal.
 //
-// Es un chart de doble eje a propósito: Inversión (decenas/cientos de dólares) y Costo por
-// Resultado (unos pocos dólares) o Cantidad (decenas de Resultados) viven en escalas muy
-// distintas, así que un solo eje dejaría una de las dos series ilegible — este es el mismo patrón
-// que usan Meta Ads Manager / Google Ads para "gasto vs. métrica de eficiencia" por día.
+// Es un chart de doble eje a propósito: Cantidad (unidades, decenas) y Costo por Resultado (unos
+// pocos dólares) viven en escalas muy distintas, así que un solo eje dejaría una de las dos series
+// ilegible — este es el mismo patrón que usan Meta Ads Manager / Google Ads para "volumen vs.
+// métrica de eficiencia" por día.
 //
-// DINÁMICO por Objetivo (índice 0..N-1, ver lib/reporting/metaInvestmentData.ts) — a pedido de
-// Martín, reemplaza al viejo toggle fijo Leads/CPL (agregaba los 3 tipos legado) por un combo de
-// tipo de Resultado ("Todos los tipos" incluido) + un toggle Cantidad/Costo por Resultado que
-// aplica al tipo elegido. Se le suma un segundo combo de CAMPAÑA: al elegir una, TODO el gráfico
-// (barras de Inversión Y línea de Resultados) se filtra a esa campaña puntual — ambos filtros
-// componen entre sí (ver DailyRealTotals.byCampaign).
+// DINÁMICO por Objetivo (índice 0..N-1, ver lib/reporting/metaInvestmentData.ts): un combo de
+// "Tipo de Resultado" (con "Todos los tipos" por default) filtra qué se grafica, y un segundo
+// combo de CAMPAÑA filtra AMBAS series (barras de Cantidad y línea de Costo) a esa campaña
+// puntual — ambos filtros componen entre sí (ver DailyRealTotals.byCampaign). Ya no hay toggle:
+// antes se elegía CPL o Leads para la línea secundaria mientras las barras mostraban Inversión en
+// dólares; a pedido de Martín ahora se muestran siempre las dos métricas del Resultado elegido
+// (Cantidad a la izquierda, Costo a la derecha) — la Inversión en dólares del período ya se ve en
+// el resumen del mes y en el bloque "Performance de Resultados" más arriba.
 //
 // Está hecho a mano con SVG (sin librería de gráficos, siguiendo la convención del resto del
 // dashboard). Recibe los datos reales del mes (ver components/admin/reporting/InvestmentCalendar.tsx,
@@ -47,8 +49,6 @@ interface ObjectiveOption {
   label: string;
 }
 
-type Submetric = "cantidad" | "costo";
-
 interface DayPoint {
   date: Date;
   day: number;
@@ -69,21 +69,17 @@ const INNER_W = VIEW_W - PAD.left - PAD.right;
 const INNER_H = VIEW_H - PAD.top - PAD.bottom;
 const TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 
-const SUBMETRIC_LABEL: Record<Submetric, string> = { costo: "Costo por Resultado", cantidad: "Cantidad" };
-// Colores por default (sin tipo de Resultado elegido, "Todos los tipos"): mismo criterio que el
-// viejo toggle CPL/Leads (amber para costo, sky para cantidad). Con un tipo puntual elegido, el
-// color pasa a ser el de ESE Objetivo (objectiveColor) para que se identifique con el resto del
-// tablero — ver secondaryColor más abajo.
-const SUBMETRIC_DEFAULT_COLOR: Record<Submetric, string> = { costo: "#d97706", cantidad: "#0284c7" }; // amber-600 / sky-600
+// Color del Costo por Resultado cuando no hay un tipo puntual elegido ("Todos los tipos") — con
+// un tipo elegido, la línea toma el color de ESE Objetivo (objectiveColor) para identificarse con
+// el resto del tablero (ver secondaryColor más abajo). Las barras de Cantidad usan siempre el
+// primary del tema (fill-primary / fill-primary·45), igual que el resto de las barras del
+// dashboard.
+const COSTO_DEFAULT_COLOR = "#d97706"; // amber-600
 
 function roundedTopBarPath(x: number, yTop: number, width: number, yBottom: number, radius: number) {
   const r = Math.min(radius, (yBottom - yTop) / 2, width / 2);
   if (r <= 0.5) return `M ${x},${yBottom} L ${x},${yTop} L ${x + width},${yTop} L ${x + width},${yBottom} Z`;
   return `M ${x},${yBottom} L ${x},${yTop + r} Q ${x},${yTop} ${x + r},${yTop} L ${x + width - r},${yTop} Q ${x + width},${yTop} ${x + width},${yTop + r} L ${x + width},${yBottom} Z`;
-}
-
-function formatSecondary(submetric: Submetric, value: number, currency: string) {
-  return submetric === "costo" ? formatSecondaryCurrency(value, currency) : formatNumber(value);
 }
 
 /** Devuelve el elemento de `items` con mayor (o menor) `value(item)`, o null si la lista está vacía — usado para armar las métricas que se le pasan a Claude para la leyenda de hallazgos. */
@@ -123,12 +119,10 @@ function AvgPill({ xRight, yTop, label, fill, className }: { xRight: number; yTo
   );
 }
 
-// Pill centrado sobre un punto (usado para marcar el día máximo/mínimo de la
-// métrica secundaria) — a diferencia de AvgPill, que siempre cuelga del
-// borde derecho, este se ancla al x del punto y se recorta para no salirse
-// del área del gráfico. Fondo blanco con borde de 2px del color de la
-// métrica, para distinguirse visualmente de las pills de promedio (que van
-// rellenas).
+// Pill centrado sobre un punto (usado para marcar el día máximo/mínimo de Costo por Resultado) —
+// a diferencia de AvgPill, que siempre cuelga del borde derecho, este se ancla al x del punto y se
+// recorta para no salirse del área del gráfico. Fondo blanco con borde de 2px del color de la
+// métrica, para distinguirse visualmente de las pills de promedio (que van rellenas).
 const POINT_PILL_HEIGHT = 19;
 const POINT_PILL_GAP = 9;
 
@@ -169,7 +163,6 @@ export function InvestmentTrendChart({
 }) {
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
-  const [submetric, setSubmetric] = useState<Submetric>("costo");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const today = useMemo(() => new Date(), []);
@@ -230,26 +223,25 @@ export function InvestmentTrendChart({
   const barWidth = Math.min(16, slot * 0.55);
   const labelStep = daysInMonth > 24 ? 2 : 1;
 
-  const maxSpend = Math.max(...points.filter((p) => p.hasData).map((p) => p.spend), 1) * 1.15;
-  const spendValues = points.filter((p) => p.hasData).map((p) => p.spend);
-  const avgSpend = spendValues.length > 0 ? spendValues.reduce((sum, v) => sum + v, 0) / spendValues.length : null;
-  const secondaryValues = points
-    .filter((p) => p.hasData)
-    .map((p) => (submetric === "costo" ? p.cpl : p.leads))
-    .filter((v): v is number => v !== null);
-  const maxSecondary = Math.max(...secondaryValues, submetric === "costo" ? 5 : 5) * 1.15;
+  // Eje izquierdo (barras): Cantidad de Resultados del tipo elegido (o de todos, sumados).
+  const countValues = points.filter((p) => p.hasData).map((p) => p.leads);
+  const maxCount = Math.max(...countValues, 1) * 1.15;
+  const avgCount = countValues.length > 0 ? countValues.reduce((sum, v) => sum + v, 0) / countValues.length : null;
+
+  // Eje derecho (línea): Costo por ese Resultado.
+  const secondaryValues = points.filter((p): p is DayPoint & { cpl: number } => p.hasData && p.cpl !== null).map((p) => p.cpl);
+  const maxSecondary = Math.max(...secondaryValues, 5) * 1.15;
   const avgSecondary =
     secondaryValues.length > 0 ? secondaryValues.reduce((sum, v) => sum + v, 0) / secondaryValues.length : null;
 
   const xAt = (index: number) => PAD.left + slot * index + slot / 2;
-  const yLeftAt = (value: number) => PAD.top + INNER_H - (value / maxSpend) * INNER_H;
+  const yLeftAt = (value: number) => PAD.top + INNER_H - (value / maxCount) * INNER_H;
   const yRightAt = (value: number) => PAD.top + INNER_H - (value / maxSecondary) * INNER_H;
 
   const linePoints = points
     .map((p, i) => {
-      const value = submetric === "costo" ? p.cpl : p.hasData ? p.leads : null;
-      if (value === null) return null;
-      return { x: xAt(i), y: yRightAt(value), index: i, value };
+      if (p.cpl === null) return null;
+      return { x: xAt(i), y: yRightAt(p.cpl), index: i, value: p.cpl };
     })
     .filter((p): p is { x: number; y: number; index: number; value: number } => p !== null);
 
@@ -260,9 +252,8 @@ export function InvestmentTrendChart({
     return acc + `${i === 0 || isGap ? "M" : "L"} ${p.x},${p.y} `;
   }, "");
 
-  // Día con el valor máximo y mínimo de la métrica secundaria (Cantidad o Costo por Resultado)
-  // entre los días con datos — se marcan en el gráfico para que se vea de
-  // un vistazo cuándo fue el mejor/peor día.
+  // Día con el Costo por Resultado máximo y mínimo entre los días con datos — se marcan en el
+  // gráfico para que se vea de un vistazo cuándo fue el mejor/peor día.
   let maxPoint: (typeof linePoints)[number] | null = null;
   let minPoint: (typeof linePoints)[number] | null = null;
   for (const lp of linePoints) {
@@ -273,12 +264,13 @@ export function InvestmentTrendChart({
 
   const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
-  const secondaryColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : SUBMETRIC_DEFAULT_COLOR[submetric];
-  const secondaryLabel = SUBMETRIC_LABEL[submetric];
-  const secondaryLegend = `${secondaryLabel} · ${selectedObjectiveLabel ?? "Todos los tipos"}`;
+  const secondaryColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : COSTO_DEFAULT_COLOR;
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const cantidadLegend = `Cantidad · ${tipoLabel}`;
+  const costoLegend = `Costo por Resultado · ${tipoLabel}`;
 
-  // Métricas para la leyenda de hallazgos (independientes de los combos/toggle, así no hace falta
-  // volver a pedirle el resumen a Claude cada vez que el usuario cambia de vista).
+  // Métricas para la leyenda de hallazgos (independientes de los combos, así no hace falta volver
+  // a pedirle el resumen a Claude cada vez que el usuario cambia de tipo o campaña).
   const insightMetrics = useMemo(() => {
     const withData = points.filter((p) => p.hasData);
     const totalSpend = withData.reduce((sum, p) => sum + p.spend, 0);
@@ -296,7 +288,7 @@ export function InvestmentTrendChart({
 
     return {
       mes: format(month, "MMMM yyyy", { locale: es }),
-      tipoDeResultado: selectedObjectiveLabel ?? "Todos los tipos",
+      tipoDeResultado: tipoLabel,
       campania: selectedCampaignName ?? "Todas las campañas",
       diasConDatos: withData.length,
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -320,7 +312,7 @@ export function InvestmentTrendChart({
         ? { fecha: format(maxCplPoint.date, "d MMM", { locale: es }), valor: formatCurrency(maxCplPoint.cpl, currency, 2) }
         : null,
     };
-  }, [points, month, currency, selectedObjectiveLabel, selectedCampaignName]);
+  }, [points, month, currency, tipoLabel, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -338,63 +330,48 @@ export function InvestmentTrendChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
-        <div>
+      <CardHeader className="flex flex-col gap-2 pb-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">Inversión y rendimiento por día</CardTitle>
-          <div className="mt-1 flex items-center gap-4 text-xs font-semibold text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-sm bg-primary/70" /> Inversión
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} /> {secondaryLegend}
-            </span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Tipo de Resultado"
+              value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+              onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los tipos</option>
+              {objectiveOptions.map((o) => (
+                <option key={o.index} value={o.index}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => setCampaignId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            aria-label="Tipo de Resultado"
-            value={objectiveIndex === null ? "all" : String(objectiveIndex)}
-            onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <option value="all">Todos los tipos</option>
-            {objectiveOptions.map((o) => (
-              <option key={o.index} value={o.index}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-
-          <select
-            aria-label="Campaña"
-            value={campaignId ?? "all"}
-            onChange={(event) => setCampaignId(event.target.value === "all" ? null : event.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
-            <option value="all">Todas las campañas</option>
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-            {(["costo", "cantidad"] as Submetric[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setSubmetric(option)}
-                className={cn(
-                  "rounded px-3 py-1 text-xs font-bold transition-colors",
-                  submetric === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {SUBMETRIC_LABEL[option]}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center gap-4 text-xs font-semibold text-muted-foreground">
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-sm bg-primary/70" /> {cantidadLegend}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} /> {costoLegend}
+          </span>
         </div>
       </CardHeader>
 
@@ -423,16 +400,16 @@ export function InvestmentTrendChart({
                     strokeDasharray={frac === 0 ? undefined : "3 3"}
                   />
                   <text x={PAD.left - 8} y={y} textAnchor="end" dominantBaseline="middle" className="fill-muted-foreground text-[9px]">
-                    {formatCurrency(maxSpend * frac, currency, 0)}
+                    {formatNumber(Math.round(maxCount * frac))}
                   </text>
                   <text x={VIEW_W - PAD.right + 8} y={y} textAnchor="start" dominantBaseline="middle" className="fill-muted-foreground text-[9px]">
-                    {submetric === "costo" ? formatCurrency(maxSecondary * frac, currency, 0) : formatNumber(Math.round(maxSecondary * frac))}
+                    {formatCurrency(maxSecondary * frac, currency, 0)}
                   </text>
                 </g>
               );
             })}
 
-            {/* Línea de referencia: promedio de la métrica secundaria seleccionada (la pill con la etiqueta se dibuja más abajo, después de las barras, para quedar siempre por encima) */}
+            {/* Línea de referencia: promedio de Costo por Resultado (la pill con la etiqueta se dibuja más abajo, después de las barras, para quedar siempre por encima) */}
             {avgSecondary !== null && (
               <line
                 x1={PAD.left}
@@ -446,39 +423,39 @@ export function InvestmentTrendChart({
               />
             )}
 
-            {/* Línea de referencia: promedio de inversión diaria (misma lógica: la pill va después de las barras) */}
-            {avgSpend !== null && (
+            {/* Línea de referencia: promedio de Cantidad diaria (misma lógica: la pill va después de las barras) */}
+            {avgCount !== null && (
               <line
                 x1={PAD.left}
                 x2={VIEW_W - PAD.right}
-                y1={yLeftAt(avgSpend)}
-                y2={yLeftAt(avgSpend)}
+                y1={yLeftAt(avgCount)}
+                y2={yLeftAt(avgCount)}
                 className="stroke-primary"
                 strokeWidth={1.5}
                 opacity={0.55}
               />
             )}
 
-            {/* Barras de inversión */}
+            {/* Barras de Cantidad de Resultados */}
             {points.map((p, i) => {
               if (!p.hasData) return null;
               const isCurrentDay = hoverIndex === null && p.date.toDateString() === today.toDateString();
               return (
                 <path
                   key={p.date.toISOString()}
-                  d={roundedTopBarPath(xAt(i) - barWidth / 2, yLeftAt(p.spend), barWidth, PAD.top + INNER_H, 3)}
+                  d={roundedTopBarPath(xAt(i) - barWidth / 2, yLeftAt(p.leads), barWidth, PAD.top + INNER_H, 3)}
                   className={cn(isCurrentDay ? "fill-primary" : "fill-primary/45")}
                 />
               );
             })}
 
-            {/* Línea de la métrica secundaria (Cantidad o Costo por Resultado) */}
+            {/* Línea de Costo por Resultado */}
             {linePath && <path d={linePath} fill="none" stroke={secondaryColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
             {linePoints.map((p) => (
               <circle key={p.index} cx={p.x} cy={p.y} r={2.5} fill={secondaryColor} />
             ))}
 
-            {/* Días con el valor máximo y mínimo de la métrica secundaria */}
+            {/* Días con el Costo por Resultado máximo y mínimo */}
             {hasDistinctExtremes && maxPoint && minPoint && (
               <>
                 <circle cx={maxPoint.x} cy={maxPoint.y} r={4} fill={secondaryColor} className="stroke-background" strokeWidth={2} />
@@ -489,7 +466,7 @@ export function InvestmentTrendChart({
                       ? maxPoint.y - (POINT_PILL_HEIGHT + POINT_PILL_GAP)
                       : maxPoint.y + POINT_PILL_GAP
                   }
-                  label={`Máx ${format(points[maxPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(submetric, maxPoint.value, currency)}`}
+                  label={`Máx ${format(points[maxPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondaryCurrency(maxPoint.value, currency)}`}
                   color={secondaryColor}
                 />
                 <circle cx={minPoint.x} cy={minPoint.y} r={4} fill={secondaryColor} className="stroke-background" strokeWidth={2} />
@@ -500,7 +477,7 @@ export function InvestmentTrendChart({
                       ? minPoint.y + POINT_PILL_GAP
                       : minPoint.y - (POINT_PILL_HEIGHT + POINT_PILL_GAP)
                   }
-                  label={`Mín ${format(points[minPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondary(submetric, minPoint.value, currency)}`}
+                  label={`Mín ${format(points[minPoint.index]!.date, "d MMM", { locale: es })}: ${formatSecondaryCurrency(minPoint.value, currency)}`}
                   color={secondaryColor}
                 />
               </>
@@ -512,15 +489,15 @@ export function InvestmentTrendChart({
               <AvgPill
                 xRight={VIEW_W - PAD.right}
                 yTop={yRightAt(avgSecondary) - AVG_PILL_HEIGHT / 2}
-                label={`Promedio: ${formatSecondary(submetric, avgSecondary, currency)}`}
+                label={`Promedio: ${formatSecondaryCurrency(avgSecondary, currency)}`}
                 fill={secondaryColor}
               />
             )}
-            {avgSpend !== null && (
+            {avgCount !== null && (
               <AvgPill
                 xRight={VIEW_W - PAD.right}
-                yTop={yLeftAt(avgSpend) - AVG_PILL_HEIGHT / 2}
-                label={`Promedio: ${formatCurrency(avgSpend, currency)}`}
+                yTop={yLeftAt(avgCount) - AVG_PILL_HEIGHT / 2}
+                label={`Promedio: ${formatNumber(Math.round(avgCount))}`}
                 className="fill-primary"
               />
             )}
@@ -546,12 +523,9 @@ export function InvestmentTrendChart({
             )}
             {hovered?.hasData && hoverX !== null && (
               <>
-                <circle cx={hoverX} cy={yLeftAt(hovered.spend)} r={3.5} className="fill-primary stroke-background" strokeWidth={1.5} />
-                {hovered.cpl !== null && submetric === "costo" && (
+                <circle cx={hoverX} cy={yLeftAt(hovered.leads)} r={3.5} className="fill-primary stroke-background" strokeWidth={1.5} />
+                {hovered.cpl !== null && (
                   <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={3.5} fill={secondaryColor} className="stroke-background" strokeWidth={1.5} />
-                )}
-                {submetric === "cantidad" && (
-                  <circle cx={hoverX} cy={yRightAt(hovered.leads)} r={3.5} fill={secondaryColor} className="stroke-background" strokeWidth={1.5} />
                 )}
               </>
             )}
@@ -570,21 +544,15 @@ export function InvestmentTrendChart({
                 <>
                   <span className="flex items-center justify-between gap-3 text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-sm bg-primary/70" /> Inversión
+                      <span className="h-1.5 w-1.5 rounded-sm bg-primary/70" /> Cantidad
                     </span>
-                    <span className="font-medium text-foreground">{formatCurrency(hovered.spend, currency)}</span>
+                    <span className="font-medium text-foreground">{formatNumber(hovered.leads)}</span>
                   </span>
                   <span className="flex items-center justify-between gap-3 text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> {secondaryLabel}
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> Costo por Resultado
                     </span>
-                    <span className="font-medium text-foreground">
-                      {submetric === "costo"
-                        ? hovered.cpl !== null
-                          ? formatSecondary("costo", hovered.cpl, currency)
-                          : "0"
-                        : formatSecondary("cantidad", hovered.leads, currency)}
-                    </span>
+                    <span className="font-medium text-foreground">{hovered.cpl !== null ? formatSecondaryCurrency(hovered.cpl, currency) : "0"}</span>
                   </span>
                 </>
               ) : (
