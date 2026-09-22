@@ -255,6 +255,7 @@ export function PlacementAnalysis({
             metrics={insightMetrics}
             accentColor={selectedColor}
             bordered={false}
+            variant="card"
             monthIsComplete={monthIsComplete}
             clientId={clientId}
           />

@@ -557,7 +557,14 @@ export function WeekdayPerformanceChart({
         )}
 
         {insightMetrics && (
-          <ChartInsightPanel chart="weekday-performance" metrics={insightMetrics} accentColor={lineColor} monthIsComplete={monthIsComplete} clientId={clientId} />
+          <ChartInsightPanel
+            chart="weekday-performance"
+            metrics={insightMetrics}
+            accentColor={lineColor}
+            variant="card"
+            monthIsComplete={monthIsComplete}
+            clientId={clientId}
+          />
         )}
       </CardContent>
     </Card>

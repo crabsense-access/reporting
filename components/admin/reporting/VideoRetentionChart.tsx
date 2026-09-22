@@ -494,6 +494,7 @@ export function VideoRetentionChart({
             chart="video-retention"
             metrics={insightMetrics}
             accentColor={AGE_COLOR["65+"] ?? "#7c3aed"}
+            variant="card"
             monthIsComplete={monthIsComplete}
             clientId={clientId}
           />

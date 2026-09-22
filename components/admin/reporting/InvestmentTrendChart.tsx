@@ -600,15 +600,15 @@ export function InvestmentTrendChart({
           )}
         </div>
 
-        {/* variant="card" a pedido de Martín: mismo estilo (recuadro + espaciado importante arriba)
-            que las tarjetas de ChartInsightByTypePanel/CampaignHighlightPanel (ver
-            ChartInsightPanel.tsx) — el resto de los charts con ChartInsightPanel no pasan variant,
-            así que no cambian. */}
+        {/* topSpacing="lg" a pedido puntual de Martín para ESTE gráfico ("espaciado top
+            importante") — variant="card" es el default de ChartInsightPanel (ver su comentario de
+            cabecera), se pasa igual acá por explícito. */}
         <ChartInsightPanel
           chart="investment-trend"
           metrics={insightMetrics}
           accentColor="hsl(var(--primary))"
           variant="card"
+          topSpacing="lg"
           monthIsComplete={monthIsComplete}
           clientId={clientId}
         />

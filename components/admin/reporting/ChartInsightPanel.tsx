@@ -9,12 +9,19 @@
 // gráfico) y se re-pide si cambian las métricas de fondo (ej. al pasar de
 // día, con datos de prueba distintos).
 //
-// Dos variantes visuales (prop `variant`): "flow" (default, el estilo de siempre — título +
-// chips + texto sueltos) y "card" (a pedido de Martín, hoy sólo la usa InvestmentTrendChart.tsx
-// — recuadro con borde y fondo tenue del color accentColor, mismo look que las tarjetas de
-// ChartInsightByTypePanel/CampaignHighlightPanel, con más espaciado arriba). El resto de los
-// consumidores de este componente (Audience/Hourly/Placement/Recommendations/Region/
-// VideoRetention/Weekday) no pasan `variant`, así que siguen en "flow" sin cambios.
+// Dos variantes visuales (prop `variant`): "card" (default — recuadro con borde + fondo tenue del
+// color accentColor, mismo look que las tarjetas de ChartInsightByTypePanel/CampaignHighlightPanel)
+// y "flow" (título + chips + texto sueltos, sin recuadro — el estilo original, ya no lo usa ningún
+// gráfico pero queda disponible). A pedido de Martín, TODOS los consumidores de este componente
+// (investment-trend/placements/audience/regions/hourly-performance/weekday-performance/
+// video-retention, ver InvestmentTrendChart/PlacementAnalysis/AudienceAnalysis/RegionAnalysis/
+// HourlyPerformanceChart/WeekdayPerformanceChart/VideoRetentionChart) pasan variant="card"
+// explícitamente.
+//
+// El espaciado de arriba es independiente de la variante (prop `topSpacing`): "default" (pt-3,
+// igual que ChartInsightByTypePanel/CampaignHighlightPanel) salvo que se pida "lg" (pt-8,
+// "espaciado top importante" — hoy sólo InvestmentTrendChart.tsx lo pide, a pedido puntual de
+// Martín para ESE gráfico).
 
 import { useEffect, useState } from "react";
 
@@ -41,7 +48,8 @@ export function ChartInsightPanel({
   metrics,
   accentColor,
   bordered = true,
-  variant = "flow",
+  variant = "card",
+  topSpacing = "default",
   monthIsComplete,
   clientId,
 }: {
@@ -50,8 +58,10 @@ export function ChartInsightPanel({
   accentColor: string;
   /** false cuando el panel va primero dentro de la card (ej. arriba del gráfico) y no necesita el separador superior. */
   bordered?: boolean;
-  /** "flow" (default): título + chips + texto sueltos. "card": recuadro con borde + fondo tenue de accentColor y más espaciado arriba (ver comentario de cabecera) — a pedido de Martín, sólo InvestmentTrendChart.tsx lo usa hoy. */
+  /** "card" (default): recuadro con borde + fondo tenue de accentColor. "flow": título + chips + texto sueltos, sin recuadro (ver comentario de cabecera). */
   variant?: "flow" | "card";
+  /** "default" (pt-3, default) o "lg" (pt-8, "espaciado top importante") — ver comentario de cabecera. */
+  topSpacing?: "default" | "lg";
   /** true cuando el mes que están mostrando estas métricas ya terminó — sólo entonces la ruta cachea la respuesta de Claude (ver app/api/reporting/chart-insights/route.ts). */
   monthIsComplete: boolean;
   clientId?: string;
@@ -91,11 +101,13 @@ export function ChartInsightPanel({
     };
   }, [chart, metricsKey, monthIsComplete, clientId]);
 
-  // "card" pide bastante más espaciado arriba que "flow" (pt-3) — a pedido de Martín ("espaciado
-  // top importante"), tanto en el estado final como en loading/error para que no salte al cargar.
-  const topPad = variant === "card" ? "pt-8" : "pt-3";
+  const topPad = topSpacing === "lg" ? "pt-8" : "pt-3";
   const wrapperClass = cn("flex flex-col gap-2", bordered && "border-t border-border", bordered && topPad);
-  const cardOuterClass = cn("border-t border-border", topPad);
+  // Igual que wrapperClass: el separador/espaciado de arriba depende de `bordered`, no de la
+  // variante — con bordered=false (ej. PlacementAnalysis.tsx, donde el insight va primero dentro
+  // de la card) el recuadro de "card" queda pegado arriba, sin línea divisoria ni padding extra,
+  // mismo criterio que ya usaba "flow".
+  const cardOuterClass = cn(bordered && "border-t border-border", bordered && topPad);
 
   if (state.status === "loading") {
     if (variant === "card") {

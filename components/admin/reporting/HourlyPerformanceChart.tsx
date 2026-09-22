@@ -514,7 +514,14 @@ export function HourlyPerformanceChart({
         )}
 
         {insightMetrics && (
-          <ChartInsightPanel chart="hourly-performance" metrics={insightMetrics} accentColor={lineColor} monthIsComplete={monthIsComplete} clientId={clientId} />
+          <ChartInsightPanel
+            chart="hourly-performance"
+            metrics={insightMetrics}
+            accentColor={lineColor}
+            variant="card"
+            monthIsComplete={monthIsComplete}
+            clientId={clientId}
+          />
         )}
       </CardContent>
     </Card>

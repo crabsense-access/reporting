@@ -422,6 +422,7 @@ export function AudienceAnalysis({
             chart="audience"
             metrics={insightMetrics}
             accentColor={selectedColor}
+            variant="card"
             monthIsComplete={monthIsComplete}
             clientId={clientId}
           />
