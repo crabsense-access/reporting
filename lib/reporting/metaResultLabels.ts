@@ -78,3 +78,65 @@ export function resolveResultLabel(actionType: string | null, fallbackLabel: str
   const key = actionType.trim().toLowerCase();
   return META_ACTION_TYPE_LABELS[key] ?? fallbackLabel;
 }
+
+// Traduce publisher_platform + platform_position (el breakdown de "ubicación" de Meta) al nombre
+// en español que se muestra en PlacementAnalysis.tsx ("Dónde se muestran los anuncios") — mismo
+// espíritu que META_ACTION_TYPE_LABELS arriba: Meta no devuelve un nombre "lindo" en este
+// breakdown, sólo los valores internos (ej. "facebook"/"feed", "instagram"/"story"), así que hay
+// que armar el label a mano. Cubre las combinaciones más comunes; una combinación nueva que Meta
+// agregue cae al fallback (Plataforma + Posición, en Title Case) en vez de romper.
+const PUBLISHER_PLATFORM_LABEL: Record<string, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  audience_network: "Audience Network",
+  messenger: "Messenger",
+};
+
+const PLATFORM_POSITION_LABEL: Record<string, string> = {
+  feed: "Feed",
+  stream: "Feed",
+  profile_feed: "Feed de perfil",
+  video_feeds: "Feed de videos",
+  right_hand_column: "Columna derecha",
+  instant_article: "Artículos instantáneos",
+  marketplace: "Marketplace",
+  story: "Stories",
+  facebook_reels: "Reels",
+  facebook_reels_overlay: "Reels (superposición)",
+  reels: "Reels",
+  instream_video: "Video in-stream",
+  search: "Búsqueda",
+  explore: "Explorar",
+  explore_home: "Explorar",
+  ig_search: "Búsqueda",
+  shop: "Shop",
+  classic: "Clásico",
+  rewarded_video: "Video recompensado",
+  messenger_home: "Inicio",
+  sponsored_messages: "Mensajes patrocinados",
+  group_home: "Grupos",
+};
+
+function titleCaseFallback(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+/**
+ * Nombre en español de una ubicación de publicación, a partir de publisher_platform +
+ * platform_position (ver fetchPlacementSegments en metaInvestmentData.ts). Caso especial:
+ * Audience Network se muestra sin la posición (salvo "video recompensado", que Martín pidió
+ * distinguir porque suele traer clics sin intención real — mismo criterio que tenía el mock
+ * PLACEMENTS de lib/reporting/mockInvestmentCalendar.ts).
+ */
+export function placementLabel(publisherPlatform: string, platformPosition: string): string {
+  if (publisherPlatform === "audience_network") {
+    return platformPosition === "rewarded_video" ? "Audience Network (video recompensado)" : "Audience Network";
+  }
+  const platform = PUBLISHER_PLATFORM_LABEL[publisherPlatform] ?? titleCaseFallback(publisherPlatform);
+  const position = PLATFORM_POSITION_LABEL[platformPosition] ?? titleCaseFallback(platformPosition);
+  return `${platform} ${position}`;
+}
