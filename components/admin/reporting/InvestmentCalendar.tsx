@@ -736,7 +736,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
               <LeadsByTypeTrendChart
                 days={data.days}
                 currency={currency}
-                objectiveLabels={data.objectiveLabels}
+                objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
                 month={selectedMonthDate}
                 monthIsComplete={!isCurrentMonth}
                 clientId={clientId}
@@ -756,7 +756,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           {data && (
             <PlacementAnalysis
               segments={data.placementSegments}
-              objectiveLabels={data.objectiveLabels}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
               ads={data.ads}
@@ -768,7 +768,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           {data && (
             <AudienceAnalysis
               segments={data.audienceSegments}
-              objectiveLabels={data.objectiveLabels}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
               ads={data.ads}
@@ -792,7 +792,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           {data && (
             <RegionAnalysis
               segments={data.regionSegments}
-              objectiveLabels={data.objectiveLabels}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
               ads={data.ads}

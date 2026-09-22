@@ -21,10 +21,13 @@
 // ANUNCIO (mismo patrón en cascada que InvestmentTrendChart — ver visibleAdsForCampaign y
 // resolveAdFilteredTotals en lib/reporting/adFilter.ts), con "Todos los tipos" como opción del
 // primero (antes forzaba un tipo puntual siempre elegido — a pedido de Martín, ahora es igual al
-// resto de los gráficos con este combo). La fila "Sin provincia asignada" (ver
-// withUnassignedRegionBucket en metaInvestmentData.ts) no tiene desglose por anuncio — con un
-// filtro de Campaña o Anuncio elegido, esa fila directamente no aparece (aceptado con Martín,
-// mismo criterio que el resto de la página para ese bucket).
+// resto de los gráficos con este combo) y sus valores con el nombre REAL del tipo de Resultado
+// como lo llama Meta Ads Manager (ver objectiveOptions más abajo y resolveResultLabel en
+// lib/reporting/metaResultLabels.ts), no el label que se tipea a mano al cargar el Objetivo en el
+// Admin. La fila "Sin provincia asignada" (ver withUnassignedRegionBucket en
+// metaInvestmentData.ts) no tiene desglose por anuncio — con un filtro de Campaña o Anuncio
+// elegido, esa fila directamente no aparece (aceptado con Martín, mismo criterio que el resto de
+// la página para ese bucket).
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -83,6 +86,11 @@ interface RegionSegmentTotals {
   byAd: Record<string, RegionAdBreakdownEntry>;
 }
 
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
 /** Igual que resolveAdFilteredTotals (lib/reporting/adFilter.ts) pero para reach/impressions/
  * clicks, que ese helper compartido no conoce (ver comentario de cabecera). */
 function resolveRegionEngagementTotals(
@@ -109,7 +117,7 @@ function resolveRegionEngagementTotals(
 
 export function RegionAnalysis({
   segments,
-  objectiveLabels,
+  objectiveOptions,
   currency,
   monthIsComplete,
   clientId,
@@ -118,8 +126,13 @@ export function RegionAnalysis({
 }: {
   /** Un elemento por provincia/región con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: RegionSegmentTotals[];
-  /** Leyenda de cada Objetivo, en orden (índice alineado con objectiveLeads/objectiveSpend de cada segmento). */
-  objectiveLabels: string[];
+  /**
+   * Tipos de Resultado con al menos 1 lead este mes (índice alineado con objectiveLeads/objectiveSpend
+   * de cada segmento), ya resueltos al nombre real que muestra Meta Ads Manager — ver
+   * resolveResultLabel en lib/reporting/metaResultLabels.ts y visibleObjectiveTotals en
+   * InvestmentCalendar.tsx. No es el label que se tipea a mano al cargar el Objetivo en el Admin.
+   */
+  objectiveOptions: ObjectiveOption[];
   currency: string;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
@@ -146,30 +159,17 @@ export function RegionAnalysis({
     }
   }, [visibleAds, adId]);
 
-  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
+  // objectiveOptions ya viene calculado en InvestmentCalendar.tsx sobre TODOS los segmentos (sin
+  // filtrar por Campaña/Anuncio) y sólo con los Objetivos que tienen al menos 1 lead este mes,
   // mismo criterio que en AudienceAnalysis.tsx.
-  const objectiveMonthLeads = useMemo(() => {
-    const totals = objectiveLabels.map(() => 0);
-    for (const s of segments) {
-      s.objectiveLeads.forEach((value, i) => {
-        totals[i] = (totals[i] ?? 0) + value;
-      });
-    }
-    return totals;
-  }, [segments, objectiveLabels]);
-
-  const visibleIndexes = useMemo(
-    () => objectiveLabels.map((_, i) => i).filter((i) => (objectiveMonthLeads[i] ?? 0) > 0),
-    [objectiveLabels, objectiveMonthLeads]
-  );
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
   // a "Todos los tipos" en vez de quedarse mostrando un ranking vacío.
   useEffect(() => {
-    if (objectiveIndex !== null && !visibleIndexes.includes(objectiveIndex)) {
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
       setObjectiveIndex(null);
     }
-  }, [visibleIndexes, objectiveIndex]);
+  }, [objectiveOptions, objectiveIndex]);
 
   // Con "Todos los tipos" no hay un Objetivo puntual para colorear — se usa el mismo azul de
   // "Eficiente" (TIER_COLOR) como acento neutro, igual de espíritu que LINE_COLOR/COSTO_DEFAULT_COLOR
@@ -179,9 +179,10 @@ export function RegionAnalysis({
   const hasFilter = campaignId !== null || adId !== null;
 
   const rows = useMemo(() => {
+    const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     return segments
       .map((s) => {
-        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length) : null;
+        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount) : null;
         const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
         const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
         // Con "Todos los tipos" (objectiveIndex null) se suman TODOS los índices — mismo criterio
@@ -199,7 +200,7 @@ export function RegionAnalysis({
       })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, objectiveIndex, hasFilter, campaignId, adId, objectiveLabels.length]);
+  }, [segments, objectiveIndex, hasFilter, campaignId, adId]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -217,7 +218,7 @@ export function RegionAnalysis({
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
 
     return {
-      tipoCampania: objectiveIndex !== null ? (objectiveLabels[objectiveIndex] ?? "") : "Todos los tipos",
+      tipoCampania: objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? "") : "Todos los tipos",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -240,7 +241,7 @@ export function RegionAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveLabels, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName]);
+  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -261,9 +262,9 @@ export function RegionAnalysis({
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <option value="all">Todos los tipos</option>
-            {visibleIndexes.map((idx) => (
-              <option key={idx} value={idx}>
-                {objectiveLabels[idx]}
+            {objectiveOptions.map((o) => (
+              <option key={o.index} value={o.index}>
+                {o.label}
               </option>
             ))}
           </select>

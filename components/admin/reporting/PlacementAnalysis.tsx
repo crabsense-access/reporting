@@ -5,11 +5,14 @@
 // promedio del período filtrado (mismo criterio "eficiente / promedio / ineficiente" que
 // RegionAnalysis.tsx), con el mismo toggle dinámico de Objetivo + combos de Campaña y Anuncio que
 // el resto de la página (ver AudienceAnalysis.tsx/RegionAnalysis.tsx: cualquier cantidad de
-// Objetivos, sólo se listan los que tienen al menos 1 lead este mes; Anuncio en cascada con
-// Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts). Cada fila muestra % de
-// inversión, CPL, Inversión y Leads en columnas alineadas junto a la barra de eficiencia — sin
-// tabla de detalle aparte. El insight de Claude va ANTES del gráfico (a diferencia del resto de la
-// página, donde va después) — convención propia de este gráfico, sin cambios.
+// Objetivos, sólo se listan los que tienen al menos 1 lead este mes, con el nombre REAL del tipo de
+// Resultado como lo llama Meta Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
+// lib/reporting/metaResultLabels.ts —, no el label que se tipea a mano al cargar el Objetivo en el
+// Admin; Anuncio en cascada con Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts).
+// Cada fila muestra % de inversión, CPL, Inversión y Leads en columnas alineadas junto a la barra
+// de eficiencia — sin tabla de detalle aparte. El insight de Claude va ANTES del gráfico (a
+// diferencia del resto de la página, donde va después) — convención propia de este gráfico, sin
+// cambios.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchPlacementSegments — e
 // InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por ubicación
@@ -63,9 +66,14 @@ interface PlacementSegmentTotals {
   byAd: Record<string, AdBreakdownEntry>;
 }
 
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
 export function PlacementAnalysis({
   segments,
-  objectiveLabels,
+  objectiveOptions,
   currency,
   monthIsComplete,
   clientId,
@@ -74,8 +82,13 @@ export function PlacementAnalysis({
 }: {
   /** Un elemento por ubicación de publicación con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: PlacementSegmentTotals[];
-  /** Leyenda de cada Objetivo, en orden (índice alineado con objectiveLeads/objectiveSpend de cada segmento). */
-  objectiveLabels: string[];
+  /**
+   * Tipos de Resultado con al menos 1 lead este mes (índice alineado con objectiveLeads/objectiveSpend
+   * de cada segmento), ya resueltos al nombre real que muestra Meta Ads Manager — ver
+   * resolveResultLabel en lib/reporting/metaResultLabels.ts y visibleObjectiveTotals en
+   * InvestmentCalendar.tsx. No es el label que se tipea a mano al cargar el Objetivo en el Admin.
+   */
+  objectiveOptions: ObjectiveOption[];
   currency: string;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
@@ -102,45 +115,33 @@ export function PlacementAnalysis({
     }
   }, [visibleAds, adId]);
 
-  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
+  // objectiveOptions ya viene calculado en InvestmentCalendar.tsx sobre TODOS los segmentos (sin
+  // filtrar por Campaña/Anuncio) y sólo con los Objetivos que tienen al menos 1 lead este mes,
   // mismo criterio que en AudienceAnalysis.tsx/RegionAnalysis.tsx.
-  const objectiveMonthLeads = useMemo(() => {
-    const totals = objectiveLabels.map(() => 0);
-    for (const s of segments) {
-      s.objectiveLeads.forEach((value, i) => {
-        totals[i] = (totals[i] ?? 0) + value;
-      });
-    }
-    return totals;
-  }, [segments, objectiveLabels]);
-
-  const visibleIndexes = useMemo(
-    () => objectiveLabels.map((_, i) => i).filter((i) => (objectiveMonthLeads[i] ?? 0) > 0),
-    [objectiveLabels, objectiveMonthLeads]
-  );
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
   // al primero visible en vez de quedarse mostrando un ranking vacío.
   useEffect(() => {
-    if (visibleIndexes.length > 0 && !visibleIndexes.includes(selectedIndex)) {
-      setSelectedIndex(visibleIndexes[0]!);
+    if (objectiveOptions.length > 0 && !objectiveOptions.some((o) => o.index === selectedIndex)) {
+      setSelectedIndex(objectiveOptions[0]!.index);
     }
-  }, [visibleIndexes, selectedIndex]);
+  }, [objectiveOptions, selectedIndex]);
 
   const selectedColor = objectiveColor(selectedIndex);
   const hasFilter = campaignId !== null || adId !== null;
 
   const rows = useMemo(() => {
+    const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     return segments
       .map((s) => {
-        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length) : null;
+        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount) : null;
         const leads = hasFilter ? (scoped?.objectiveLeads[selectedIndex] ?? 0) : (s.objectiveLeads[selectedIndex] ?? 0);
         const spend = hasFilter ? (scoped?.objectiveSpend[selectedIndex] ?? 0) : (s.objectiveSpend[selectedIndex] ?? 0);
         return { placement: s.placement, leads, spend };
       })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, selectedIndex, hasFilter, campaignId, adId, objectiveLabels.length]);
+  }, [segments, selectedIndex, hasFilter, campaignId, adId]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -156,7 +157,7 @@ export function PlacementAnalysis({
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
 
     return {
-      tipoCampania: objectiveLabels[selectedIndex] ?? "",
+      tipoCampania: objectiveOptions.find((o) => o.index === selectedIndex)?.label ?? "",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
@@ -173,7 +174,7 @@ export function PlacementAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveLabels, selectedIndex, avgCpl, totalSpend, currency, selectedCampaignName]);
+  }, [rows, objectiveOptions, selectedIndex, avgCpl, totalSpend, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -193,9 +194,9 @@ export function PlacementAnalysis({
             onChange={(event) => setSelectedIndex(Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            {visibleIndexes.map((idx) => (
-              <option key={idx} value={idx}>
-                {objectiveLabels[idx]}
+            {objectiveOptions.map((o) => (
+              <option key={o.index} value={o.index}>
+                {o.label}
               </option>
             ))}
           </select>

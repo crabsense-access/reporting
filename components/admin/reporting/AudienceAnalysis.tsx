@@ -3,11 +3,14 @@
 // "Quién responde a los anuncios": leads, inversión y CPL del mes por género y rango etario, para
 // el Objetivo elegido en el toggle (mismo patrón dinámico que "Leads y CPL por tipo de campaña" —
 // ver LeadsByTypeTrendChart.tsx: cualquier cantidad de Objetivos, sólo se listan los que tienen al
-// menos 1 lead este mes). Gráfico de barras verticales agrupadas (Mujeres/Hombres) con el rango
-// etario en el eje X y la altura de cada barra codificando volumen de leads — debajo de cada rango
-// etario, un breve recuadro con el CPL, la inversión y los leads combinados de ambos géneros para
-// esa franja, en vez de una tabla de detalle aparte (mismo criterio que "Dónde se muestran los
-// anuncios": sin duplicar información que ya se ve en el gráfico).
+// menos 1 lead este mes; el combo muestra el nombre REAL del tipo de Resultado como lo llama Meta
+// Ads Manager — ver objectiveOptions más abajo y resolveResultLabel en
+// lib/reporting/metaResultLabels.ts —, no el label que se tipea a mano al cargar el Objetivo en el
+// Admin). Gráfico de barras verticales agrupadas (Mujeres/Hombres) con el rango etario en el eje X
+// y la altura de cada barra codificando volumen de leads — debajo de cada rango etario, un breve
+// recuadro con el CPL, la inversión y los leads combinados de ambos géneros para esa franja, en
+// vez de una tabla de detalle aparte (mismo criterio que "Dónde se muestran los anuncios": sin
+// duplicar información que ya se ve en el gráfico).
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchAudienceSegments —
 // e InvestmentCalendar.tsx, que pide todo junto una sola vez): un desglose por edad+género a nivel
@@ -68,9 +71,14 @@ interface AudienceSegmentTotals {
   byAd: Record<string, AdBreakdownEntry>;
 }
 
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
 export function AudienceAnalysis({
   segments,
-  objectiveLabels,
+  objectiveOptions,
   currency,
   monthIsComplete,
   clientId,
@@ -79,8 +87,13 @@ export function AudienceAnalysis({
 }: {
   /** Un elemento por cada combinación género+rango etario con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: AudienceSegmentTotals[];
-  /** Leyenda de cada Objetivo, en orden (índice alineado con objectiveLeads/objectiveSpend de cada segmento). */
-  objectiveLabels: string[];
+  /**
+   * Tipos de Resultado con al menos 1 lead este mes (índice alineado con objectiveLeads/objectiveSpend
+   * de cada segmento), ya resueltos al nombre real que muestra Meta Ads Manager — ver
+   * resolveResultLabel en lib/reporting/metaResultLabels.ts y visibleObjectiveTotals en
+   * InvestmentCalendar.tsx. No es el label que se tipea a mano al cargar el Objetivo en el Admin.
+   */
+  objectiveOptions: ObjectiveOption[];
   currency: string;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
@@ -107,46 +120,33 @@ export function AudienceAnalysis({
     }
   }, [visibleAds, adId]);
 
-  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
-  // para que las opciones no cambien según el filtro elegido — mismo criterio que objectiveOptions
-  // en InvestmentTrendChart.
-  const objectiveMonthLeads = useMemo(() => {
-    const totals = objectiveLabels.map(() => 0);
-    for (const s of segments) {
-      s.objectiveLeads.forEach((value, i) => {
-        totals[i] = (totals[i] ?? 0) + value;
-      });
-    }
-    return totals;
-  }, [segments, objectiveLabels]);
-
-  const visibleIndexes = useMemo(
-    () => objectiveLabels.map((_, i) => i).filter((i) => (objectiveMonthLeads[i] ?? 0) > 0),
-    [objectiveLabels, objectiveMonthLeads]
-  );
+  // objectiveOptions ya viene calculado en InvestmentCalendar.tsx sobre TODOS los segmentos (sin
+  // filtrar por Campaña/Anuncio) y sólo con los Objetivos que tienen al menos 1 lead este mes, así
+  // que las opciones no cambian según el filtro elegido — mismo criterio que en InvestmentTrendChart.
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
   // al primero visible en vez de quedarse mostrando un desglose vacío.
   useEffect(() => {
-    if (visibleIndexes.length > 0 && !visibleIndexes.includes(selectedIndex)) {
-      setSelectedIndex(visibleIndexes[0]!);
+    if (objectiveOptions.length > 0 && !objectiveOptions.some((o) => o.index === selectedIndex)) {
+      setSelectedIndex(objectiveOptions[0]!.index);
     }
-  }, [visibleIndexes, selectedIndex]);
+  }, [objectiveOptions, selectedIndex]);
 
   // Con Campaña y/o Anuncio elegidos, cada segmento se resuelve contra SU desglose por anuncio
   // (byAd) — un segmento sin ningún anuncio que matchee el filtro simplemente no aparece (ver
   // ageRanges más abajo, que se recalcula sobre effectiveSegments).
   const effectiveSegments = useMemo(() => {
     if (campaignId === null && adId === null) return segments;
+    const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     const result: AudienceSegmentTotals[] = [];
     for (const s of segments) {
-      const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length);
+      const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount);
       if (scoped) {
         result.push({ gender: s.gender, ageRange: s.ageRange, objectiveLeads: scoped.objectiveLeads, objectiveSpend: scoped.objectiveSpend, byAd: s.byAd });
       }
     }
     return result;
-  }, [segments, campaignId, adId, objectiveLabels.length]);
+  }, [segments, campaignId, adId]);
 
   const ageRanges = useMemo(
     () => Array.from(new Set(effectiveSegments.map((s) => s.ageRange))).sort(compareAgeRanges),
@@ -213,7 +213,7 @@ export function AudienceAnalysis({
     const totalLeads = typeLeads > 0 ? typeLeads : 1;
 
     return {
-      tipoCampania: objectiveLabels[selectedIndex] ?? "",
+      tipoCampania: objectiveOptions.find((o) => o.index === selectedIndex)?.label ?? "",
       campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       leadsTotales: formatNumber(typeLeads),
@@ -242,7 +242,7 @@ export function AudienceAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveSegments, selectedIndex, objectiveLabels, avgCpl, typeLeads, genderTotals, currency, selectedCampaignName]);
+  }, [effectiveSegments, selectedIndex, objectiveOptions, avgCpl, typeLeads, genderTotals, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -266,9 +266,9 @@ export function AudienceAnalysis({
             onChange={(event) => setSelectedIndex(Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            {visibleIndexes.map((idx) => (
-              <option key={idx} value={idx}>
-                {objectiveLabels[idx]}
+            {objectiveOptions.map((o) => (
+              <option key={o.index} value={o.index}>
+                {o.label}
               </option>
             ))}
           </select>
@@ -308,7 +308,7 @@ export function AudienceAnalysis({
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5">
-        {visibleIndexes.length === 0 || ageRanges.length === 0 ? (
+        {objectiveOptions.length === 0 || ageRanges.length === 0 ? (
           <p className="text-xs text-muted-foreground">Todavía no hay leads este mes.</p>
         ) : (
           <div className="flex items-end justify-between gap-2 sm:gap-4">

@@ -15,7 +15,10 @@
 // la versión anterior (3 tipos fijos, LeadType), acá se muestra CUALQUIER cantidad de Objetivos
 // que el cliente tenga cargados en el Admin — un Objetivo nuevo aparece solo, sin tocar código.
 // Sólo se muestran (leyenda, botones de filtro, barras apiladas) los Objetivos con al menos 1
-// lead en el mes: uno con 0 leads todo el mes simplemente no aparece (visibleIndexes más abajo).
+// lead en el mes: uno con 0 leads todo el mes simplemente no aparece (visibleIndexes más abajo),
+// y con el nombre REAL del tipo de Resultado como lo llama Meta Ads Manager (ver objectiveOptions
+// más abajo y resolveResultLabel en lib/reporting/metaResultLabels.ts), no el label que se tipea
+// a mano al cargar el Objetivo en el Admin.
 //
 // Además del toggle de Objetivo (arriba), dos combos más de CAMPAÑA y ANUNCIO filtran todo el
 // gráfico (barras apiladas, línea de CPL y hallazgos) — mismo patrón en cascada que
@@ -130,10 +133,15 @@ function PointPill({ x, yTop, label, color }: { x: number; yTop: number; label: 
   );
 }
 
+interface ObjectiveOption {
+  index: number;
+  label: string;
+}
+
 export function LeadsByTypeTrendChart({
   days,
   currency,
-  objectiveLabels,
+  objectiveOptions,
   month,
   monthIsComplete,
   clientId,
@@ -142,8 +150,13 @@ export function LeadsByTypeTrendChart({
 }: {
   days: DailyRealTotals[];
   currency: string;
-  /** Leyenda de cada Objetivo, en orden (índice alineado con objectiveLeads/objectiveSpend de cada día) — ver lib/reporting/metaInvestmentData.ts. */
-  objectiveLabels: string[];
+  /**
+   * Tipos de Resultado con al menos 1 lead este mes (índice alineado con objectiveLeads/objectiveSpend
+   * de cada día), ya resueltos al nombre real que muestra Meta Ads Manager — ver resolveResultLabel
+   * en lib/reporting/metaResultLabels.ts y visibleObjectiveTotals en InvestmentCalendar.tsx. No es
+   * el label que se tipea a mano al cargar el Objetivo en el Admin.
+   */
+  objectiveOptions: ObjectiveOption[];
   /** Primer día del mes seleccionado en el combo de InvestmentCalendar.tsx — define el rango de días del eje X (independiente de "hoy", que sólo se usa para resaltar el día actual cuando el mes mostrado es el mes en curso). */
   month: Date;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightByTypePanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
@@ -179,22 +192,20 @@ export function LeadsByTypeTrendChart({
 
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
 
-  // Sólo se muestran (leyenda, botones, barras apiladas) los Objetivos con al menos 1 lead en el
-  // mes — uno que no generó nada este mes no aparece, en vez de mostrar una columna/segmento vacío.
-  const objectiveMonthLeads = useMemo(() => {
-    const totals = objectiveLabels.map(() => 0);
-    for (const d of days) {
-      d.objectiveLeads.forEach((value, i) => {
-        totals[i] = (totals[i] ?? 0) + value;
-      });
-    }
-    return totals;
-  }, [days, objectiveLabels]);
+  // objectiveOptions ya viene calculado en InvestmentCalendar.tsx sólo con los Objetivos con al
+  // menos 1 lead este mes — uno que no generó nada este mes no aparece, en vez de mostrar una
+  // columna/segmento vacío.
+  const visibleIndexes = useMemo(() => objectiveOptions.map((o) => o.index), [objectiveOptions]);
 
-  const visibleIndexes = useMemo(
-    () => objectiveLabels.map((_, i) => i).filter((i) => (objectiveMonthLeads[i] ?? 0) > 0),
-    [objectiveLabels, objectiveMonthLeads]
-  );
+  // Nombre resuelto de cada Objetivo por índice, para no repetir el .find() en cada lugar que lo
+  // necesita (leyenda, select, tooltip, hallazgos).
+  const labelByIndex = useMemo(() => {
+    const map: Record<number, string> = {};
+    objectiveOptions.forEach((o) => {
+      map[o.index] = o.label;
+    });
+    return map;
+  }, [objectiveOptions]);
 
   // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
   // a "Todos los tipos" en vez de quedarse mostrando un CPL vacío.
@@ -205,14 +216,14 @@ export function LeadsByTypeTrendChart({
   }, [visibleIndexes, objectiveIndex]);
 
   // Mapa inverso label -> índice, para poder colorear cada tarjeta de hallazgo por su propio
-  // Objetivo (el "tipo" que devuelve Claude es el label configurado, no un índice).
+  // Objetivo (el "tipo" que devuelve Claude es el label YA resuelto, no un índice).
   const indexByLabel = useMemo(() => {
     const map: Record<string, number> = {};
-    objectiveLabels.forEach((label, i) => {
-      map[label] = i;
+    objectiveOptions.forEach((o) => {
+      map[o.label] = o.index;
     });
     return map;
-  }, [objectiveLabels]);
+  }, [objectiveOptions]);
   const colorForTipo = (tipo: string): string => {
     const idx = indexByLabel[tipo];
     return idx !== undefined ? objectiveColor(idx) : "hsl(var(--primary))";
@@ -222,7 +233,11 @@ export function LeadsByTypeTrendChart({
     const monthStart = startOfMonth(month);
     const monthEnd = endOfMonth(month);
     const daysInMonth = monthEnd.getDate();
-    const zeroArr = objectiveLabels.map(() => 0);
+    // Cantidad TOTAL de Objetivos configurados (no sólo los visibles) — para dimensionar arrays
+    // que se indexan por la posición ORIGINAL del Objetivo (ver resolveAdFilteredTotals); sale del
+    // propio array de datos, no de objectiveOptions (que sólo trae los visibles).
+    const objectivesCount = days[0]?.objectiveLeads.length ?? 0;
+    const zeroArr = Array.from({ length: objectivesCount }, () => 0);
     // Con Campaña y/o Anuncio elegidos, cada día se resuelve contra SU desglose por anuncio
     // (entry.byAd — ver resolveAdFilteredTotals) en vez del total de cuenta; mismo criterio que
     // InvestmentTrendChart: si ninguno de los anuncios que matchean el filtro tuvo una fila ese
@@ -233,7 +248,7 @@ export function LeadsByTypeTrendChart({
       const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
       const dateKey = format(date, "yyyy-MM-dd");
       const entry = byDate.get(dateKey);
-      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, objectiveLabels.length) : null;
+      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, objectivesCount) : null;
       const hasData = hasFilter ? scoped !== null : Boolean(entry);
       const objectiveLeads = hasFilter ? (scoped?.objectiveLeads ?? zeroArr) : (entry?.objectiveLeads ?? zeroArr);
       const objectiveSpend = hasFilter ? (scoped?.objectiveSpend ?? zeroArr) : (entry?.objectiveSpend ?? zeroArr);
@@ -241,7 +256,7 @@ export function LeadsByTypeTrendChart({
       result.push({ date, day, objectiveLeads, objectiveSpend, totalLeads, hasData });
     }
     return result;
-  }, [month, byDate, objectiveLabels, campaignId, adId]);
+  }, [month, byDate, days, campaignId, adId]);
 
   const daysInMonth = points.length;
   const slot = INNER_W / daysInMonth;
@@ -295,8 +310,9 @@ export function LeadsByTypeTrendChart({
 
   const insightMetrics = useMemo(() => {
     const withData = points.filter((p) => p.hasData);
-    const totalsByIndex = objectiveLabels.map(() => 0);
-    const spendByIndex = objectiveLabels.map(() => 0);
+    const objectivesCount = points[0]?.objectiveLeads.length ?? 0;
+    const totalsByIndex = Array.from({ length: objectivesCount }, () => 0);
+    const spendByIndex = Array.from({ length: objectivesCount }, () => 0);
     for (const p of withData) {
       p.objectiveLeads.forEach((value, i) => {
         totalsByIndex[i] = (totalsByIndex[i] ?? 0) + value;
@@ -313,7 +329,7 @@ export function LeadsByTypeTrendChart({
       const cpl = leads > 0 ? spend / leads : null;
       const porcentaje = totalLeads > 0 ? Math.round((leads / totalLeads) * 100) : 0;
       return {
-        tipo: objectiveLabels[i] ?? `Objetivo ${i + 1}`,
+        tipo: labelByIndex[i] ?? `Objetivo ${i + 1}`,
         leads,
         porcentaje,
         cpl: cpl !== null ? formatCurrency(cpl, currency, 2) : null,
@@ -330,11 +346,11 @@ export function LeadsByTypeTrendChart({
       diasConDatos: withData.length,
       leadsTotales: totalLeads,
       porTipo,
-      tipoLiderEnVolumen: tipoLiderEnVolumen !== null ? (objectiveLabels[tipoLiderEnVolumen] ?? null) : null,
-      tipoMasEficiente: tipoMasEficiente !== null ? (objectiveLabels[tipoMasEficiente] ?? null) : null,
-      tipoMasCaro: tipoMasCaro !== null ? (objectiveLabels[tipoMasCaro] ?? null) : null,
+      tipoLiderEnVolumen: tipoLiderEnVolumen !== null ? (labelByIndex[tipoLiderEnVolumen] ?? null) : null,
+      tipoMasEficiente: tipoMasEficiente !== null ? (labelByIndex[tipoMasEficiente] ?? null) : null,
+      tipoMasCaro: tipoMasCaro !== null ? (labelByIndex[tipoMasCaro] ?? null) : null,
     };
-  }, [points, month, objectiveLabels, visibleIndexes, currency, selectedCampaignName]);
+  }, [points, month, labelByIndex, visibleIndexes, currency, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -367,7 +383,7 @@ export function LeadsByTypeTrendChart({
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {visibleIndexes.map((idx) => (
               <span key={idx} className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: objectiveColor(idx) }} /> {objectiveLabels[idx]}
+                <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: objectiveColor(idx) }} /> {labelByIndex[idx]}
               </span>
             ))}
           </div>
@@ -383,7 +399,7 @@ export function LeadsByTypeTrendChart({
             <option value="all">Todos los tipos</option>
             {visibleIndexes.map((idx) => (
               <option key={idx} value={idx}>
-                {objectiveLabels[idx]}
+                {labelByIndex[idx]}
               </option>
             ))}
           </select>
@@ -596,7 +612,7 @@ export function LeadsByTypeTrendChart({
                     return (
                       <span key={idx} className="flex items-center justify-between gap-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: objectiveColor(idx) }} /> {objectiveLabels[idx]}
+                          <span className="h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: objectiveColor(idx) }} /> {labelByIndex[idx]}
                         </span>
                         <span className="font-medium text-foreground">
                           {formatNumber(qty)} · CPL {cpl !== null ? formatCurrency(cpl, currency, 2) : "0"}
