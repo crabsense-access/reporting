@@ -905,11 +905,16 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v7") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v8") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
  * pero bumpear es lo que evita mostrar datos faltantes silenciosamente durante el resto del TTL).
+ * También conviene bumpearlo cuando cambia DE QUÉ depende el valor de un campo que ya existía
+ * (no sólo cuando se agrega uno nuevo) — ej. resolveMonthlyBudget: monthlyBudget pasó a salir de
+ * monthly_budgets en vez de monthly_budget, mismo campo, mismo tipo, pero la fuente cambió, así
+ * que una entrada ya cacheada con el valor viejo quedaría sirviendo un presupuesto desactualizado
+ * en silencio hasta que venza el TTL (hasta 24hs para un mes cerrado) si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -925,7 +930,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v7",
+        query: "investmentCalendar:v8",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -941,7 +946,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v7",
+        query: "investmentCalendar:v8",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -955,7 +960,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v7",
+        query: "investmentCalendar:v8",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -967,7 +972,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v7",
+        query: "investmentCalendar:v8",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

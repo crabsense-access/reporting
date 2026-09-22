@@ -573,8 +573,10 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                   completo por igual en vez de quedar angostas — por eso el grid de cada fila usa
                   su propio gridTemplateColumns según cuántas tarjetas tiene, no uno fijo de 4.
                   Son clickeables: seleccionan/des-seleccionan un tipo (toggle) y ese estado
-                  maneja el bloque "Performance de Resultados" de abajo. */}
-              <div className="flex flex-col gap-3 border-t border-border pt-3">
+                  maneja el bloque "Performance de Resultados" de abajo. Espaciado superior más
+                  grande que el resto de las secciones (pt-10 en vez de pt-3) a pedido de Martín,
+                  para separarla más claramente de la barra de presupuesto de arriba. */}
+              <div className="flex flex-col gap-3 border-t border-border pt-10">
                 <span className="text-lg font-bold text-foreground">Resultados</span>
                 {visibleObjectiveTotals.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
