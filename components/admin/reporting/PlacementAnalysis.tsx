@@ -12,9 +12,13 @@
 // lib/reporting/metaResultLabels.ts —, no el label que se tipea a mano al cargar el Objetivo en el
 // Admin; Anuncio en cascada con Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts).
 // Cada fila muestra Inversión, % de inversión, Resultados y Costo por Resultado en columnas
-// alineadas junto a la barra de eficiencia — sin tabla de detalle aparte. El insight de Claude va
-// ANTES del gráfico (a diferencia del resto de la página, donde va después) — convención propia de
-// este gráfico, sin cambios.
+// alineadas a la derecha (separadas entre sí) junto a la barra de eficiencia — la barra ocupa sólo
+// el ancho de la columna de ubicación, no se mete debajo de las columnas numéricas — sin tabla de
+// detalle aparte. Los títulos de las últimas 2 columnas son dinámicos: con un Objetivo puntual
+// elegido muestran su nombre ("Clientes potenciales"/"Costo por Clientes potenciales" en vez de
+// "Resultados"/"Costo por Resultado"); con "Todos los tipos" quedan genéricos. El insight de Claude
+// va ANTES del gráfico (a diferencia del resto de la página, donde va después) — convención propia
+// de este gráfico, sin cambios.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchPlacementSegments — e
 // InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por ubicación
@@ -57,8 +61,9 @@ function tierFor(cpl: number, avgCpl: number): Tier {
 
 // Ancho fijo por columna (Inversión, % Inv., Resultados, Costo por Resultado) para que los valores
 // queden alineados verticalmente entre todas las filas, sin importar cuántas ubicaciones haya ni
-// el largo de cada número — mismo criterio que RegionAnalysis.tsx.
-const METRIC_GRID_COLUMNS = "92px 56px 64px 88px";
+// el largo de cada número — mismo criterio que RegionAnalysis.tsx (el espacio ENTRE columnas lo
+// pone gap-x-4 en el grid, no este ancho).
+const METRIC_GRID_COLUMNS = "92px 56px 64px 96px";
 
 interface PlacementSegmentTotals {
   placement: string;
@@ -133,6 +138,12 @@ export function PlacementAnalysis({
   // "Eficiente" (TIER_COLOR) como acento neutro, igual de espíritu que en RegionAnalysis.tsx.
   const selectedColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : TIER_COLOR.eficiente;
   const hasFilter = campaignId !== null || adId !== null;
+
+  // Títulos dinámicos de las últimas 2 columnas: con un Objetivo puntual elegido, muestran su
+  // nombre real en vez del genérico "Resultados"/"Costo por Resultado".
+  const selectedLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
+  const resultadosHeader = selectedLabel ?? "Resultados";
+  const costoPorResultadoHeader = selectedLabel ? `Costo por ${selectedLabel}` : "Costo por Resultado";
 
   const rows = useMemo(() => {
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
@@ -263,16 +274,16 @@ export function PlacementAnalysis({
             <p className="text-xs text-muted-foreground">Todavía no hay leads este período.</p>
           ) : (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
-                <span />
+              <div className="flex items-center gap-4">
+                <span className="min-w-0 flex-1" />
                 <div
-                  className="grid text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                   style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
                 >
                   <span>Inversión</span>
                   <span>% Inv.</span>
-                  <span>Resultados</span>
-                  <span>Costo por Resultado</span>
+                  <span>{resultadosHeader}</span>
+                  <span>{costoPorResultadoHeader}</span>
                 </div>
               </div>
 
@@ -283,26 +294,31 @@ export function PlacementAnalysis({
                 const spendShare = totalSpend > 0 ? r.spend / totalSpend : 0;
                 const widthPct = Math.max(4, Math.round((r.spend / maxSpend) * 100));
                 return (
-                  <div key={r.placement} className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
-                      <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  <div key={r.placement} className="flex items-center gap-4">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                         <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
-                        {r.placement}
-                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ color, backgroundColor: `${color}1a` }}>
+                        <span className="truncate">{r.placement}</span>
+                        <span
+                          className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ color, backgroundColor: `${color}1a` }}
+                        >
                           {TIER_LABEL[tier]}
                         </span>
                       </span>
-                      <div className="grid text-right tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
-                        <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
-                        <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
-                        <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.leads)}</span>
-                        <span className="whitespace-nowrap text-muted-foreground">
-                          {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
-                        </span>
+                      {/* La barra termina donde empieza la tabla: su ancho de referencia (w-full)
+                          es el de esta columna de ubicación, no el de la fila entera. */}
+                      <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
                       </div>
                     </div>
-                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+                    <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
+                      <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
+                      <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
+                      <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.leads)}</span>
+                      <span className="whitespace-nowrap text-muted-foreground">
+                        {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
+                      </span>
                     </div>
                   </div>
                 );
