@@ -1527,7 +1527,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v13") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v14") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1536,7 +1536,9 @@ function mergeRealInvestmentCalendarData(
  * (no sólo cuando se agrega uno nuevo) — ej. resolveMonthlyBudget: monthlyBudget pasó a salir de
  * monthly_budgets en vez de monthly_budget, mismo campo, mismo tipo, pero la fuente cambió, así
  * que una entrada ya cacheada con el valor viejo quedaría sirviendo un presupuesto desactualizado
- * en silencio hasta que venza el TTL (hasta 24hs para un mes cerrado) si no se bumpea acá.
+ * en silencio hasta que venza el TTL (hasta 24hs para un mes cerrado) si no se bumpea acá. Mismo
+ * criterio cuando lo que cambia es qué filas ENTRAN a un segmento (no un campo puntual) — ver
+ * v13→v14 más abajo.
  *
  * v9→v10: varios fetch pasaron de level "campaign" a level "ad" (audienceSegments, regionSegments,
  * hourlyTotals, videoRetentionByAge, el desglose diario) para poder armar los combos de Campaña y
@@ -1552,6 +1554,15 @@ function mergeRealInvestmentCalendarData(
  * v11→v12: RegionSegmentTotals (y su byAd) suman reach/impressions/clicks (ver fetchRegionSegments
  * y RegionAdBreakdownEntry) — campos nuevos, una entrada vieja en v11 no los tiene, así que
  * RegionAnalysis.tsx los mostraría en 0/undefined hasta que venza el TTL si no se bumpea acá.
+ *
+ * v12→v13: AudienceSegmentTotals (y su byAd) suman reach/impressions (ver fetchAudienceSegments y
+ * AudienceAdBreakdownEntry) — campos nuevos, una entrada vieja en v12 no los tiene, así que
+ * AudienceAnalysis.tsx los mostraría en 0 hasta que venza el TTL si no se bumpea acá.
+ *
+ * v13→v14: fetchAudienceSegments ahora descarta las filas con ageRange "unknown" (antes sólo se
+ * descartaba por género sin mapear) — no es un campo nuevo, es un cambio en qué filas arman
+ * bySegment, así que una entrada ya cacheada en v13 seguiría mostrando la columna "Unknown" en
+ * los recuadros de audiencia hasta que venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1567,7 +1578,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v13",
+        query: "investmentCalendar:v14",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1583,7 +1594,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v13",
+        query: "investmentCalendar:v14",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1597,7 +1608,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v13",
+        query: "investmentCalendar:v14",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1609,7 +1620,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v13",
+        query: "investmentCalendar:v14",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
