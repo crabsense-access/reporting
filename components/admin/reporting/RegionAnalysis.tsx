@@ -9,12 +9,19 @@
 // Inversión y Leads en columnas alineadas junto a la barra — sin tabla de detalle aparte.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchRegionSegments — e
-// InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por región a nivel campaña,
+// InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por región a nivel anuncio,
 // matcheado por Objetivo con el mismo criterio (exacto → "contiene", primero que matchea se queda
 // con la fila) que el resto de la página. A diferencia de una tabla armada a partir de formularios
 // completados nada más, acá los eventos de mensajería/WhatsApp SÍ quedan representados cuando
 // están configurados como Objetivo, porque el desglose "region" sale directo de Meta a nivel
-// campaña — no depende de que la conversación tenga un formulario asociado.
+// anuncio — no depende de que la conversación tenga un formulario asociado.
+//
+// Además del toggle de Objetivo, dos combos más de CAMPAÑA y ANUNCIO filtran el ranking y los
+// hallazgos (mismo patrón en cascada que InvestmentTrendChart — ver visibleAdsForCampaign y
+// resolveAdFilteredTotals en lib/reporting/adFilter.ts). La fila "Sin provincia asignada" (ver
+// withUnassignedRegionBucket en metaInvestmentData.ts) no tiene desglose por anuncio — con un
+// filtro de Campaña o Anuncio elegido, esa fila directamente no aparece (aceptado con Martín,
+// mismo criterio que el resto de la página para ese bucket).
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -23,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
+import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 type Tier = "eficiente" | "promedio" | "ineficiente";
 
@@ -54,6 +62,9 @@ interface RegionSegmentTotals {
   region: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Desglose de esta región por anuncio (clave = ad_id) — vacío en el bucket "Sin provincia
+   * asignada" (ver metaInvestmentData.ts). */
+  byAd: Record<string, AdBreakdownEntry>;
 }
 
 export function RegionAnalysis({
@@ -62,6 +73,8 @@ export function RegionAnalysis({
   currency,
   monthIsComplete,
   clientId,
+  campaigns,
+  ads,
 }: {
   /** Un elemento por provincia/región con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: RegionSegmentTotals[];
@@ -71,9 +84,30 @@ export function RegionAnalysis({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
+
+  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
+  // mismo criterio que en AudienceAnalysis.tsx.
   const objectiveMonthLeads = useMemo(() => {
     const totals = objectiveLabels.map(() => 0);
     for (const s of segments) {
@@ -99,16 +133,19 @@ export function RegionAnalysis({
 
   const selectedColor = objectiveColor(selectedIndex);
 
+  const hasFilter = campaignId !== null || adId !== null;
+
   const rows = useMemo(() => {
     return segments
-      .map((s) => ({
-        region: s.region,
-        leads: s.objectiveLeads[selectedIndex] ?? 0,
-        spend: s.objectiveSpend[selectedIndex] ?? 0,
-      }))
+      .map((s) => {
+        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length) : null;
+        const leads = hasFilter ? (scoped?.objectiveLeads[selectedIndex] ?? 0) : (s.objectiveLeads[selectedIndex] ?? 0);
+        const spend = hasFilter ? (scoped?.objectiveSpend[selectedIndex] ?? 0) : (s.objectiveSpend[selectedIndex] ?? 0);
+        return { region: s.region, leads, spend };
+      })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, selectedIndex]);
+  }, [segments, selectedIndex, hasFilter, campaignId, adId, objectiveLabels.length]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -116,6 +153,8 @@ export function RegionAnalysis({
   const maxSpend = Math.max(...rows.map((r) => r.spend), 1);
 
   const top = rows[0] ?? null;
+
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
 
   const insightMetrics = useMemo(() => {
     if (rows.length === 0) return null;
@@ -125,6 +164,7 @@ export function RegionAnalysis({
 
     return {
       tipoCampania: objectiveLabels[selectedIndex] ?? "",
+      campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       inversionTotal: formatCurrency(totalSpend, currency),
       provincias: rows.map((r) => ({
@@ -143,7 +183,7 @@ export function RegionAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveLabels, selectedIndex, avgCpl, totalSpend, top, currency]);
+  }, [rows, objectiveLabels, selectedIndex, avgCpl, totalSpend, top, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -156,26 +196,62 @@ export function RegionAnalysis({
           </span>
         </div>
 
-        {visibleIndexes.length > 0 && (
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
-            <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-              {visibleIndexes.map((idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setSelectedIndex(idx)}
-                  className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                    selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {objectiveLabels[idx]}
-                </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
-            </div>
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {visibleIndexes.length > 0 && (
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
+              <div className="flex items-center gap-1 rounded-md bg-muted p-1">
+                {visibleIndexes.map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedIndex(idx)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                      selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {objectiveLabels[idx]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5">

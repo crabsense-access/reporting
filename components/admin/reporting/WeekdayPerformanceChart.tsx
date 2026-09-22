@@ -3,8 +3,7 @@
 // "Qué día de la semana rinde mejor": inversión por día de la semana (barras, eje izquierdo) +
 // costo por contacto por día de la semana (línea, eje derecho) — mismo patrón que
 // HourlyPerformanceChart.tsx, pero agrupando por día de la semana (Lunes a Domingo) en vez de por
-// hora del día, y sin desglose por Objetivo (acá "contactos" combina TODOS los Objetivos
-// configurados: el punto es identificar qué días rinden mejor, no qué tipo de conversión).
+// hora del día.
 //
 // A diferencia de HourlyPerformanceChart, esto NO pide un breakdown nuevo a Meta — Meta no tiene
 // un breakdown de "día de la semana", así que se deriva del mismo `days` (desglose día a día del
@@ -18,18 +17,34 @@
 // Debajo del gráfico, un resumen en 2 franjas fijas (Lunes a viernes / Sábado y domingo) con
 // inversión, participación, contactos y costo por contacto — y el insight de Claude a partir de
 // esos mismos números.
+//
+// A pedido de Martín, mismo combo de 3 filtros (Tipo de Resultado, con "Todos los tipos" como
+// default + Campaña + Anuncio en cascada) que HourlyPerformanceChart.tsx — ver
+// visibleAdsForCampaign/resolveAdFilteredTotals en lib/reporting/adFilter.ts. Cada día se resuelve
+// primero contra SU desglose por anuncio (day.byAd) antes de agruparlo en su día de la semana.
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
+import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
+import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
   objectiveLeads: number[];
+  objectiveSpend: number[];
+  /** Desglose de este día por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, AdBreakdownEntry>;
+}
+
+/** Un tipo de Resultado disponible para el combo (sólo los que tienen datos este mes — ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
+interface ObjectiveOption {
+  index: number;
+  label: string;
 }
 
 // Orden de visualización: Lunes primero (convención habitual en Argentina), Domingo al final.
@@ -94,6 +109,9 @@ export function WeekdayPerformanceChart({
   currency,
   monthIsComplete,
   clientId,
+  objectiveOptions,
+  campaigns,
+  ads,
 }: {
   /** Desglose día a día del mes seleccionado — mismo array que InvestmentTrendChart/LeadsByTypeTrendChart (ver InvestmentCalendar.tsx). */
   days: DailyRealTotals[];
@@ -101,30 +119,76 @@ export function WeekdayPerformanceChart({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Tipos de Resultado con datos este mes, para el combo — ver visibleObjectiveTotals en InvestmentCalendar.tsx. */
+  objectiveOptions: ObjectiveOption[];
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
 
+  useEffect(() => {
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
+    }
+  }, [objectiveOptions, objectiveIndex]);
+
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
+
   const weekdays = useMemo(() => {
-    const totals = new Map<number, { spend: number; leads: number }>();
-    for (let w = 0; w < 7; w += 1) totals.set(w, { spend: 0, leads: 0 });
+    const totals = new Map<number, { spend: number; leads: number; cplSpend: number }>();
+    for (let w = 0; w < 7; w += 1) totals.set(w, { spend: 0, leads: 0, cplSpend: 0 });
+    const hasFilter = campaignId !== null || adId !== null;
 
     for (const day of days) {
       // new Date("yyyy-MM-dd") se interpreta en UTC medianoche — para no correr de día según el
       // huso horario del navegador, se arma la fecha con sus componentes locales.
       const [year, month, dayOfMonth] = day.date.split("-").map(Number);
       if (!year || !month || !dayOfMonth) continue;
+
+      // Con Campaña y/o Anuncio elegidos, el día se resuelve primero contra SU desglose por
+      // anuncio — un día sin ningún anuncio que matchee el filtro no aporta nada a su día de la
+      // semana (mismo criterio "sin datos" que el resto de la página).
+      const scoped = hasFilter ? resolveAdFilteredTotals(day.byAd, campaignId, adId, day.objectiveLeads.length) : null;
+      if (hasFilter && !scoped) continue;
+
       const weekday = new Date(year, month - 1, dayOfMonth).getDay();
       const entry = totals.get(weekday)!;
-      entry.spend += day.spend;
-      entry.leads += sumObjectiveLeads(day.objectiveLeads);
+      const spend = hasFilter ? (scoped?.spend ?? 0) : day.spend;
+      const objectiveLeadsSource = hasFilter ? scoped?.objectiveLeads : day.objectiveLeads;
+      const objectiveSpendSource = hasFilter ? scoped?.objectiveSpend : day.objectiveSpend;
+      const leads =
+        objectiveIndex !== null ? (objectiveLeadsSource?.[objectiveIndex] ?? 0) : sumObjectiveLeads(objectiveLeadsSource ?? []);
+      // Costo por Contacto: con un tipo puntual elegido, el gasto atribuido a ESE tipo; con
+      // "Todos los tipos", el gasto total del día/campaña/anuncio (mismo criterio "blended" que el
+      // resto de la página).
+      const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
+      entry.spend += spend;
+      entry.leads += leads;
+      entry.cplSpend += cplSpend;
     }
 
     return WEEKDAY_ORDER.map((weekday) => {
       const entry = totals.get(weekday)!;
-      return { weekday, spend: entry.spend, leads: entry.leads, cpl: entry.leads > 0 ? entry.spend / entry.leads : null };
+      return { weekday, spend: entry.spend, leads: entry.leads, cpl: entry.leads > 0 ? entry.cplSpend / entry.leads : null };
     });
-  }, [days]);
+  }, [days, objectiveIndex, campaignId, adId]);
 
   const totalSpend = weekdays.reduce((sum, w) => sum + w.spend, 0);
   const totalLeads = weekdays.reduce((sum, w) => sum + w.leads, 0);
@@ -170,6 +234,11 @@ export function WeekdayPerformanceChart({
 
   const hasData = totalSpend > 0 || totalLeads > 0;
 
+  const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const lineColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : LINE_COLOR;
+
   const insightMetrics = useMemo(() => {
     if (!hasData) return null;
     const withLeads = weekdays.filter((w) => w.leads > 0);
@@ -182,6 +251,8 @@ export function WeekdayPerformanceChart({
     const worstBand = bandsWithLeads.length > 0 ? [...bandsWithLeads].sort((a, b) => (b.cpl ?? -Infinity) - (a.cpl ?? -Infinity))[0]! : null;
 
     return {
+      tipoDeResultado: tipoLabel,
+      campania: selectedCampaignName ?? "Todas las campañas",
       costoPromedio: avgCpl !== null ? formatCurrency(avgCpl, currency, 2) : null,
       inversionTotal: formatCurrency(totalSpend, currency),
       contactosTotales: formatNumber(totalLeads),
@@ -203,7 +274,7 @@ export function WeekdayPerformanceChart({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekdays, bands, hasData, avgCpl, totalSpend, totalLeads, currency]);
+  }, [weekdays, bands, hasData, avgCpl, totalSpend, totalLeads, currency, tipoLabel, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -221,12 +292,63 @@ export function WeekdayPerformanceChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-0.5 pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">Qué día de la semana rinde mejor</CardTitle>
+      <CardHeader className="flex flex-col gap-2 pb-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-lg font-bold text-foreground">Qué día de la semana rinde mejor</CardTitle>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Tipo de Resultado"
+              value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+              onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los tipos</option>
+              {objectiveOptions.map((o) => (
+                <option key={o.index} value={o.index}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <span className="text-xs text-muted-foreground">
           {threshold !== null
-            ? `Las barras en rojo señalan los días cuyo costo por contacto supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio de la cuenta.`
-            : "Todavía no hay contactos este mes para calcular el promedio."}
+            ? `Las barras en rojo señalan los días cuyo costo por contacto (${tipoLabel.toLowerCase()}) supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio del período filtrado.`
+            : "Todavía no hay contactos este período para calcular el promedio."}
         </span>
       </CardHeader>
 
@@ -281,9 +403,9 @@ export function WeekdayPerformanceChart({
                 })}
 
                 {/* Línea de costo por contacto */}
-                {linePath && <path d={linePath} fill="none" stroke={LINE_COLOR} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+                {linePath && <path d={linePath} fill="none" stroke={lineColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
                 {linePoints.map((p) => (
-                  <circle key={p.index} cx={p.x} cy={p.y} r={3} fill="#ffffff" stroke={LINE_COLOR} strokeWidth={2} />
+                  <circle key={p.index} cx={p.x} cy={p.y} r={3} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
                 ))}
 
                 {/* Eje X: días de la semana */}
@@ -297,7 +419,7 @@ export function WeekdayPerformanceChart({
                   <line x1={hoverX} x2={hoverX} y1={PAD.top} y2={PAD.top + INNER_H} stroke="currentColor" className="text-border" strokeWidth={1} />
                 )}
                 {hovered && hoverX !== null && hovered.cpl !== null && (
-                  <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={4} fill="#ffffff" stroke={LINE_COLOR} strokeWidth={2} />
+                  <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={4} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
                 )}
               </svg>
 
@@ -320,7 +442,7 @@ export function WeekdayPerformanceChart({
                       </span>
                       <span className="flex items-center justify-between gap-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: LINE_COLOR }} /> Costo/contacto
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColor }} /> Costo/contacto
                         </span>
                         <span className="font-medium text-foreground">{hovered.cpl !== null ? formatCurrency(hovered.cpl, currency, 2) : "0"}</span>
                       </span>
@@ -364,7 +486,7 @@ export function WeekdayPerformanceChart({
         )}
 
         {insightMetrics && (
-          <ChartInsightPanel chart="weekday-performance" metrics={insightMetrics} accentColor={LINE_COLOR} monthIsComplete={monthIsComplete} clientId={clientId} />
+          <ChartInsightPanel chart="weekday-performance" metrics={insightMetrics} accentColor={lineColor} monthIsComplete={monthIsComplete} clientId={clientId} />
         )}
       </CardContent>
     </Card>

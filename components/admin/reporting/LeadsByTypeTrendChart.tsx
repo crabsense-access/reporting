@@ -13,6 +13,12 @@
 // Sólo se muestran (leyenda, botones de filtro, barras apiladas) los Objetivos con al menos 1
 // lead en el mes: uno con 0 leads todo el mes simplemente no aparece (visibleIndexes más abajo).
 //
+// Además del toggle de Objetivo (arriba), dos combos más de CAMPAÑA y ANUNCIO filtran todo el
+// gráfico (barras apiladas, línea de CPL y hallazgos) — mismo patrón en cascada que
+// InvestmentTrendChart: el de Anuncio se acota a la Campaña elegida (ver visibleAdsForCampaign en
+// lib/reporting/adFilter.ts) y ambos componen con el toggle de Objetivo (ver DailyRealTotals.byAd
+// y resolveAdFilteredTotals, mismo helper que usan el resto de los gráficos con estos combos).
+//
 // Recibe los datos reales del mes (ver components/admin/reporting/InvestmentCalendar.tsx, que
 // los pide una sola vez a /api/clients/[id]/investment-calendar y los reparte entre este chart e
 // InvestmentTrendChart).
@@ -26,12 +32,15 @@ import { ChartInsightByTypePanel } from "@/components/admin/reporting/ChartInsig
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
+import { resolveAdFilteredTotals, visibleAdsForCampaign } from "@/lib/reporting/adFilter";
 
 interface DailyRealTotals {
   date: string; // yyyy-MM-dd
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Desglose de este día por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
 interface DayTypePoint {
@@ -119,6 +128,8 @@ export function LeadsByTypeTrendChart({
   month,
   monthIsComplete,
   clientId,
+  campaigns,
+  ads,
 }: {
   days: DailyRealTotals[];
   currency: string;
@@ -129,11 +140,33 @@ export function LeadsByTypeTrendChart({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightByTypePanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const today = useMemo(() => new Date(), []);
+
+  // El mismo criterio de "cae a la opción vigente" que usa InvestmentTrendChart: si la Campaña
+  // elegida deja de tener gasto en el mes nuevo, vuelve a "Todas las campañas" en vez de quedar en
+  // un estado que ya no existe.
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
 
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
 
@@ -181,19 +214,25 @@ export function LeadsByTypeTrendChart({
     const monthEnd = endOfMonth(month);
     const daysInMonth = monthEnd.getDate();
     const zeroArr = objectiveLabels.map(() => 0);
+    // Con Campaña y/o Anuncio elegidos, cada día se resuelve contra SU desglose por anuncio
+    // (entry.byAd — ver resolveAdFilteredTotals) en vez del total de cuenta; mismo criterio que
+    // InvestmentTrendChart: si ninguno de los anuncios que matchean el filtro tuvo una fila ese
+    // día, el día queda sin datos para ese filtro, no en 0.
+    const hasFilter = campaignId !== null || adId !== null;
     const result: DayTypePoint[] = [];
     for (let day = 1; day <= daysInMonth; day += 1) {
       const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
       const dateKey = format(date, "yyyy-MM-dd");
       const entry = byDate.get(dateKey);
-      const hasData = Boolean(entry);
-      const objectiveLeads = entry?.objectiveLeads ?? zeroArr;
-      const objectiveSpend = entry?.objectiveSpend ?? zeroArr;
+      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, objectiveLabels.length) : null;
+      const hasData = hasFilter ? scoped !== null : Boolean(entry);
+      const objectiveLeads = hasFilter ? (scoped?.objectiveLeads ?? zeroArr) : (entry?.objectiveLeads ?? zeroArr);
+      const objectiveSpend = hasFilter ? (scoped?.objectiveSpend ?? zeroArr) : (entry?.objectiveSpend ?? zeroArr);
       const totalLeads = objectiveLeads.reduce((sum, value) => sum + value, 0);
       result.push({ date, day, objectiveLeads, objectiveSpend, totalLeads, hasData });
     }
     return result;
-  }, [month, byDate, objectiveLabels]);
+  }, [month, byDate, objectiveLabels, campaignId, adId]);
 
   const daysInMonth = points.length;
   const slot = INNER_W / daysInMonth;
@@ -240,6 +279,8 @@ export function LeadsByTypeTrendChart({
 
   // Métricas para la leyenda de hallazgos (desglose por Objetivo visible, independiente del que
   // esté seleccionado para la línea de CPL) — se le pasan ya formateadas a Claude.
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
+
   const insightMetrics = useMemo(() => {
     const withData = points.filter((p) => p.hasData);
     const totalsByIndex = objectiveLabels.map(() => 0);
@@ -273,6 +314,7 @@ export function LeadsByTypeTrendChart({
 
     return {
       mes: format(month, "MMMM yyyy", { locale: es }),
+      campania: selectedCampaignName ?? "Todas las campañas",
       diasConDatos: withData.length,
       leadsTotales: totalLeads,
       porTipo,
@@ -280,7 +322,7 @@ export function LeadsByTypeTrendChart({
       tipoMasEficiente: tipoMasEficiente !== null ? (objectiveLabels[tipoMasEficiente] ?? null) : null,
       tipoMasCaro: tipoMasCaro !== null ? (objectiveLabels[tipoMasCaro] ?? null) : null,
     };
-  }, [points, month, objectiveLabels, visibleIndexes, currency]);
+  }, [points, month, objectiveLabels, visibleIndexes, currency, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -313,22 +355,58 @@ export function LeadsByTypeTrendChart({
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-[11px] text-muted-foreground">CPL de:</span>
-          <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-            {visibleIndexes.map((idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setSelectedIndex(idx)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {objectiveLabels[idx]}
-              </button>
-            ))}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[11px] text-muted-foreground">CPL de:</span>
+            <div className="flex items-center gap-1 rounded-md bg-muted p-1">
+              {visibleIndexes.map((idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setSelectedIndex(idx)}
+                  className={cn(
+                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                    selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {objectiveLabels[idx]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </CardHeader>

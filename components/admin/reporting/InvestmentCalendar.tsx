@@ -73,8 +73,8 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, para cuando se selecciona un tipo de Resultado puntual (ver bloque "Performance de Resultados"). */
   objectiveInteractions: number[];
   objectiveClicks: number[];
-  /** Desglose de este día por campaña — ver lib/reporting/metaInvestmentData.ts. Usado por el combo de campaña de InvestmentTrendChart. */
-  byCampaign: Record<string, { spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  /** Desglose de este día por anuncio — ver lib/reporting/metaInvestmentData.ts. Usado por los combos de Campaña/Anuncio de los gráficos con filtro. */
+  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
 interface DetectedActionType {
@@ -82,23 +82,41 @@ interface DetectedActionType {
   count: number;
 }
 
+interface AdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+}
+
 interface AudienceSegmentTotals {
   gender: "mujeres" | "hombres";
   ageRange: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  byAd: Record<string, AdBreakdownEntry>;
 }
 
 interface RegionSegmentTotals {
   region: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  byAd: Record<string, AdBreakdownEntry>;
+}
+
+interface PlacementSegmentTotals {
+  placement: string;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  byAd: Record<string, AdBreakdownEntry>;
 }
 
 interface HourlyTotals {
   hour: number;
   spend: number;
-  leads: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  byAd: Record<string, AdBreakdownEntry>;
 }
 
 interface VideoRetentionByAge {
@@ -108,6 +126,7 @@ interface VideoRetentionByAge {
   p50: number;
   p75: number;
   p100: number;
+  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p100: number }>;
 }
 
 interface InvestmentCalendarResponse {
@@ -121,14 +140,17 @@ interface InvestmentCalendarResponse {
   objectiveActionTypes: (string | null)[];
   /** Alcance real y deduplicado del mes a nivel de toda la cuenta — no se puede filtrar por tipo de Resultado (ver fetchMonthlyReach en metaInvestmentData.ts). */
   monthlyReach: number;
-  /** Campañas con gasto este mes, ordenadas por gasto descendente — combo de campaña de InvestmentTrendChart. */
+  /** Campañas con gasto este mes, ordenadas por gasto descendente — combo de Campaña de los gráficos con filtro. */
   campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña. */
+  ads: { id: string; name: string; campaignId: string }[];
   detectedActionTypes: DetectedActionType[];
   days: DailyRealTotals[];
   audienceSegments: AudienceSegmentTotals[];
   regionSegments: RegionSegmentTotals[];
   hourlyTotals: HourlyTotals[];
   videoRetentionByAge: VideoRetentionByAge[];
+  placementSegments: PlacementSegmentTotals[];
 }
 
 function sumByType(a: Record<LeadType, number>, b: Record<LeadType, number>): Record<LeadType, number> {
@@ -341,7 +363,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
     const hourBandTotals = HOUR_BANDS.map((band) => {
       const rows = (data.hourlyTotals ?? []).filter((h) => h.hour >= band.start && h.hour <= band.end);
       const spend = rows.reduce((sum, h) => sum + h.spend, 0);
-      const leads = rows.reduce((sum, h) => sum + h.leads, 0);
+      const leads = rows.reduce((sum, h) => sum + h.objectiveLeads.reduce((s, v) => s + v, 0), 0);
       return { franja: band.label, spend, leads, cpl: leads > 0 ? spend / leads : null };
     });
     const hourBandsWithCpl = hourBandTotals.filter((b): b is typeof b & { cpl: number } => b.cpl !== null);
@@ -674,6 +696,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                 clientId={clientId}
                 objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
                 campaigns={data.campaigns}
+                ads={data.ads}
               />
               <LeadsByTypeTrendChart
                 days={data.days}
@@ -682,6 +705,8 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
                 month={selectedMonthDate}
                 monthIsComplete={!isCurrentMonth}
                 clientId={clientId}
+                campaigns={data.campaigns}
+                ads={data.ads}
               />
             </>
           )}
@@ -693,18 +718,25 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
             clientId={clientId}
           />
 
-          <PlacementAnalysis
-            monthLeads={monthLeads}
-            monthTotal={monthTotal}
-            monthIsComplete={!isCurrentMonth}
-            clientId={clientId}
-          />
+          {data && (
+            <PlacementAnalysis
+              segments={data.placementSegments}
+              objectiveLabels={data.objectiveLabels}
+              currency={currency}
+              campaigns={data.campaigns}
+              ads={data.ads}
+              monthIsComplete={!isCurrentMonth}
+              clientId={clientId}
+            />
+          )}
 
           {data && (
             <AudienceAnalysis
               segments={data.audienceSegments}
               objectiveLabels={data.objectiveLabels}
               currency={currency}
+              campaigns={data.campaigns}
+              ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
             />
@@ -713,6 +745,8 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
           {data && (
             <VideoRetentionChart
               segments={data.videoRetentionByAge}
+              campaigns={data.campaigns}
+              ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
             />
@@ -723,6 +757,8 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
               segments={data.regionSegments}
               objectiveLabels={data.objectiveLabels}
               currency={currency}
+              campaigns={data.campaigns}
+              ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
             />
@@ -732,6 +768,9 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
             <HourlyPerformanceChart
               hourlyTotals={data.hourlyTotals}
               currency={currency}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
+              campaigns={data.campaigns}
+              ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
             />
@@ -741,6 +780,9 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
             <WeekdayPerformanceChart
               days={data.days}
               currency={currency}
+              objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
+              campaigns={data.campaigns}
+              ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
             />

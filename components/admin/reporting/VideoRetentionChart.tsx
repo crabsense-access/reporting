@@ -7,21 +7,38 @@
 // mira), no de conversión — por eso no lleva toggle de "tipo de conversión" ni columna de costo.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchVideoRetentionByAge):
-// desglose por edad a nivel campaña, usando los campos de Meta "video_play_actions" (inicios de
+// desglose por edad a nivel anuncio, usando los campos de Meta "video_play_actions" (inicios de
 // reproducción, el 100% de referencia) y "video_pXX_watched_actions" (reproducciones que llegaron
 // a cada hito). Cada rango etario se grafica sólo si tuvo al menos 1 inicio de reproducción este
-// mes — un rango sin actividad de video (por ejemplo porque la cuenta no le mostró video ads a esa
-// edad) simplemente no aparece.
+// mes (o en el subconjunto filtrado, ver más abajo) — un rango sin actividad de video simplemente
+// no aparece.
 //
 // Debajo del gráfico, una tabla por rango etario (Reproducciones / Llega al 25% / Al 50% / Al
 // 100%) con la mejor fila resaltada, y el insight de Claude a partir de esos mismos números.
+//
+// Dos combos de CAMPAÑA y ANUNCIO (el de Anuncio en cascada con el de Campaña — ver
+// visibleAdsForCampaign en lib/reporting/adFilter.ts) filtran el gráfico. A diferencia del resto
+// de los gráficos con estos combos, acá NO hay combo de "Tipo de Resultado": el video es una
+// métrica de engagement, no de conversión, así que su desglose por anuncio (VideoRetentionByAge.byAd)
+// no tiene campos de Objetivo — por eso se resuelve con una función propia (resolveVideoAdFilteredTotals,
+// más abajo) en vez del resolveAdFilteredTotals compartido, que sí espera esos campos.
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
+import { visibleAdsForCampaign } from "@/lib/reporting/adFilter";
+
+interface VideoAdBreakdownEntry {
+  campaignId: string;
+  videoPlays: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p100: number;
+}
 
 interface VideoRetentionByAge {
   ageRange: string;
@@ -30,6 +47,34 @@ interface VideoRetentionByAge {
   p50: number;
   p75: number;
   p100: number;
+  /** Desglose de este rango etario por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, VideoAdBreakdownEntry>;
+}
+
+/** Igual que resolveAdFilteredTotals en lib/reporting/adFilter.ts, pero para el desglose por
+ * anuncio de video (sin campos de Objetivo — ver comentario de cabecera). */
+function resolveVideoAdFilteredTotals(
+  byAd: Record<string, VideoAdBreakdownEntry>,
+  campaignId: string | null,
+  adId: string | null
+): { videoPlays: number; p25: number; p50: number; p75: number; p100: number } | null {
+  if (adId !== null) {
+    const entry = byAd[adId];
+    return entry ? { videoPlays: entry.videoPlays, p25: entry.p25, p50: entry.p50, p75: entry.p75, p100: entry.p100 } : null;
+  }
+  if (campaignId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (matching.length === 0) return null;
+  return matching.reduce(
+    (acc, entry) => ({
+      videoPlays: acc.videoPlays + entry.videoPlays,
+      p25: acc.p25 + entry.p25,
+      p50: acc.p50 + entry.p50,
+      p75: acc.p75 + entry.p75,
+      p100: acc.p100 + entry.p100,
+    }),
+    { videoPlays: 0, p25: 0, p50: 0, p75: 0, p100: 0 }
+  );
 }
 
 // Orden fijo de visualización — el mismo que usa Meta para "age" en el resto de la página
@@ -75,28 +120,58 @@ export function VideoRetentionChart({
   segments,
   monthIsComplete,
   clientId,
+  campaigns,
+  ads,
 }: {
   /** Un elemento por rango etario con reproducciones de video este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: VideoRetentionByAge[];
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
 
   const curves = useMemo<AgeCurve[]>(() => {
     const byAge = new Map(segments.map((s) => [s.ageRange, s]));
-    return AGE_ORDER.filter((age) => (byAge.get(age)?.videoPlays ?? 0) > 0).map((age) => {
-      const s = byAge.get(age)!;
+    const hasFilter = campaignId !== null || adId !== null;
+    return AGE_ORDER.map((age) => {
+      const s = byAge.get(age);
+      if (!s) return null;
+      // Con Campaña y/o Anuncio elegidos, el rango etario se resuelve contra SU desglose por
+      // anuncio (s.byAd) en vez del total de cuenta — mismo criterio "sin datos si nada matchea"
+      // que el resto de la página.
+      const scoped = hasFilter ? resolveVideoAdFilteredTotals(s.byAd, campaignId, adId) : null;
+      const videoPlays = hasFilter ? (scoped?.videoPlays ?? 0) : s.videoPlays;
+      if (videoPlays <= 0) return null;
+      const source = hasFilter ? scoped! : s;
       const retention = MILESTONES.map((milestone, index) => {
-        const raw = milestone.key === "start" ? s.videoPlays : s[milestone.key];
-        const pct = s.videoPlays > 0 ? Math.min(100, (raw / s.videoPlays) * 100) : 0;
+        const raw = milestone.key === "start" ? videoPlays : source[milestone.key];
+        const pct = videoPlays > 0 ? Math.min(100, (raw / videoPlays) * 100) : 0;
         return { milestone, index, pct };
       });
-      return { ageRange: age, videoPlays: s.videoPlays, retention };
-    });
-  }, [segments]);
+      return { ageRange: age, videoPlays, retention };
+    }).filter((c): c is AgeCurve => c !== null);
+  }, [segments, campaignId, adId]);
 
   const totalVideoPlays = curves.reduce((sum, c) => sum + c.videoPlays, 0);
   const hasData = curves.length > 0 && totalVideoPlays > 0;
@@ -121,6 +196,7 @@ export function VideoRetentionChart({
   }, [curves]);
 
   const bestAgeByP25 = rows.length > 0 ? [...rows].sort((a, b) => b.p25 - a.p25)[0]!.ageRange : null;
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
 
   const insightMetrics = useMemo(() => {
     if (!hasData) return null;
@@ -132,6 +208,7 @@ export function VideoRetentionChart({
     const maxP25 = p25Values.length > 0 ? Math.max(...p25Values) : 0;
 
     return {
+      campania: selectedCampaignName ?? "Todas las campañas",
       reproduccionesTotales: formatNumber(totalVideoPlays),
       retencion25Rango: `${formatPercent(minP25 / 100)} – ${formatPercent(maxP25 / 100)}`,
       edades: rows.map((r) => ({
@@ -145,7 +222,7 @@ export function VideoRetentionChart({
       peorRetencion: worst ? { edad: worst.ageRange, llega25: formatPercent(worst.p25 / 100) } : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, hasData, totalVideoPlays]);
+  }, [rows, hasData, totalVideoPlays, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -162,12 +239,49 @@ export function VideoRetentionChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-0.5 pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">Cuánto se mira el contenido según la edad</CardTitle>
+      <CardHeader className="flex flex-col gap-2 pb-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-lg font-bold text-foreground">Cuánto se mira el contenido según la edad</CardTitle>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <span className="text-xs text-muted-foreground">
           {hasData
             ? `El porcentaje de reproducción se mide sobre ${formatNumber(totalVideoPlays)} inicios de video, el indicador más confiable de esta sección.`
-            : "Todavía no hay reproducciones de video este mes."}
+            : "Todavía no hay reproducciones de video en este período."}
         </span>
       </CardHeader>
 

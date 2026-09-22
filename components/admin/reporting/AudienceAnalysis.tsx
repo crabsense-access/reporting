@@ -11,9 +11,15 @@
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchAudienceSegments —
 // e InvestmentCalendar.tsx, que pide todo junto una sola vez): un desglose por edad+género a nivel
-// campaña, matcheado por Objetivo con el mismo criterio (exacto → "contiene", primero que matchea
+// anuncio, matcheado por Objetivo con el mismo criterio (exacto → "contiene", primero que matchea
 // se queda con la fila) que el resto de la página, así que los totales por Objetivo acá suman
 // exactamente lo mismo que "Leads por tipo"/"CPL por tipo" del resumen del mes.
+//
+// Además del toggle de Objetivo, dos combos más de CAMPAÑA y ANUNCIO filtran el gráfico y los
+// hallazgos (mismo patrón en cascada que InvestmentTrendChart — ver visibleAdsForCampaign y
+// resolveAdFilteredTotals en lib/reporting/adFilter.ts); a diferencia del toggle de Objetivo, que
+// siempre muestra las mismas opciones (calculadas sobre el mes completo), los rangos etarios que
+// se grafican SÍ se acotan al filtro elegido, para no mostrar columnas vacías.
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -22,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
+import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 type Gender = "mujeres" | "hombres";
 
@@ -57,6 +64,8 @@ interface AudienceSegmentTotals {
   ageRange: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Desglose de este segmento por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, AdBreakdownEntry>;
 }
 
 export function AudienceAnalysis({
@@ -65,6 +74,8 @@ export function AudienceAnalysis({
   currency,
   monthIsComplete,
   clientId,
+  campaigns,
+  ads,
 }: {
   /** Un elemento por cada combinación género+rango etario con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: AudienceSegmentTotals[];
@@ -74,9 +85,31 @@ export function AudienceAnalysis({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
+
+  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
+  // para que las opciones no cambien según el filtro elegido — mismo criterio que objectiveOptions
+  // en InvestmentTrendChart.
   const objectiveMonthLeads = useMemo(() => {
     const totals = objectiveLabels.map(() => 0);
     for (const s of segments) {
@@ -100,27 +133,45 @@ export function AudienceAnalysis({
     }
   }, [visibleIndexes, selectedIndex]);
 
+  // Con Campaña y/o Anuncio elegidos, cada segmento se resuelve contra SU desglose por anuncio
+  // (byAd) — un segmento sin ningún anuncio que matchee el filtro simplemente no aparece (ver
+  // ageRanges más abajo, que se recalcula sobre effectiveSegments).
+  const effectiveSegments = useMemo(() => {
+    if (campaignId === null && adId === null) return segments;
+    const result: AudienceSegmentTotals[] = [];
+    for (const s of segments) {
+      const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length);
+      if (scoped) {
+        result.push({ gender: s.gender, ageRange: s.ageRange, objectiveLeads: scoped.objectiveLeads, objectiveSpend: scoped.objectiveSpend, byAd: s.byAd });
+      }
+    }
+    return result;
+  }, [segments, campaignId, adId, objectiveLabels.length]);
+
   const ageRanges = useMemo(
-    () => Array.from(new Set(segments.map((s) => s.ageRange))).sort(compareAgeRanges),
-    [segments]
+    () => Array.from(new Set(effectiveSegments.map((s) => s.ageRange))).sort(compareAgeRanges),
+    [effectiveSegments]
   );
 
-  const typeLeads = objectiveMonthLeads[selectedIndex] ?? 0;
+  const typeLeads = useMemo(
+    () => effectiveSegments.reduce((sum, s) => sum + (s.objectiveLeads[selectedIndex] ?? 0), 0),
+    [effectiveSegments, selectedIndex]
+  );
   const typeSpend = useMemo(
-    () => segments.reduce((sum, s) => sum + (s.objectiveSpend[selectedIndex] ?? 0), 0),
-    [segments, selectedIndex]
+    () => effectiveSegments.reduce((sum, s) => sum + (s.objectiveSpend[selectedIndex] ?? 0), 0),
+    [effectiveSegments, selectedIndex]
   );
   const avgCpl = typeLeads > 0 ? typeSpend / typeLeads : 0;
   const selectedColor = objectiveColor(selectedIndex);
 
-  const maxLeads = Math.max(...segments.map((s) => s.objectiveLeads[selectedIndex] ?? 0), 1);
+  const maxLeads = Math.max(...effectiveSegments.map((s) => s.objectiveLeads[selectedIndex] ?? 0), 1);
 
   // Totales combinados (Mujeres + Hombres) por rango etario, para el recuadro debajo de cada
   // grupo de barras — la altura de las barras sigue mostrando el desglose por género.
   const combinedByAge = useMemo(() => {
     const map = new Map<string, { leads: number; spend: number }>();
     for (const ageRange of ageRanges) map.set(ageRange, { leads: 0, spend: 0 });
-    for (const s of segments) {
+    for (const s of effectiveSegments) {
       const entry = map.get(s.ageRange);
       if (entry) {
         entry.leads += s.objectiveLeads[selectedIndex] ?? 0;
@@ -128,22 +179,24 @@ export function AudienceAnalysis({
       }
     }
     return map;
-  }, [segments, ageRanges, selectedIndex]);
+  }, [effectiveSegments, ageRanges, selectedIndex]);
 
   const genderTotals = useMemo(() => {
     const totals: Record<Gender, { leads: number; spend: number }> = {
       mujeres: { leads: 0, spend: 0 },
       hombres: { leads: 0, spend: 0 },
     };
-    for (const s of segments) {
+    for (const s of effectiveSegments) {
       totals[s.gender].leads += s.objectiveLeads[selectedIndex] ?? 0;
       totals[s.gender].spend += s.objectiveSpend[selectedIndex] ?? 0;
     }
     return totals;
-  }, [segments, selectedIndex]);
+  }, [effectiveSegments, selectedIndex]);
+
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
 
   const insightMetrics = useMemo(() => {
-    const withLeads = segments
+    const withLeads = effectiveSegments
       .map((s) => ({
         gender: s.gender,
         ageRange: s.ageRange,
@@ -161,6 +214,7 @@ export function AudienceAnalysis({
 
     return {
       tipoCampania: objectiveLabels[selectedIndex] ?? "",
+      campania: selectedCampaignName ?? "Todas las campañas",
       cplPromedio: formatCurrency(avgCpl, currency, 2),
       leadsTotales: formatNumber(typeLeads),
       splitGenero: {
@@ -188,7 +242,7 @@ export function AudienceAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments, selectedIndex, objectiveLabels, avgCpl, typeLeads, genderTotals, currency]);
+  }, [effectiveSegments, selectedIndex, objectiveLabels, avgCpl, typeLeads, genderTotals, currency, selectedCampaignName]);
 
   return (
     <Card>
@@ -205,26 +259,62 @@ export function AudienceAnalysis({
           </div>
         </div>
 
-        {visibleIndexes.length > 0 && (
-          <div className="flex flex-col items-end gap-1">
-            <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
-            <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-              {visibleIndexes.map((idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setSelectedIndex(idx)}
-                  className={cn(
-                    "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                    selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {objectiveLabels[idx]}
-                </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
               ))}
-            </div>
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+
+          {visibleIndexes.length > 0 && (
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
+              <div className="flex items-center gap-1 rounded-md bg-muted p-1">
+                {visibleIndexes.map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedIndex(idx)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                      selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {objectiveLabels[idx]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5">
@@ -233,7 +323,7 @@ export function AudienceAnalysis({
         ) : (
           <div className="flex items-end justify-between gap-2 sm:gap-4">
             {ageRanges.map((ageRange) => {
-              const rowSegments = segments.filter((s) => s.ageRange === ageRange);
+              const rowSegments = effectiveSegments.filter((s) => s.ageRange === ageRange);
               const combined = combinedByAge.get(ageRange) ?? { leads: 0, spend: 0 };
               const combinedCpl = combined.leads > 0 ? combined.spend / combined.leads : null;
 

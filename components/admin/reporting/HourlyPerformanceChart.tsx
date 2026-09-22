@@ -3,8 +3,7 @@
 // "En qué momento del día se consiguen los resultados": inversión por hora (barras, eje
 // izquierdo) + costo por contacto por hora (línea, eje derecho), para las 24 horas del día,
 // sumando el mes completo — mismo patrón de doble eje que InvestmentTrendChart.tsx, pero por hora
-// del día en vez de por día del mes, y sin desglose por Objetivo (acá "contactos" combina TODOS
-// los Objetivos configurados: el punto es identificar horarios, no tipos de conversión).
+// del día en vez de por día del mes.
 //
 // Las barras se pintan en rojo cuando el costo por contacto de esa hora supera en más de un 35%
 // al costo por contacto promedio de la cuenta — el umbral se calcula siempre a partir del dato
@@ -17,20 +16,39 @@
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchHourlyTotals — e
 // InvestmentCalendar.tsx, que los pide todo junto una sola vez): breakdown
-// "hourly_stats_aggregated_by_advertiser_time_zone" a nivel campaña, matcheado por Objetivo con
-// el mismo criterio que el resto de la página, pero sumado a un único total por hora.
+// "hourly_stats_aggregated_by_advertiser_time_zone" a nivel anuncio, matcheado por Objetivo con
+// el mismo criterio que el resto de la página.
+//
+// A pedido de Martín este gráfico SÍ suma un combo de "Tipo de Resultado" (con "Todos los tipos"
+// combinados como default, igual que antes) además de los de CAMPAÑA y ANUNCIO — mismo patrón en
+// cascada de 3 combos que InvestmentTrendChart.tsx (nullable objectiveIndex/campaignId/adId, "todos"
+// como opción real, no un índice forzado — ver visibleAdsForCampaign/resolveAdFilteredTotals en
+// lib/reporting/adFilter.ts). Con Campaña y/o Anuncio elegidos, tanto las barras de Inversión como
+// la línea de Costo por Contacto (y el promedio/umbral rojo, que se recalcula sobre el subconjunto
+// filtrado) reflejan sólo esa Campaña/Anuncio.
 
-import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
+import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
+import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 interface HourlyTotals {
   hour: number;
   spend: number;
-  leads: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  /** Desglose de esta hora por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, AdBreakdownEntry>;
+}
+
+/** Un tipo de Resultado disponible para el combo (sólo los que tienen datos este mes — ver visibleObjectiveTotals en InvestmentCalendar.tsx). */
+interface ObjectiveOption {
+  index: number;
+  label: string;
 }
 
 interface TimeBand {
@@ -77,6 +95,9 @@ export function HourlyPerformanceChart({
   currency,
   monthIsComplete,
   clientId,
+  objectiveOptions,
+  campaigns,
+  ads,
 }: {
   /** Un elemento por hora (0-23), sumando el mes completo — ver lib/reporting/metaInvestmentData.ts. */
   hourlyTotals: HourlyTotals[];
@@ -84,19 +105,62 @@ export function HourlyPerformanceChart({
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Tipos de Resultado con datos este mes, para el combo — ver visibleObjectiveTotals en InvestmentCalendar.tsx. */
+  objectiveOptions: ObjectiveOption[];
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los tipos"
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
+
+  useEffect(() => {
+    if (objectiveIndex !== null && !objectiveOptions.some((o) => o.index === objectiveIndex)) {
+      setObjectiveIndex(null);
+    }
+  }, [objectiveOptions, objectiveIndex]);
+
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
+
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
 
   const hours = useMemo(() => {
     const byHour = new Map(hourlyTotals.map((h) => [h.hour, h]));
+    const hasFilter = campaignId !== null || adId !== null;
     return Array.from({ length: 24 }, (_, hour) => {
       const entry = byHour.get(hour);
-      const spend = entry?.spend ?? 0;
-      const leads = entry?.leads ?? 0;
-      return { hour, spend, leads, cpl: leads > 0 ? spend / leads : null };
+      // Mismo criterio que InvestmentTrendChart: con Campaña/Anuncio elegidos, la hora se resuelve
+      // contra SU desglose por anuncio (entry.byAd) en vez del total de cuenta.
+      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length) : null;
+      const hasData = hasFilter ? scoped !== null : Boolean(entry);
+      const spend = hasFilter ? (scoped?.spend ?? 0) : (entry?.spend ?? 0);
+      const objectiveLeadsSource = hasFilter ? scoped?.objectiveLeads : entry?.objectiveLeads;
+      const objectiveSpendSource = hasFilter ? scoped?.objectiveSpend : entry?.objectiveSpend;
+      const leads = hasData
+        ? objectiveIndex !== null
+          ? (objectiveLeadsSource?.[objectiveIndex] ?? 0)
+          : (objectiveLeadsSource ?? []).reduce((sum, v) => sum + v, 0)
+        : 0;
+      // Costo por Contacto: con un tipo puntual elegido, el gasto atribuido a ESE tipo; con
+      // "Todos los tipos", el gasto total de la hora/campaña/anuncio (mismo criterio "blended" que
+      // el resto de la página).
+      const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
+      return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null };
     });
-  }, [hourlyTotals]);
+  }, [hourlyTotals, objectiveIndex, campaignId, adId]);
 
   const totalSpend = hours.reduce((sum, h) => sum + h.spend, 0);
   const totalLeads = hours.reduce((sum, h) => sum + h.leads, 0);
@@ -143,6 +207,11 @@ export function HourlyPerformanceChart({
 
   const hasData = totalSpend > 0 || totalLeads > 0;
 
+  const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
+  const tipoLabel = selectedObjectiveLabel ?? "Todos los tipos";
+  const lineColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : LINE_COLOR;
+
   const insightMetrics = useMemo(() => {
     if (!hasData) return null;
     const withLeads = hours.filter((h) => h.leads > 0);
@@ -155,6 +224,8 @@ export function HourlyPerformanceChart({
     const worstBand = bandsWithLeads.length > 0 ? [...bandsWithLeads].sort((a, b) => (b.cpl ?? -Infinity) - (a.cpl ?? -Infinity))[0]! : null;
 
     return {
+      tipoDeResultado: tipoLabel,
+      campania: selectedCampaignName ?? "Todas las campañas",
       costoPromedio: avgCpl !== null ? formatCurrency(avgCpl, currency, 2) : null,
       inversionTotal: formatCurrency(totalSpend, currency),
       contactosTotales: formatNumber(totalLeads),
@@ -174,7 +245,7 @@ export function HourlyPerformanceChart({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hours, bands, hasData, avgCpl, totalSpend, totalLeads, currency]);
+  }, [hours, bands, hasData, avgCpl, totalSpend, totalLeads, currency, tipoLabel, selectedCampaignName]);
 
   const handleMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const svg = svgRef.current;
@@ -192,12 +263,63 @@ export function HourlyPerformanceChart({
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-0.5 pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">En qué momento del día se consiguen los resultados</CardTitle>
+      <CardHeader className="flex flex-col gap-2 pb-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle className="text-lg font-bold text-foreground">En qué momento del día se consiguen los resultados</CardTitle>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Tipo de Resultado"
+              value={objectiveIndex === null ? "all" : String(objectiveIndex)}
+              onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los tipos</option>
+              {objectiveOptions.map((o) => (
+                <option key={o.index} value={o.index}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <span className="text-xs text-muted-foreground">
           {threshold !== null
-            ? `Las barras en rojo señalan las horas cuyo costo por contacto supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio de la cuenta.`
-            : "Todavía no hay contactos este mes para calcular el promedio."}
+            ? `Las barras en rojo señalan las horas cuyo costo por contacto (${tipoLabel.toLowerCase()}) supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio del período filtrado.`
+            : "Todavía no hay contactos este período para calcular el promedio."}
         </span>
       </CardHeader>
 
@@ -252,9 +374,9 @@ export function HourlyPerformanceChart({
                 })}
 
                 {/* Línea de costo por contacto */}
-                {linePath && <path d={linePath} fill="none" stroke={LINE_COLOR} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
+                {linePath && <path d={linePath} fill="none" stroke={lineColor} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
                 {linePoints.map((p) => (
-                  <circle key={p.index} cx={p.x} cy={p.y} r={3} fill="#ffffff" stroke={LINE_COLOR} strokeWidth={2} />
+                  <circle key={p.index} cx={p.x} cy={p.y} r={3} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
                 ))}
 
                 {/* Eje X: horas del día */}
@@ -268,7 +390,7 @@ export function HourlyPerformanceChart({
                   <line x1={hoverX} x2={hoverX} y1={PAD.top} y2={PAD.top + INNER_H} stroke="currentColor" className="text-border" strokeWidth={1} />
                 )}
                 {hovered && hoverX !== null && hovered.cpl !== null && (
-                  <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={4} fill="#ffffff" stroke={LINE_COLOR} strokeWidth={2} />
+                  <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={4} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
                 )}
               </svg>
 
@@ -291,7 +413,7 @@ export function HourlyPerformanceChart({
                       </span>
                       <span className="flex items-center justify-between gap-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: LINE_COLOR }} /> Costo/contacto
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColor }} /> Costo/contacto
                         </span>
                         <span className="font-medium text-foreground">{hovered.cpl !== null ? formatCurrency(hovered.cpl, currency, 2) : "0"}</span>
                       </span>
@@ -335,7 +457,7 @@ export function HourlyPerformanceChart({
         )}
 
         {insightMetrics && (
-          <ChartInsightPanel chart="hourly-performance" metrics={insightMetrics} accentColor={LINE_COLOR} monthIsComplete={monthIsComplete} clientId={clientId} />
+          <ChartInsightPanel chart="hourly-performance" metrics={insightMetrics} accentColor={lineColor} monthIsComplete={monthIsComplete} clientId={clientId} />
         )}
       </CardContent>
     </Card>

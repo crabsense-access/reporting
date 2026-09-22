@@ -1,22 +1,31 @@
 "use client";
 
 // "Dónde se muestran los anuncios": ranking de ubicaciones de publicación (Feed, Stories, Reels,
-// video in-stream, Audience Network) por CPL, coloreado por eficiencia vs. el promedio del mes
-// (eficiente / promedio / ineficiente — no por tipo de campaña, a diferencia de los otros
-// gráficos), con su insight generado por Claude ANTES del gráfico (a diferencia del resto de la
-// página, donde el insight va después). Cada fila muestra CPL, Inversión, Clicks y Leads en
-// columnas alineadas (mismo ancho en las 9 filas) junto a la barra de eficiencia — sin tabla de
-// detalle aparte, para no duplicar la misma información dos veces.
+// video in-stream, Audience Network) por inversión, coloreado por eficiencia de CPL vs. el
+// promedio del período filtrado (mismo criterio "eficiente / promedio / ineficiente" que
+// RegionAnalysis.tsx), con el mismo toggle dinámico de Objetivo + combos de Campaña y Anuncio que
+// el resto de la página (ver AudienceAnalysis.tsx/RegionAnalysis.tsx: cualquier cantidad de
+// Objetivos, sólo se listan los que tienen al menos 1 lead este mes; Anuncio en cascada con
+// Campaña — ver visibleAdsForCampaign en lib/reporting/adFilter.ts). Cada fila muestra % de
+// inversión, CPL, Inversión y Leads en columnas alineadas junto a la barra de eficiencia — sin
+// tabla de detalle aparte. El insight de Claude va ANTES del gráfico (a diferencia del resto de la
+// página, donde va después) — convención propia de este gráfico, sin cambios.
 //
-// Usa datos de prueba (ver lib/reporting/mockInvestmentCalendar.ts — PLACEMENTS,
-// placementMonthlyTotals) derivados del mismo total mensual que el resto de la página — cuando se
-// conecte a Meta Ads real, sólo cambia de dónde sale PlacementTotals[], el resto no cambia.
+// Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchPlacementSegments — e
+// InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por ubicación
+// (publisher_platform + platform_position, traducido a español por placementLabel() en
+// metaResultLabels.ts) a nivel anuncio, matcheado por Objetivo con el mismo criterio
+// (exacto → "contiene", primero que matchea se queda con la fila) que el resto de la página. Antes
+// de esta migración usaba datos de prueba derivados del total mensual (mockInvestmentCalendar.ts,
+// función placementMonthlyTotals) — ahora sale directo de Meta, igual que el resto de los gráficos.
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatNumber } from "@/lib/format";
-import { MOCK_CURRENCY, placementMonthlyTotals, type PlacementTotals } from "@/lib/reporting/mockInvestmentCalendar";
+import { cn } from "@/lib/utils";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
+import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 
 type Tier = "eficiente" | "promedio" | "ineficiente";
@@ -41,111 +50,263 @@ function tierFor(cpl: number, avgCpl: number): Tier {
   return "ineficiente";
 }
 
-// Ancho fijo por columna (CPL, Inversión, Clicks, Leads) para que los valores queden alineados
-// verticalmente entre las 9 filas, sin importar el largo de cada número.
-const METRIC_GRID_COLUMNS = "72px 92px 60px 56px";
+// Ancho fijo por columna (% Inv., CPL, Inversión, Leads) para que los valores queden alineados
+// verticalmente entre todas las filas, sin importar cuántas ubicaciones haya ni el largo de cada
+// número — mismo criterio que RegionAnalysis.tsx.
+const METRIC_GRID_COLUMNS = "56px 72px 92px 56px";
+
+interface PlacementSegmentTotals {
+  placement: string;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  /** Desglose de esta ubicación por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
+  byAd: Record<string, AdBreakdownEntry>;
+}
 
 export function PlacementAnalysis({
-  monthLeads,
-  monthTotal,
+  segments,
+  objectiveLabels,
+  currency,
   monthIsComplete,
   clientId,
+  campaigns,
+  ads,
 }: {
-  monthLeads: number;
-  monthTotal: number;
+  /** Un elemento por ubicación de publicación con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
+  segments: PlacementSegmentTotals[];
+  /** Leyenda de cada Objetivo, en orden (índice alineado con objectiveLeads/objectiveSpend de cada segmento). */
+  objectiveLabels: string[];
+  currency: string;
   /** true cuando el mes seleccionado ya terminó — se le pasa a ChartInsightPanel para que la ruta de insights sólo cachee en ese caso (ver InvestmentCalendar.tsx). */
   monthIsComplete: boolean;
   clientId: string;
+  /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
+  campaigns: { id: string; name: string }[];
+  /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
+  ads: { id: string; name: string; campaignId: string }[];
 }) {
-  const avgCpl = monthLeads > 0 ? monthTotal / monthLeads : 0;
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
-  const sorted = useMemo(() => {
-    const placements = placementMonthlyTotals(monthLeads, monthTotal);
-    return [...placements].sort((a, b) => {
-      if (a.cpl === null) return 1;
-      if (b.cpl === null) return -1;
-      return a.cpl - b.cpl;
-    });
-  }, [monthLeads, monthTotal]);
+  useEffect(() => {
+    if (campaignId !== null && !campaigns.some((c) => c.id === campaignId)) {
+      setCampaignId(null);
+    }
+  }, [campaigns, campaignId]);
 
-  const withCpl = sorted.filter((p): p is PlacementTotals & { cpl: number } => p.cpl !== null);
-  const best = withCpl[0] ?? null;
-  const worst = withCpl.length > 0 ? withCpl[withCpl.length - 1]! : null;
-  const maxCpl = Math.max(...withCpl.map((p) => p.cpl), 1);
+  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  useEffect(() => {
+    if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
+      setAdId(null);
+    }
+  }, [visibleAds, adId]);
+
+  // El toggle de Objetivo se calcula sobre TODOS los segmentos (sin filtrar por Campaña/Anuncio),
+  // mismo criterio que en AudienceAnalysis.tsx/RegionAnalysis.tsx.
+  const objectiveMonthLeads = useMemo(() => {
+    const totals = objectiveLabels.map(() => 0);
+    for (const s of segments) {
+      s.objectiveLeads.forEach((value, i) => {
+        totals[i] = (totals[i] ?? 0) + value;
+      });
+    }
+    return totals;
+  }, [segments, objectiveLabels]);
+
+  const visibleIndexes = useMemo(
+    () => objectiveLabels.map((_, i) => i).filter((i) => (objectiveMonthLeads[i] ?? 0) > 0),
+    [objectiveLabels, objectiveMonthLeads]
+  );
+
+  // Si el Objetivo seleccionado deja de estar visible (cambió el mes, o dejó de tener leads), cae
+  // al primero visible en vez de quedarse mostrando un ranking vacío.
+  useEffect(() => {
+    if (visibleIndexes.length > 0 && !visibleIndexes.includes(selectedIndex)) {
+      setSelectedIndex(visibleIndexes[0]!);
+    }
+  }, [visibleIndexes, selectedIndex]);
+
+  const selectedColor = objectiveColor(selectedIndex);
+  const hasFilter = campaignId !== null || adId !== null;
+
+  const rows = useMemo(() => {
+    return segments
+      .map((s) => {
+        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectiveLabels.length) : null;
+        const leads = hasFilter ? (scoped?.objectiveLeads[selectedIndex] ?? 0) : (s.objectiveLeads[selectedIndex] ?? 0);
+        const spend = hasFilter ? (scoped?.objectiveSpend[selectedIndex] ?? 0) : (s.objectiveSpend[selectedIndex] ?? 0);
+        return { placement: s.placement, leads, spend };
+      })
+      .filter((r) => r.spend > 0 || r.leads > 0)
+      .sort((a, b) => b.spend - a.spend);
+  }, [segments, selectedIndex, hasFilter, campaignId, adId, objectiveLabels.length]);
+
+  const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
+  const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
+  const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
+  const maxSpend = Math.max(...rows.map((r) => r.spend), 1);
+
+  const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
 
   const insightMetrics = useMemo(() => {
-    if (withCpl.length === 0) return null;
+    if (rows.length === 0) return null;
+    const withCpl = rows.filter((r) => r.leads > 0).map((r) => ({ ...r, cpl: r.spend / r.leads }));
+    const masEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => a.cpl - b.cpl)[0]! : null;
+    const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
+
     return {
-      cplPromedio: formatCurrency(avgCpl, MOCK_CURRENCY, 2),
-      ubicaciones: sorted.map((p) => ({
-        ubicacion: p.name,
-        inversion: formatCurrency(p.spend, MOCK_CURRENCY),
-        clicks: formatNumber(p.clicks),
-        leads: formatNumber(p.leads),
-        cpl: p.cpl !== null ? formatCurrency(p.cpl, MOCK_CURRENCY, 2) : "s/d",
-        nivel: p.cpl !== null ? TIER_LABEL[tierFor(p.cpl, avgCpl)] : "s/d",
+      tipoCampania: objectiveLabels[selectedIndex] ?? "",
+      campania: selectedCampaignName ?? "Todas las campañas",
+      cplPromedio: formatCurrency(avgCpl, currency, 2),
+      inversionTotal: formatCurrency(totalSpend, currency),
+      ubicaciones: rows.map((r) => ({
+        ubicacion: r.placement,
+        inversion: formatCurrency(r.spend, currency),
+        leads: formatNumber(r.leads),
+        participacionInversion: formatPercent(totalSpend > 0 ? r.spend / totalSpend : 0),
+        cpl: r.leads > 0 ? formatCurrency(r.spend / r.leads, currency, 2) : "s/d",
       })),
-      masEficiente: best ? { ubicacion: best.name, cpl: formatCurrency(best.cpl, MOCK_CURRENCY, 2) } : null,
-      menosEficiente: worst ? { ubicacion: worst.name, cpl: formatCurrency(worst.cpl, MOCK_CURRENCY, 2) } : null,
+      masEficiente: masEficiente ? { ubicacion: masEficiente.placement, cpl: formatCurrency(masEficiente.cpl, currency, 2) } : null,
+      menosEficiente: menosEficiente
+        ? { ubicacion: menosEficiente.placement, cpl: formatCurrency(menosEficiente.cpl, currency, 2) }
+        : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sorted, avgCpl, best, worst]);
+  }, [rows, objectiveLabels, selectedIndex, avgCpl, totalSpend, currency, selectedCampaignName]);
 
   return (
     <Card>
-      <CardHeader className="flex flex-col gap-0.5 pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">Dónde se muestran los anuncios</CardTitle>
-        <span className="text-xs text-muted-foreground">Ranking del mes por ubicación · CPL promedio: {formatCurrency(avgCpl, MOCK_CURRENCY, 2)}</span>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-2">
+        <div>
+          <CardTitle className="text-lg font-bold text-foreground">Dónde se muestran los anuncios</CardTitle>
+          <span className="text-xs text-muted-foreground">
+            Ranking del período por ubicación · Inversión total: {formatCurrency(totalSpend, currency)}
+            {totalLeads > 0 && <> · CPL promedio: {formatCurrency(avgCpl, currency, 2)}</>}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <select
+              aria-label="Campaña"
+              value={campaignId ?? "all"}
+              onChange={(event) => {
+                const value = event.target.value === "all" ? null : event.target.value;
+                setCampaignId(value);
+                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todas las campañas</option>
+              {campaigns.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Anuncio"
+              value={adId ?? "all"}
+              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los anuncios</option>
+              {visibleAds.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {visibleIndexes.length > 0 && (
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
+              <div className="flex items-center gap-1 rounded-md bg-muted p-1">
+                {visibleIndexes.map((idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedIndex(idx)}
+                    className={cn(
+                      "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                      selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {objectiveLabels[idx]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className="flex flex-col gap-5">
         {insightMetrics && (
-          <ChartInsightPanel chart="placements" metrics={insightMetrics} accentColor="hsl(var(--primary))" bordered={false} monthIsComplete={monthIsComplete} clientId={clientId} />
+          <ChartInsightPanel
+            chart="placements"
+            metrics={insightMetrics}
+            accentColor={selectedColor}
+            bordered={false}
+            monthIsComplete={monthIsComplete}
+            clientId={clientId}
+          />
         )}
 
-        <div className="flex flex-col gap-3 border-t border-border pt-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
-            <span />
-            <div
-              className="grid text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-              style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
-            >
-              <span>CPL</span>
-              <span>Inversión</span>
-              <span>Clicks</span>
-              <span>Leads</span>
-            </div>
-          </div>
-
-          {sorted.map((p) => {
-            const tier = p.cpl !== null ? tierFor(p.cpl, avgCpl) : "promedio";
-            const color = TIER_COLOR[tier];
-            const widthPct = p.cpl !== null ? Math.max(4, Math.round((p.cpl / maxCpl) * 100)) : 0;
-            return (
-              <div key={p.id} className="flex flex-col gap-1">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
-                  <span className="flex items-center gap-1.5 font-medium text-foreground">
-                    <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
-                    {p.name}
-                    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ color, backgroundColor: `${color}1a` }}>
-                      {TIER_LABEL[tier]}
-                    </span>
-                  </span>
-                  <div className="grid text-right tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
-                    <span className="whitespace-nowrap font-semibold text-foreground">
-                      {p.cpl !== null ? formatCurrency(p.cpl, MOCK_CURRENCY, 2) : "s/d"}
-                    </span>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(p.spend, MOCK_CURRENCY)}</span>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(p.clicks)}</span>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(p.leads)}</span>
-                  </div>
-                </div>
-                <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+        <div className={cn("flex flex-col gap-3", insightMetrics && "border-t border-border pt-4")}>
+          {rows.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Todavía no hay leads este período.</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
+                <span />
+                <div
+                  className="grid text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
+                >
+                  <span>% Inv.</span>
+                  <span>CPL</span>
+                  <span>Inversión</span>
+                  <span>Leads</span>
                 </div>
               </div>
-            );
-          })}
+
+              {rows.map((r) => {
+                const cpl = r.leads > 0 ? r.spend / r.leads : null;
+                const tier = cpl !== null ? tierFor(cpl, avgCpl) : "promedio";
+                const color = TIER_COLOR[tier];
+                const spendShare = totalSpend > 0 ? r.spend / totalSpend : 0;
+                const widthPct = Math.max(4, Math.round((r.spend / maxSpend) * 100));
+                return (
+                  <div key={r.placement} className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
+                      <span className="flex items-center gap-1.5 font-medium text-foreground">
+                        <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
+                        {r.placement}
+                        <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ color, backgroundColor: `${color}1a` }}>
+                          {TIER_LABEL[tier]}
+                        </span>
+                      </span>
+                      <div className="grid text-right tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
+                        <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
+                        <span className="whitespace-nowrap text-muted-foreground">
+                          {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
+                        </span>
+                        <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
+                        <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.leads)}</span>
+                      </div>
+                    </div>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </div>
       </CardContent>
     </Card>
