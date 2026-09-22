@@ -3,8 +3,9 @@
 // "De dónde son los leads": ranking de provincias/regiones del mes por inversión (barra
 // proporcional a la participación de cada provincia en la inversión total, coloreada por
 // eficiencia de CPL vs. el promedio del mes — mismo criterio "eficiente / promedio / ineficiente"
-// que PlacementAnalysis.tsx). Cada fila muestra Alcance, Impresiones, Clicks, % de inversión, CPL,
-// Inversión y Resultados en columnas alineadas junto a la barra — sin tabla de detalle aparte.
+// que PlacementAnalysis.tsx). Cada fila muestra Alcance, Impresiones, Clicks, Inversión, % de
+// inversión, Resultados y Costo por Resultado en columnas alineadas junto a la barra (que termina
+// donde empieza la tabla, mismo criterio que PlacementAnalysis.tsx) — sin tabla de detalle aparte.
 //
 // Datos REALES de Meta Ads (ver lib/reporting/metaInvestmentData.ts — fetchRegionSegments — e
 // InvestmentCalendar.tsx, que pide todo junto una sola vez): desglose por región a nivel anuncio,
@@ -60,10 +61,10 @@ function tierFor(cpl: number, avgCpl: number): Tier {
   return "ineficiente";
 }
 
-// Ancho fijo por columna (Alcance, Impresiones, Clicks, % Inv., CPL, Inversión, Resultados) para
-// que los valores queden alineados verticalmente entre todas las filas, sin importar cuántas
-// provincias haya ni el largo de cada número.
-const METRIC_GRID_COLUMNS = "64px 76px 56px 56px 72px 92px 68px";
+// Ancho fijo por columna (Alcance, Impresiones, Clicks, Inversión, % Inv., Resultados, Costo por
+// Resultado) para que los valores queden alineados verticalmente entre todas las filas, sin
+// importar cuántas provincias haya ni el largo de cada número.
+const METRIC_GRID_COLUMNS = "64px 76px 56px 92px 56px 68px 96px";
 
 interface RegionAdBreakdownEntry extends AdBreakdownEntry {
   /** Ver comentario de RegionSegmentTotals más abajo. */
@@ -303,24 +304,24 @@ export function RegionAnalysis({
         </div>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-5">
+      <CardContent className="flex flex-col gap-5 pt-4">
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5">
-              <span />
+            <div className="flex items-center gap-4">
+              <span className="min-w-0 flex-1" />
               <div
-                className="grid text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                 style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
               >
                 <span>Alcance</span>
                 <span>Impres.</span>
                 <span>Clicks</span>
-                <span>% Inv.</span>
-                <span>CPL</span>
                 <span>Inversión</span>
+                <span>% Inv.</span>
                 <span>Resultados</span>
+                <span>Costo por Resultado</span>
               </div>
             </div>
 
@@ -331,29 +332,34 @@ export function RegionAnalysis({
               const spendShare = totalSpend > 0 ? r.spend / totalSpend : 0;
               const widthPct = Math.max(4, Math.round((r.spend / maxSpend) * 100));
               return (
-                <div key={r.region} className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs">
-                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                <div key={r.region} className="flex items-center gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                       <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
-                      {r.region}
-                      <span className="rounded-full px-1.5 py-0.5 text-[10px] font-medium" style={{ color, backgroundColor: `${color}1a` }}>
+                      <span className="truncate">{r.region}</span>
+                      <span
+                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                        style={{ color, backgroundColor: `${color}1a` }}
+                      >
                         {TIER_LABEL[tier]}
                       </span>
                     </span>
-                    <div className="grid text-right tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
-                      <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.reach)}</span>
-                      <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.impressions)}</span>
-                      <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.clicks)}</span>
-                      <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
-                      <span className="whitespace-nowrap text-muted-foreground">
-                        {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
-                      </span>
-                      <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
-                      <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(r.leads)}</span>
+                    {/* La barra termina donde empieza la tabla: su ancho de referencia (w-full)
+                        es el de esta columna de provincia, no el de la fila entera. */}
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
                     </div>
                   </div>
-                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
+                  <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.reach)}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.impressions)}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.clicks)}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
+                    <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
+                    <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(r.leads)}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">
+                      {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
+                    </span>
                   </div>
                 </div>
               );
