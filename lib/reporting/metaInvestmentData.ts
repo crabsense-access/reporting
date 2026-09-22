@@ -1214,6 +1214,32 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
   };
 }
 
+/**
+ * Devuelve sólo las campañas/anuncios que tuvieron al menos 1 Resultado (de cualquier Objetivo)
+ * en el rango pedido — a pedido de Martín, para que los combos de Campaña/Anuncio no listen
+ * campañas/anuncios que gastaron pero no generaron ningún Resultado. Se calcula sobre
+ * `days[].byAd`, que ya viene sumado por anuncio para todo el rango (mergeado entre los tramos
+ * estable/fresco cuando corresponde) — por eso este filtro se aplica como último paso, después de
+ * cualquier merge, y no importa en qué tramo cayeron los leads.
+ */
+function withResultsOnlyEntities(data: RealInvestmentCalendarData): RealInvestmentCalendarData {
+  const adLeadsTotal = new Map<string, number>();
+  const campaignLeadsTotal = new Map<string, number>();
+  for (const day of data.days) {
+    for (const [adId, entry] of Object.entries(day.byAd)) {
+      const leads = entry.objectiveLeads.reduce((sum, v) => sum + v, 0);
+      if (leads <= 0) continue;
+      adLeadsTotal.set(adId, (adLeadsTotal.get(adId) ?? 0) + leads);
+      campaignLeadsTotal.set(entry.campaignId, (campaignLeadsTotal.get(entry.campaignId) ?? 0) + leads);
+    }
+  }
+  return {
+    ...data,
+    campaigns: data.campaigns.filter((c) => (campaignLeadsTotal.get(c.id) ?? 0) > 0),
+    ads: data.ads.filter((a) => (adLeadsTotal.get(a.id) ?? 0) > 0),
+  };
+}
+
 /** Junta objectiveActionTypes de un tramo "estable" (más días, prioridad) con uno "fresco" (hoy) — se queda con el de `stable` cuando lo tiene, y sólo cae a `fresh` para un Objetivo que todavía no había matcheado nada en el tramo estable. */
 function mergeObjectiveActionTypes(
   stable: (string | null)[],
@@ -1271,7 +1297,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v10") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v11") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1287,6 +1313,11 @@ function mergeRealInvestmentCalendarData(
  * Anuncio — una entrada vieja en v9 no tiene byAd/ads en ningún lado, así que bumpear evita que
  * esos combos aparezcan vacíos en silencio hasta que venza el TTL. Se agregó placementSegments
  * (antes en mock) y hourlyTotals ahora desglosa por Objetivo (antes un único total combinado).
+ *
+ * v10→v11: `campaigns`/`ads` ahora se filtran a sólo los que tuvieron al menos 1 Resultado (ver
+ * withResultsOnlyEntities) — mismo campo, mismo tipo, pero el criterio de qué entra cambió, así
+ * que una entrada vieja en v10 seguiría listando campañas/anuncios sin Resultados en los combos
+ * hasta que venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   metaConfig: MetaAdsConfig,
@@ -1302,12 +1333,12 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v10",
+        query: "investmentCalendar:v11",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
     );
-    return withSegmentDefaults(cached);
+    return withResultsOnlyEntities(withSegmentDefaults(cached));
   }
 
   const stableUntil = subDays(lastDataDate, 1);
@@ -1318,13 +1349,13 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v10",
+        query: "investmentCalendar:v11",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
     );
-    return withSegmentDefaults(cached);
+    return withResultsOnlyEntities(withSegmentDefaults(cached));
   }
 
   const [stable, fresh] = await Promise.all([
@@ -1332,7 +1363,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v10",
+        query: "investmentCalendar:v11",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1344,7 +1375,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v10",
+        query: "investmentCalendar:v11",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1352,5 +1383,5 @@ export async function fetchRealInvestmentCalendarDataCached(
     ),
   ]);
 
-  return mergeRealInvestmentCalendarData(stable, fresh);
+  return withResultsOnlyEntities(mergeRealInvestmentCalendarData(stable, fresh));
 }

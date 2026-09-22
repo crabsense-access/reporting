@@ -259,61 +259,51 @@ export function AudienceAnalysis({
           </div>
         </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <select
-              aria-label="Campaña"
-              value={campaignId ?? "all"}
-              onChange={(event) => {
-                const value = event.target.value === "all" ? null : event.target.value;
-                setCampaignId(value);
-                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
-              }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <option value="all">Todas las campañas</option>
-              {campaigns.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col items-stretch gap-2">
+          <select
+            aria-label="Tipo de Resultado"
+            value={selectedIndex}
+            onChange={(event) => setSelectedIndex(Number(event.target.value))}
+            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            {visibleIndexes.map((idx) => (
+              <option key={idx} value={idx}>
+                {objectiveLabels[idx]}
+              </option>
+            ))}
+          </select>
 
-            <select
-              aria-label="Anuncio"
-              value={adId ?? "all"}
-              onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              <option value="all">Todos los anuncios</option>
-              {visibleAds.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            aria-label="Campaña"
+            value={campaignId ?? "all"}
+            onChange={(event) => {
+              const value = event.target.value === "all" ? null : event.target.value;
+              setCampaignId(value);
+              setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+            }}
+            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todas las campañas</option>
+            {campaigns.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-          {visibleIndexes.length > 0 && (
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-[11px] text-muted-foreground">Tipo de conversión:</span>
-              <div className="flex items-center gap-1 rounded-md bg-muted p-1">
-                {visibleIndexes.map((idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setSelectedIndex(idx)}
-                    className={cn(
-                      "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                      selectedIndex === idx ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {objectiveLabels[idx]}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <select
+            aria-label="Anuncio"
+            value={adId ?? "all"}
+            onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
+            className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todos los anuncios</option>
+            {visibleAds.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
         </div>
       </CardHeader>
 

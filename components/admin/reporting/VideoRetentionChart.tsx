@@ -243,7 +243,7 @@ export function VideoRetentionChart({
         <div className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-lg font-bold text-foreground">Cuánto se mira el contenido según la edad</CardTitle>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col items-stretch gap-2">
             <select
               aria-label="Campaña"
               value={campaignId ?? "all"}
@@ -252,7 +252,7 @@ export function VideoRetentionChart({
                 setCampaignId(value);
                 setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
               }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todas las campañas</option>
               {campaigns.map((c) => (
@@ -266,7 +266,7 @@ export function VideoRetentionChart({
               aria-label="Anuncio"
               value={adId ?? "all"}
               onChange={(event) => setAdId(event.target.value === "all" ? null : event.target.value)}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="h-8 w-[190px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               <option value="all">Todos los anuncios</option>
               {visibleAds.map((a) => (
