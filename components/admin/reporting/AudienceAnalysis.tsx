@@ -72,13 +72,44 @@ const BAR_AREA_HEIGHT = 112; // px — alto del área de barras (sin contar el r
 // valor que CPL_DEFAULT_COLOR/COSTO_DEFAULT_COLOR en el resto de los gráficos con este combo.
 const OBJECTIVE_DEFAULT_COLOR = "#d97706"; // amber-600
 
+interface AudienceAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de AudienceSegmentTotals más abajo. */
+  reach: number;
+  impressions: number;
+}
+
 interface AudienceSegmentTotals {
   gender: Gender;
   ageRange: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones totales de este segmento — no varían por Tipo de Resultado, sólo por
+   * Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
   /** Desglose de este segmento por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
-  byAd: Record<string, AdBreakdownEntry>;
+  byAd: Record<string, AudienceAdBreakdownEntry>;
+}
+
+/** Igual que resolveAdFilteredTotals (lib/reporting/adFilter.ts) pero para reach/impressions, que
+ * ese helper compartido no conoce (ver comentario de cabecera). Mismo criterio que
+ * resolveRegionEngagementTotals en RegionAnalysis.tsx, sin clicks. */
+function resolveAudienceEngagementTotals(
+  byAd: Record<string, AudienceAdBreakdownEntry>,
+  campaignId: string | null,
+  adId: string | null
+): { reach: number; impressions: number } | null {
+  if (adId !== null) {
+    const entry = byAd[adId];
+    return entry ? { reach: entry.reach, impressions: entry.impressions } : null;
+  }
+  if (campaignId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (matching.length === 0) return null;
+  return matching.reduce(
+    (acc, entry) => ({ reach: acc.reach + entry.reach, impressions: acc.impressions + entry.impressions }),
+    { reach: 0, impressions: 0 }
+  );
 }
 
 interface ObjectiveOption {
@@ -152,7 +183,16 @@ export function AudienceAnalysis({
     for (const s of segments) {
       const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount);
       if (scoped) {
-        result.push({ gender: s.gender, ageRange: s.ageRange, objectiveLeads: scoped.objectiveLeads, objectiveSpend: scoped.objectiveSpend, byAd: s.byAd });
+        const engagement = resolveAudienceEngagementTotals(s.byAd, campaignId, adId);
+        result.push({
+          gender: s.gender,
+          ageRange: s.ageRange,
+          objectiveLeads: scoped.objectiveLeads,
+          objectiveSpend: scoped.objectiveSpend,
+          reach: engagement?.reach ?? 0,
+          impressions: engagement?.impressions ?? 0,
+          byAd: s.byAd,
+        });
       }
     }
     return result;
@@ -179,13 +219,17 @@ export function AudienceAnalysis({
   // Totales combinados (Mujeres + Hombres) por rango etario, para el recuadro debajo de cada
   // grupo de barras — la altura de las barras sigue mostrando el desglose por género.
   const combinedByAge = useMemo(() => {
-    const map = new Map<string, { leads: number; spend: number }>();
-    for (const ageRange of ageRanges) map.set(ageRange, { leads: 0, spend: 0 });
+    const map = new Map<string, { leads: number; spend: number; reach: number; impressions: number }>();
+    for (const ageRange of ageRanges) map.set(ageRange, { leads: 0, spend: 0, reach: 0, impressions: 0 });
     for (const s of effectiveSegments) {
       const entry = map.get(s.ageRange);
       if (entry) {
         entry.leads += valueAt(s.objectiveLeads, objectiveIndex);
         entry.spend += valueAt(s.objectiveSpend, objectiveIndex);
+        // Alcance/impresiones no varían por Tipo de Resultado (ver AudienceSegmentTotals) — se suman
+        // siempre, sin pasar por valueAt/objectiveIndex.
+        entry.reach += s.reach;
+        entry.impressions += s.impressions;
       }
     }
     return map;
@@ -325,7 +369,7 @@ export function AudienceAnalysis({
           <div className="flex items-end justify-between gap-2 sm:gap-4">
             {ageRanges.map((ageRange) => {
               const rowSegments = effectiveSegments.filter((s) => s.ageRange === ageRange);
-              const combined = combinedByAge.get(ageRange) ?? { leads: 0, spend: 0 };
+              const combined = combinedByAge.get(ageRange) ?? { leads: 0, spend: 0, reach: 0, impressions: 0 };
               const combinedCpl = combined.leads > 0 ? combined.spend / combined.leads : null;
 
               return (
@@ -347,17 +391,25 @@ export function AudienceAnalysis({
 
                   <span className="text-xs font-semibold text-foreground">{ageRange}</span>
 
-                  <div className="flex w-full flex-col items-center gap-0.5 rounded-md border border-border bg-muted/40 px-1.5 py-1.5 text-center">
-                    <span className="whitespace-nowrap text-xs font-semibold tabular-nums text-foreground">
-                      {combinedCpl !== null ? formatCurrency(combinedCpl, currency, 2) : "0"}
-                    </span>
-                    <span className="text-[9px] uppercase tracking-wide text-muted-foreground">CPL</span>
-                    <span className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground">
-                      {formatCurrency(combined.spend, currency)}
-                    </span>
-                    <span className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground">
-                      {formatNumber(combined.leads)} leads
-                    </span>
+                  <div className="flex w-full flex-col items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-2 text-center">
+                    <div className="flex flex-col items-center">
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.leads)}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Resultados</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">
+                        {combinedCpl !== null ? formatCurrency(combinedCpl, currency, 2) : "0"}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Costo por Resultado</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.reach)}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Alcance</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{formatNumber(combined.impressions)}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Impresiones</span>
+                    </div>
                   </div>
                 </div>
               );

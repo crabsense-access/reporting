@@ -89,12 +89,23 @@ interface AdBreakdownEntry {
   objectiveSpend: number[];
 }
 
+interface AudienceAdBreakdownEntry extends AdBreakdownEntry {
+  /** Ver comentario de AudienceSegmentTotals más abajo — a pedido de Martín, para los recuadros de
+   *  AudienceAnalysis.tsx (mismo criterio que RegionSegmentTotals, sin clicks). */
+  reach: number;
+  impressions: number;
+}
+
 interface AudienceSegmentTotals {
   gender: "mujeres" | "hombres";
   ageRange: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
-  byAd: Record<string, AdBreakdownEntry>;
+  /** Alcance/impresiones totales del segmento — no varían por Tipo de Resultado, sólo por
+   *  Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
+  reach: number;
+  impressions: number;
+  byAd: Record<string, AudienceAdBreakdownEntry>;
 }
 
 interface RegionAdBreakdownEntry extends AdBreakdownEntry {

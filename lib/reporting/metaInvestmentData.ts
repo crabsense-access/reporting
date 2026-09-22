@@ -237,14 +237,34 @@ export interface HourlyTotals {
   byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
+/**
+ * Desglose por anuncio de AudienceSegmentTotals — igual al shared AdBreakdownEntry (ver
+ * lib/reporting/adFilter.ts) más reach/impressions, que ningún otro segmento salvo Region tenía
+ * hasta ahora (a diferencia de RegionAdBreakdownEntry, sin clicks: no lo pidió Martín acá).
+ */
+export interface AudienceAdBreakdownEntry {
+  campaignId: string;
+  spend: number;
+  objectiveLeads: number[];
+  objectiveSpend: number[];
+  reach: number;
+  impressions: number;
+}
+
 export interface AudienceSegmentTotals {
   gender: "mujeres" | "hombres";
   /** Rango etario tal cual lo devuelve Meta ("18-24", "25-34", ..., "65+"). */
   ageRange: string;
   objectiveLeads: number[];
   objectiveSpend: number[];
+  /** Alcance/impresiones TOTALES de este segmento — a diferencia de objectiveLeads/objectiveSpend,
+   *  no varían según el Tipo de Resultado elegido, sólo según el filtro de Campaña/Anuncio (ver
+   *  byAd) — a pedido de Martín, para los recuadros de AudienceAnalysis.tsx, mismo criterio que
+   *  RegionSegmentTotals.reach/impressions. */
+  reach: number;
+  impressions: number;
   /** Desglose de ESTE segmento por anuncio (clave = ad_id), mismo criterio que DailyRealTotals.byAd — para los combos de Campaña/Anuncio de AudienceAnalysis.tsx. */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, AudienceAdBreakdownEntry>;
 }
 
 /**
@@ -318,6 +338,12 @@ interface MetaAudienceRow {
   gender?: string;
   campaign_id?: string;
   ad_id?: string;
+  /** Alcance/impresiones de ESTA fila (edad+género+anuncio) para el período pedido — a pedido de
+   *  Martín, para los recuadros de "Quién responde a los anuncios" (AudienceAnalysis.tsx). Mismo
+   *  criterio que MetaRegionRow.reach/impressions: no se matchean por Objetivo, quedan como
+   *  totales del segmento (y del anuncio, en byAd) — ver AudienceSegmentTotals. */
+  reach?: string;
+  impressions?: string;
 }
 
 interface MetaAudienceInsightsResponse {
@@ -368,10 +394,11 @@ async function fetchAudienceSegments(
       // limit alto porque a nivel anuncio el volumen de filas crece mucho (anuncios × 14
       // combinaciones de edad+género) — fetchMetaGraphApi no sigue `paging.next`, así que una
       // cuenta con muchísimos anuncios activos igual podría truncarse (limitación conocida).
+      // reach/impressions sumados a pedido de Martín — ver MetaAudienceRow.
       level: "ad",
       breakdowns: "age,gender",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id",
+      fields: "spend,actions,campaign_id,ad_id,reach,impressions",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -387,17 +414,54 @@ async function fetchAudienceSegments(
     const key = `${gender}|${ageRange}`;
     let entry = bySegment.get(key);
     if (!entry) {
-      entry = { gender, ageRange, objectiveLeads: objectives.map(() => 0), objectiveSpend: objectives.map(() => 0), byAd: {} };
+      entry = {
+        gender,
+        ageRange,
+        objectiveLeads: objectives.map(() => 0),
+        objectiveSpend: objectives.map(() => 0),
+        reach: 0,
+        impressions: 0,
+        byAd: {},
+      };
       bySegment.set(key, entry);
     }
 
     const spend = Number(row.spend ?? 0);
+    const reach = Number(row.reach ?? 0);
+    const impressions = Number(row.impressions ?? 0);
     const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
     }
-    addRowToByAd(entry.byAd, row.ad_id, row.campaign_id, spend, matched, objectives.length);
+    entry.reach += reach;
+    entry.impressions += impressions;
+
+    // No se usa el addRowToByAd compartido acá: su byAd no tiene reach/impressions (lo comparten
+    // fetchRegionSegments — que además suma clicks —, fetchHourlyTotals/fetchPlacementSegments,
+    // que no piden esos campos), así que se arma la entrada completa acá mismo con el shape de
+    // AudienceAdBreakdownEntry — mismo criterio que fetchRegionSegments.
+    if (row.ad_id && row.campaign_id) {
+      let adEntry = entry.byAd[row.ad_id];
+      if (!adEntry) {
+        adEntry = {
+          campaignId: row.campaign_id,
+          spend: 0,
+          objectiveLeads: Array.from({ length: objectives.length }, () => 0),
+          objectiveSpend: Array.from({ length: objectives.length }, () => 0),
+          reach: 0,
+          impressions: 0,
+        };
+        entry.byAd[row.ad_id] = adEntry;
+      }
+      adEntry.spend += spend;
+      if (matched) {
+        adEntry.objectiveLeads[matched.index] = (adEntry.objectiveLeads[matched.index] ?? 0) + matched.value;
+        adEntry.objectiveSpend[matched.index] = (adEntry.objectiveSpend[matched.index] ?? 0) + spend;
+      }
+      adEntry.reach += reach;
+      adEntry.impressions += impressions;
+    }
   }
 
   return Array.from(bySegment.values());
@@ -1139,7 +1203,41 @@ function mergeNamedEntities<T extends { id: string }>(stable: T[], fresh: T[]): 
   return [...stable, ...onlyInFresh];
 }
 
-/** Suma objectiveLeads/objectiveSpend (y byAd) por segmento (gender+ageRange) entre el tramo estable y el fresco — un segmento que sólo aparece en uno de los dos se conserva tal cual. */
+/** Igual que mergeByAd (ver arriba) pero para AudienceAdBreakdownEntry — reach/impressions no
+ *  las tiene el shape compartido, así que AudienceAnalysis.tsx necesita su propio merge (mismo
+ *  criterio que mergeRegionByAd, sin clicks). */
+function mergeAudienceByAd(
+  a: Record<string, AudienceAdBreakdownEntry>,
+  b: Record<string, AudienceAdBreakdownEntry>
+): Record<string, AudienceAdBreakdownEntry> {
+  const result: Record<string, AudienceAdBreakdownEntry> = {};
+  for (const [adId, adEntry] of [...Object.entries(a), ...Object.entries(b)]) {
+    let existing = result[adId];
+    if (!existing) {
+      existing = {
+        campaignId: adEntry.campaignId,
+        spend: 0,
+        objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
+        objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
+        reach: 0,
+        impressions: 0,
+      };
+      result[adId] = existing;
+    }
+    existing.spend += adEntry.spend;
+    existing.reach += adEntry.reach;
+    existing.impressions += adEntry.impressions;
+    adEntry.objectiveLeads.forEach((value, i) => {
+      existing!.objectiveLeads[i] = (existing!.objectiveLeads[i] ?? 0) + value;
+    });
+    adEntry.objectiveSpend.forEach((value, i) => {
+      existing!.objectiveSpend[i] = (existing!.objectiveSpend[i] ?? 0) + value;
+    });
+  }
+  return result;
+}
+
+/** Suma objectiveLeads/objectiveSpend/reach/impressions (y byAd) por segmento (gender+ageRange) entre el tramo estable y el fresco — un segmento que sólo aparece en uno de los dos se conserva tal cual. */
 function mergeAudienceSegments(a: AudienceSegmentTotals[], b: AudienceSegmentTotals[]): AudienceSegmentTotals[] {
   const bySegment = new Map<string, AudienceSegmentTotals>();
   for (const segment of [...a, ...b]) {
@@ -1151,6 +1249,8 @@ function mergeAudienceSegments(a: AudienceSegmentTotals[], b: AudienceSegmentTot
         ageRange: segment.ageRange,
         objectiveLeads: [...segment.objectiveLeads],
         objectiveSpend: [...segment.objectiveSpend],
+        reach: segment.reach,
+        impressions: segment.impressions,
         byAd: segment.byAd,
       };
       bySegment.set(key, entry);
@@ -1161,7 +1261,9 @@ function mergeAudienceSegments(a: AudienceSegmentTotals[], b: AudienceSegmentTot
       segment.objectiveSpend.forEach((value, i) => {
         entry!.objectiveSpend[i] = (entry!.objectiveSpend[i] ?? 0) + value;
       });
-      entry.byAd = mergeByAd(entry.byAd, segment.byAd);
+      entry.reach += segment.reach;
+      entry.impressions += segment.impressions;
+      entry.byAd = mergeAudienceByAd(entry.byAd, segment.byAd);
     }
   }
   return Array.from(bySegment.values());
@@ -1422,7 +1524,7 @@ function mergeRealInvestmentCalendarData(
  * - Caso límite: si hoy es el día 1 del mes no hay ningún tramo "hasta ayer" separado — se pide
  *   el mes entero (o sea, sólo hoy) con el mismo TTL fijo de 3 horas.
  *
- * El query key lleva un sufijo de versión ("investmentCalendar:v12") — bumpearlo cada vez que
+ * El query key lleva un sufijo de versión ("investmentCalendar:v13") — bumpearlo cada vez que
  * cambie la FORMA del objeto que se cachea (se agregue/saque un campo de RealInvestmentCalendarData)
  * fuerza a que las entradas ya cacheadas con la forma vieja se traten como un miss en vez de
  * devolverse tal cual (withSegmentDefaults cubre el crash si igual quedara alguna sin bumpear,
@@ -1462,7 +1564,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v12",
+        query: "investmentCalendar:v13",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1478,7 +1580,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v12",
+        query: "investmentCalendar:v13",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1492,7 +1594,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v12",
+        query: "investmentCalendar:v13",
         params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1504,7 +1606,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v12",
+        query: "investmentCalendar:v13",
         params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
