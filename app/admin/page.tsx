@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { isAdminEmail } from "@/lib/auth/roles";
+import { clientReportPath, getClientForEmail, isAdminEmail } from "@/lib/auth/roles";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 
@@ -27,7 +27,15 @@ export default async function AdminPage() {
     );
   }
 
-  if (!(await isAdminEmail(supabase, user.email))) {
+  const isAdmin = await isAdminEmail(supabase, user.email);
+
+  // Usuario del cliente que entró por /admin: directo a su reporte.
+  if (!isAdmin) {
+    const clientForUser = await getClientForEmail(supabase, user.email);
+    if (clientForUser) redirect(clientReportPath(clientForUser.slug));
+  }
+
+  if (!isAdmin) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">

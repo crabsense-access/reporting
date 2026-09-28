@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { isAdminEmail } from "@/lib/auth/roles";
+import { canAccessClient, isAdminOrClientUser } from "@/lib/auth/roles";
 import { withCache, LONG_TTL_SECONDS, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { generateCampaignHighlights, generateChartInsight, generateChartInsightsByType, generateRecommendations } from "@/lib/reports/chartInsights";
 import { isAnthropicPaused } from "@/lib/anthropic/client";
@@ -201,7 +201,9 @@ export async function POST(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email || !(await isAdminEmail(supabase, user.email))) {
+  // Admin o client_user (la vista propia del cliente, app/[clientSlug]/reporting, también pide
+  // estos insights). Si viene clientId, más abajo se verifica que el usuario tenga acceso a ESE cliente.
+  if (!user?.email || !(await isAdminOrClientUser(supabase, user.email))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 
@@ -229,6 +231,10 @@ export async function POST(request: Request) {
     /** Opcional: sólo se usa para taggear la entrada de cache por cliente (ver lib/cache/withCache.ts) — no cambia qué se cachea ni cuándo. */
     clientId?: string;
   };
+  if (clientId && !(await canAccessClient(supabase, user.email, clientId))) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
   const instructions = CHART_INSTRUCTIONS[chart];
   if (!instructions) {
     return NextResponse.json({ error: `chart desconocido: "${chart}".` }, { status: 400 });

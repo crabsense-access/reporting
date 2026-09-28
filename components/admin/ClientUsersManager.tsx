@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Trash2 } from "lucide-react";
+import { Check, Copy, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,14 +18,29 @@ import type { ClientUser } from "@/lib/types";
 
 interface ClientUsersManagerProps {
   clientId: string;
+  /** Slug del cliente: arma la URL del reporte a la que caen estos usuarios al loguearse. */
+  clientSlug: string;
   users: ClientUser[];
 }
 
-export function ClientUsersManager({ clientId, users: initialUsers }: ClientUsersManagerProps) {
+export function ClientUsersManager({ clientId, clientSlug, users: initialUsers }: ClientUsersManagerProps) {
   const [users, setUsers] = useState(initialUsers);
   const [newEmail, setNewEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [copied, setCopied] = useState(false);
+  const reportUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/${clientSlug}/reporting` : `/${clientSlug}/reporting`;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(reportUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles: la URL igual queda visible para copiar a mano.
+    }
+  }
 
   function handleAdd() {
     const email = newEmail.trim();
@@ -63,9 +78,30 @@ export function ClientUsersManager({ clientId, users: initialUsers }: ClientUser
         <DialogHeader>
           <DialogTitle>Usuarios autorizados</DialogTitle>
           <DialogDescription>
-            Emails de Google con acceso al tablero de este cliente.
+            Emails de Google con acceso al tablero de este cliente. Al iniciar sesión van
+            directo a la URL del reporte.
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2">
+          <a
+            href={reportUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 flex-1 truncate text-sm text-foreground underline-offset-4 hover:underline"
+          >
+            {reportUrl}
+          </a>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={handleCopy}
+            aria-label="Copiar URL del reporte"
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </Button>
+        </div>
 
         <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
           {users.length === 0 && (

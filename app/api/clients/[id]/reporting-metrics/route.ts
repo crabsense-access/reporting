@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { isAdminEmail } from "@/lib/auth/roles";
+import { canAccessClient } from "@/lib/auth/roles";
 import { computeRanges, type ReportingMode } from "@/lib/reporting/dateRanges";
 import { fetchAccountInsightsForRanges } from "@/lib/meta-ads/insights";
 import { MetaAdsAuthError, MetaAdsUnavailableError } from "@/lib/meta-ads/client";
@@ -25,7 +25,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email || !(await isAdminEmail(supabase, user.email))) {
+  if (!user?.email || !(await canAccessClient(supabase, user.email, clientId))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 

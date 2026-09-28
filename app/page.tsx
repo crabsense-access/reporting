@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { clientReportPath, getClientForEmail } from "@/lib/auth/roles";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 
@@ -32,6 +33,12 @@ export default async function HomePage() {
         <GoogleSignInButton origin="client" />
       </div>
     );
+  }
+
+  // Usuarios del cliente: directo a su reporte (no pasan por el gate temporal).
+  const clientForUser = await getClientForEmail(supabase, user.email);
+  if (clientForUser) {
+    redirect(clientReportPath(clientForUser.slug));
   }
 
   if (user.email !== TEMP_ALLOWED_EMAIL) {

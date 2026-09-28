@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { endOfMonth, startOfMonth } from "date-fns";
 
 import { createClient } from "@/lib/supabase/server";
-import { isAdminEmail } from "@/lib/auth/roles";
+import { canAccessClient } from "@/lib/auth/roles";
 import { fetchRealInvestmentCalendarDataCached } from "@/lib/reporting/metaInvestmentData";
 import { MetaAdsAuthError, MetaAdsUnavailableError } from "@/lib/meta-ads/client";
 import type { MetaAdsConfig } from "@/lib/types";
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user?.email || !(await isAdminEmail(supabase, user.email))) {
+  if (!user?.email || !(await canAccessClient(supabase, user.email, clientId))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 

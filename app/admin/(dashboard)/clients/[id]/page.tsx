@@ -160,7 +160,7 @@ export default async function ClientDetailPage({
           <CardDescription>{(users ?? []).length} usuario(s) con acceso a este tablero.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ClientUsersManager clientId={client.id} users={users ?? []} />
+          <ClientUsersManager clientId={client.id} clientSlug={client.slug} users={users ?? []} />
         </CardContent>
       </Card>
     </div>

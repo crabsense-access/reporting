@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { getClientForEmail, isAdminEmail } from "@/lib/auth/roles";
+import { clientReportPath, getClientForEmail, isAdminEmail } from "@/lib/auth/roles";
 
 // Supabase redirige acá después del login con Google, con un `code` en la
 // query string y un `origin` ("admin" | "client") que indica desde qué
@@ -31,16 +31,17 @@ export async function GET(request: Request) {
           return NextResponse.redirect(`${origin}/admin/clients`);
         }
 
-        if (loginOrigin === "admin") {
-          // Autenticado pero sin permiso de admin: /admin resuelve el
-          // mensaje de "no tenés acceso".
-          return NextResponse.redirect(`${origin}/admin`);
-        }
-
+        // Usuario del cliente (habilitado desde el admin → "Usuarios autorizados"):
+        // directo a la URL de su reporte, sin importar desde qué puerta entró.
         const client = await getClientForEmail(supabase, email);
         if (client) {
-          // Todavía no hay ningún tablero al que mandar a un client_user.
-          return NextResponse.redirect(`${origin}/unauthorized`);
+          return NextResponse.redirect(`${origin}${clientReportPath(client.slug)}`);
+        }
+
+        if (loginOrigin === "admin") {
+          // Autenticado pero sin permiso de admin ni de cliente: /admin
+          // resuelve el mensaje de "no tenés acceso".
+          return NextResponse.redirect(`${origin}/admin`);
         }
       }
     }
