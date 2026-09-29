@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Settings } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
@@ -63,16 +63,6 @@ export default async function AdminClientsPage() {
           <p className="text-sm text-muted-foreground">Clientes dados de alta en la agencia.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/admin/configuracion-v2">
-              <Settings className="h-4 w-4" /> Configuración v2
-            </Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/admin/configuracion-v3">
-              <Settings className="h-4 w-4" /> Configuración v3
-            </Link>
-          </Button>
           <Button asChild>
             <Link href="/admin/clients/new">
               <Plus className="h-4 w-4" /> Nuevo cliente

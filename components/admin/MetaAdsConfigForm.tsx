@@ -43,7 +43,10 @@ export function MetaAdsConfigForm({
 }: MetaAdsConfigFormProps) {
   const [enabled, setEnabled] = useState(Boolean(initialConfig?.ad_account_id));
   const [adAccountId, setAdAccountId] = useState(initialConfig?.ad_account_id ?? "");
-  const [objectives, setObjectives] = useState<MetaAdsObjective[]>(initialConfig?.objectives ?? []);
+  // La sección "Objetivos" se sacó del admin (a pedido de Martín), pero el Calendario de inversión
+  // sigue armando resultados/leads a partir de estos eventos (ver lib/reporting/metaInvestmentData.ts),
+  // así que al guardar se conservan tal cual estaban en vez de borrarlos.
+  const objectives: MetaAdsObjective[] = initialConfig?.objectives ?? [];
   // Presupuesto POR MES (antes era un único valor "vigente" que pisaba los meses pasados — ver
   // monthly_budgets en lib/types.ts). Si el cliente todavía no tiene ninguna entrada por mes pero
   // sí tiene el viejo monthly_budget cargado, se precarga como el presupuesto del mes actual para
@@ -66,18 +69,6 @@ export function MetaAdsConfigForm({
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  function updateObjective(index: number, field: "event" | "label", value: string) {
-    setObjectives((prev) => prev.map((objective, i) => (i === index ? { ...objective, [field]: value } : objective)));
-  }
-
-  function removeObjective(index: number) {
-    setObjectives((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function addObjective() {
-    setObjectives((prev) => [...prev, { event: "", label: "" }]);
-  }
 
   function updateMonthlyBudgetRow(index: number, field: "month" | "amount", value: string) {
     setMonthlyBudgets((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
@@ -229,56 +220,6 @@ export function MetaAdsConfigForm({
                   </button>
                 </div>
               )}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <Label>Objetivos</Label>
-                <p className="text-xs text-muted-foreground">
-                  Un objetivo por evento de conversión de Meta: el nombre del evento tal cual figura en Meta
-                  Events Manager, y una leyenda breve que es lo que se va a ver como texto en el informe.
-                </p>
-              </div>
-
-              {objectives.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-                    <span className="flex-1">Evento de Meta</span>
-                    <span className="flex-1">Leyenda en el informe</span>
-                    <span className="w-9 shrink-0" />
-                  </div>
-                  {objectives.map((objective, index) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <Input
-                        aria-label={`Evento de Meta del objetivo ${index + 1}`}
-                        value={objective.event}
-                        onChange={(event) => updateObjective(index, "event", event.target.value)}
-                        placeholder="Ej: Lead"
-                      />
-                      <Input
-                        aria-label={`Leyenda del objetivo ${index + 1}`}
-                        value={objective.label}
-                        onChange={(event) => updateObjective(index, "label", event.target.value)}
-                        placeholder="Ej: Contacto por WhatsApp"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeObjective(index)}
-                        aria-label="Quitar objetivo"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <Button type="button" variant="outline" size="sm" className="self-start" onClick={addObjective}>
-                <Plus className="h-4 w-4" />
-                Agregar objetivo
-              </Button>
             </div>
 
             <div className="flex flex-col gap-3">
