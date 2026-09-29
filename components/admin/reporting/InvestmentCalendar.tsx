@@ -638,7 +638,7 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
         </div>
         {data && data.configuredTypeCount === 0 && (
           <p className="text-xs text-amber-600">
-            Este cliente todavía no tiene Objetivos configurados en Meta Ads — el desglose por tipo va a estar en cero hasta que se carguen (ficha del cliente → Meta Ads → Objetivos).
+            No se detectaron tipos de Resultado en las campañas de Meta de este mes (por ejemplo, si sólo hay campañas de alcance o impresiones), así que el desglose por tipo queda en cero.
           </p>
         )}
       </div>

@@ -61,6 +61,7 @@ import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { fetchMetaGraphApi } from "@/lib/meta-ads/client";
 import { LEAD_TYPES, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
 import { placementLabel } from "@/lib/reporting/metaResultLabels";
+import { fetchResultObjectives } from "@/lib/reporting/metaResultObjectives";
 import type { MetaAdsConfig } from "@/lib/types";
 
 function zeroByType(): Record<LeadType, number> {
@@ -1749,12 +1750,16 @@ function mergeRealInvestmentCalendarData(
  * venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
-  metaConfig: MetaAdsConfig,
+  savedMetaConfig: MetaAdsConfig,
   clientId: string,
   monthStart: Date,
   lastDataDate: Date
 ): Promise<RealInvestmentCalendarData> {
-  const accountId = metaConfig.ad_account_id;
+  const accountId = savedMetaConfig.ad_account_id;
+  const metaConfig = await withResultObjectives(savedMetaConfig, clientId, monthStart, lastDataDate);
+  // Los objetivos ahora salen de Meta (no del Admin): van en la clave de cache para que, si
+  // cambian los tipos de Resultado del mes, no se sirva una entrada armada con otros objetivos.
+  const objectivesKey = (metaConfig.objectives ?? []).map((o) => o.event).join("|");
   const monthIsComplete = format(lastDataDate, "yyyy-MM-dd") === format(endOfMonth(monthStart), "yyyy-MM-dd");
 
   if (monthIsComplete) {
@@ -1762,8 +1767,8 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v17",
-        params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
+        query: "investmentCalendar:v18",
+        params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
     );
@@ -1778,8 +1783,8 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v17",
-        params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
+        query: "investmentCalendar:v18",
+        params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1792,8 +1797,8 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v17",
-        params: { accountId, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
+        query: "investmentCalendar:v18",
+        params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, stableUntil)
@@ -1804,8 +1809,8 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v17",
-        params: { accountId, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
+        query: "investmentCalendar:v18",
+        params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
       () => fetchRealInvestmentCalendarData(metaConfig, lastDataDate, lastDataDate)
@@ -1813,4 +1818,36 @@ export async function fetchRealInvestmentCalendarDataCached(
   ]);
 
   return withResultsOnlyEntities(mergeRealInvestmentCalendarData(stable, fresh));
+}
+
+/**
+ * Devuelve metaConfig con `objectives` = los tipos de Resultado reales de Meta del mes (ver
+ * lib/reporting/metaResultObjectives.ts) — a pedido de Martín, los objetivos ya no se cargan en el
+ * Admin, para ningún cliente. Si Meta no devuelve ninguno (ej. sólo campañas de alcance) o el
+ * pedido falla, se usan los objetivos que hubiera guardados en la config (legado) como respaldo.
+ */
+async function withResultObjectives(
+  metaConfig: MetaAdsConfig,
+  clientId: string,
+  monthStart: Date,
+  lastDataDate: Date
+): Promise<MetaAdsConfig> {
+  const since = format(monthStart, "yyyy-MM-dd");
+  const until = format(lastDataDate, "yyyy-MM-dd");
+  try {
+    const derived = await withCache(
+      {
+        clientId,
+        source: "meta_ads",
+        query: "resultObjectives:v1",
+        params: { accountId: metaConfig.ad_account_id, from: since, to: until },
+        ttlSeconds: THREE_HOURS_SECONDS,
+      },
+      () => fetchResultObjectives(metaConfig, since, until)
+    );
+    if (derived.length > 0) return { ...metaConfig, objectives: derived };
+  } catch (error) {
+    console.error("[investment-calendar] No se pudieron derivar los tipos de Resultado de Meta:", error);
+  }
+  return metaConfig;
 }
