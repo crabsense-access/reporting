@@ -127,18 +127,19 @@ export async function fetchResultObjectives(
   }
   if (spendByAdset.size === 0) return [];
 
+  // Un pedido por conjunto de anuncios (antes se usaba /?ids=, pero Meta deprecó el parámetro
+  // "ids": devuelve error #100 "The ids query parameter is deprecated"). Son pocos conjuntos por
+  // cuenta y por mes, y el resultado se cachea 3 horas (ver withResultObjectives).
   const adsetIds = Array.from(spendByAdset.keys());
-  const adsets: AdsetInfo[] = [];
-  // /?ids= acepta hasta 50 ids por pedido.
-  for (let i = 0; i < adsetIds.length; i += 50) {
-    const chunk = adsetIds.slice(i, i + 50);
-    const response = await fetchMetaGraphApi<Record<string, AdsetInfo>>(
-      "",
-      { ids: chunk.join(","), fields: "optimization_goal,destination_type,promoted_object" },
-      metaConfig.system_user_token
-    );
-    adsets.push(...Object.values(response));
-  }
+  const adsets: AdsetInfo[] = await Promise.all(
+    adsetIds.map((adsetId) =>
+      fetchMetaGraphApi<AdsetInfo>(
+        adsetId,
+        { fields: "optimization_goal,destination_type,promoted_object" },
+        metaConfig.system_user_token
+      ).then((adset) => ({ ...adset, id: adsetId }))
+    )
+  );
 
   const spendByActionType = new Map<string, number>();
   for (const adset of adsets) {

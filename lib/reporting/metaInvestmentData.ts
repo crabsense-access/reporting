@@ -1839,7 +1839,7 @@ async function withResultObjectives(
       {
         clientId,
         source: "meta_ads",
-        query: "resultObjectives:v1",
+        query: "resultObjectives:v2",
         params: { accountId: metaConfig.ad_account_id, from: since, to: until },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
