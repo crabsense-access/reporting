@@ -100,8 +100,23 @@ function looseMatchesEvent(actionType: string, eventName: string): boolean {
  */
 function findMatchedObjective(
   actions: { action_type: string; value: string }[],
-  objectiveEvents: string[]
+  objectiveEvents: string[],
+  adsetId?: string,
+  objectives?: { event: string; adset_ids?: string[] }[]
 ): { index: number; value: number; actionType: string } | null {
+  // Objetivos derivados de Meta: la fila se imputa al tipo de Resultado de SU conjunto de anuncios
+  // aunque ese día no haya tenido resultados (value 0) — así el gasto por tipo es el gasto total de
+  // los conjuntos que optimizan por ese tipo y el costo por resultado coincide con Ads Manager.
+  if (adsetId && objectives) {
+    const index = objectives.findIndex((o) => o.adset_ids?.includes(adsetId));
+    if (index >= 0) {
+      const eventName = objectives[index]!.event;
+      const action =
+        actions.find((a) => exactMatchesEvent(a.action_type, eventName)) ??
+        actions.find((a) => looseMatchesEvent(a.action_type, eventName));
+      return { index, value: Number(action?.value ?? 0), actionType: action?.action_type ?? eventName };
+    }
+  }
   for (let i = 0; i < objectiveEvents.length; i += 1) {
     const eventName = objectiveEvents[i];
     if (!eventName) continue;
@@ -365,6 +380,7 @@ interface MetaCampaignDayRow {
   actions?: { action_type: string; value: string }[];
   campaign_id?: string;
   campaign_name?: string;
+  adset_id?: string;
   ad_id?: string;
   ad_name?: string;
   /** Alcance/impresiones/clics de ESTA fila (día+anuncio) para el período pedido — a pedido de
@@ -388,6 +404,7 @@ interface MetaAudienceRow {
   age?: string;
   gender?: string;
   campaign_id?: string;
+  adset_id?: string;
   ad_id?: string;
   /** Alcance/impresiones de ESTA fila (edad+género+anuncio) para el período pedido — a pedido de
    *  Martín, para los recuadros de "Quién responde a los anuncios" (AudienceAnalysis.tsx). Mismo
@@ -407,6 +424,7 @@ interface MetaRegionRow {
   actions?: { action_type: string; value: string }[];
   region?: string;
   campaign_id?: string;
+  adset_id?: string;
   ad_id?: string;
   /** Alcance/impresiones/clics de ESTA fila (región+anuncio) para el período pedido — a pedido de
    *  Martín, para sumar estas 3 columnas a la tabla de "De dónde son los leads" (RegionAnalysis.tsx).
@@ -449,7 +467,7 @@ async function fetchAudienceSegments(
       level: "ad",
       breakdowns: "age,gender",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id,reach,impressions",
+      fields: "spend,actions,campaign_id,adset_id,ad_id,reach,impressions",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -483,7 +501,7 @@ async function fetchAudienceSegments(
     const spend = Number(row.spend ?? 0);
     const reach = Number(row.reach ?? 0);
     const impressions = Number(row.impressions ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
+    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -543,7 +561,7 @@ async function fetchRegionSegments(
       level: "ad",
       breakdowns: "region",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id,reach,impressions,clicks",
+      fields: "spend,actions,campaign_id,adset_id,ad_id,reach,impressions,clicks",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -573,7 +591,7 @@ async function fetchRegionSegments(
     const reach = Number(row.reach ?? 0);
     const impressions = Number(row.impressions ?? 0);
     const clicks = Number(row.clicks ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
+    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -618,6 +636,7 @@ interface MetaHourlyRow {
   actions?: { action_type: string; value: string }[];
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
   campaign_id?: string;
+  adset_id?: string;
   ad_id?: string;
   /** Alcance/impresiones/clics de ESTA fila (hora+anuncio) para el período pedido — a pedido de
    *  Martín, mismo criterio que MetaRegionRow.reach/impressions/clicks: totales de la hora (y del
@@ -659,7 +678,7 @@ async function fetchHourlyTotals(
       breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
       time_range: JSON.stringify({ since, until }),
       // reach/impressions/clicks sumados a pedido de Martín — ver MetaHourlyRow.
-      fields: "spend,actions,campaign_id,ad_id,reach,impressions,clicks",
+      fields: "spend,actions,campaign_id,adset_id,ad_id,reach,impressions,clicks",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -694,7 +713,7 @@ async function fetchHourlyTotals(
     entry.impressions += impressions;
     entry.clicks += clicks;
 
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
+    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -760,7 +779,7 @@ async function fetchPlacementSegments(
       level: "ad",
       breakdowns: "publisher_platform,platform_position",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,ad_id",
+      fields: "spend,actions,campaign_id,adset_id,ad_id",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -781,7 +800,7 @@ async function fetchPlacementSegments(
     }
 
     const spend = Number(row.spend ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents);
+    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -816,6 +835,7 @@ interface MetaVideoRetentionRow {
   video_p95_watched_actions?: { action_type: string; value: string }[];
   video_p100_watched_actions?: { action_type: string; value: string }[];
   campaign_id?: string;
+  adset_id?: string;
   ad_id?: string;
 }
 
@@ -830,6 +850,7 @@ interface MetaPlacementRow {
   publisher_platform?: string;
   platform_position?: string;
   campaign_id?: string;
+  adset_id?: string;
   ad_id?: string;
 }
 
@@ -1011,7 +1032,7 @@ export async function fetchRealInvestmentCalendarData(
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
           // reach/impressions/clicks sumados a pedido de Martín — ver MetaCampaignDayRow.
-          fields: "spend,actions,campaign_id,campaign_name,ad_id,ad_name,reach,impressions,clicks",
+          fields: "spend,actions,campaign_id,campaign_name,adset_id,ad_id,ad_name,reach,impressions,clicks",
           limit: "5000",
         },
         metaConfig.system_user_token
@@ -1131,7 +1152,7 @@ export async function fetchRealInvestmentCalendarData(
 
     // Ver findMatchedObjective arriba: exacto primero, "contiene" después, el primero que
     // matchea en orden se queda con la fila entera.
-    const matched = findMatchedObjective(actions, objectiveEvents);
+    const matched = findMatchedObjective(actions, objectiveEvents, row.adset_id, objectives);
     if (matched) {
       const { index: matchedIndex, value, actionType } = matched;
       entry.objectiveLeads[matchedIndex] = (entry.objectiveLeads[matchedIndex] ?? 0) + value;
@@ -1142,7 +1163,7 @@ export async function fetchRealInvestmentCalendarData(
         adEntry.objectiveLeads[matchedIndex] = (adEntry.objectiveLeads[matchedIndex] ?? 0) + value;
         adEntry.objectiveSpend[matchedIndex] = (adEntry.objectiveSpend[matchedIndex] ?? 0) + spend;
       }
-      matchedObjectiveIndexes.add(matchedIndex);
+      if (value > 0) matchedObjectiveIndexes.add(matchedIndex);
 
       const actionTypeTotals = objectiveActionTypeTotals.get(matchedIndex) ?? new Map<string, number>();
       actionTypeTotals.set(actionType, (actionTypeTotals.get(actionType) ?? 0) + value);
@@ -1759,7 +1780,7 @@ export async function fetchRealInvestmentCalendarDataCached(
   const metaConfig = await withResultObjectives(savedMetaConfig, clientId, monthStart, lastDataDate);
   // Los objetivos ahora salen de Meta (no del Admin): van en la clave de cache para que, si
   // cambian los tipos de Resultado del mes, no se sirva una entrada armada con otros objetivos.
-  const objectivesKey = (metaConfig.objectives ?? []).map((o) => o.event).join("|");
+  const objectivesKey = (metaConfig.objectives ?? []).map((o) => `${o.event}:${(o.adset_ids ?? []).join(",")}`).join("|");
   const monthIsComplete = format(lastDataDate, "yyyy-MM-dd") === format(endOfMonth(monthStart), "yyyy-MM-dd");
 
   if (monthIsComplete) {
@@ -1767,7 +1788,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v19",
+        query: "investmentCalendar:v20",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1783,7 +1804,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v19",
+        query: "investmentCalendar:v20",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1797,7 +1818,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v19",
+        query: "investmentCalendar:v20",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1809,7 +1830,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v19",
+        query: "investmentCalendar:v20",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1839,7 +1860,7 @@ async function withResultObjectives(
       {
         clientId,
         source: "meta_ads",
-        query: "resultObjectives:v3",
+        query: "resultObjectives:v4",
         params: { accountId: metaConfig.ad_account_id, from: since, to: until },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

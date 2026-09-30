@@ -52,6 +52,13 @@ export interface GoogleAdsConfig {
 export interface MetaAdsObjective {
   event: string;
   label: string;
+  /**
+   * Conjuntos de anuncios que optimizan por este tipo de Resultado (sólo en los objetivos
+   * derivados de Meta, ver lib/reporting/metaResultObjectives.ts). Con esto, TODO el gasto de esos
+   * conjuntos se imputa a este tipo — así el costo por resultado es gasto del tipo / resultados
+   * del tipo, igual que Ads Manager, y no sólo el gasto de los días con resultados.
+   */
+  adset_ids?: string[];
 }
 
 export interface MetaAdsConfig {

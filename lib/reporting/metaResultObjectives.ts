@@ -142,10 +142,12 @@ export async function fetchResultObjectives(
   );
 
   const spendByActionType = new Map<string, number>();
+  const adsetsByActionType = new Map<string, string[]>();
   for (const adset of adsets) {
     const actionType = resultActionTypeForAdset(adset);
     if (!actionType) continue;
     spendByActionType.set(actionType, (spendByActionType.get(actionType) ?? 0) + (spendByAdset.get(adset.id) ?? 0));
+    adsetsByActionType.set(actionType, [...(adsetsByActionType.get(actionType) ?? []), adset.id]);
   }
 
   const ordered = Array.from(spendByActionType.keys()).sort(
@@ -153,7 +155,11 @@ export async function fetchResultObjectives(
   );
 
   const objectives = await Promise.all(
-    ordered.map(async (actionType) => ({ event: actionType, label: await labelForActionType(actionType, metaConfig) }))
+    ordered.map(async (actionType) => ({
+      event: actionType,
+      label: await labelForActionType(actionType, metaConfig),
+      adset_ids: adsetsByActionType.get(actionType) ?? [],
+    }))
   );
   // Los nombres se usan como clave en los gráficos: si dos tipos de Resultado distintos terminan
   // con el mismo nombre, se desambiguan con un número para que no se pisen.
