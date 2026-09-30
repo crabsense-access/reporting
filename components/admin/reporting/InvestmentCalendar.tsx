@@ -396,7 +396,6 @@ export function InvestmentCalendar({
   }, [data, selectedObjectiveIndex, objectiveMonthTotals, monthTotal, monthLeads]);
 
   const currency = data?.currency ?? "USD";
-  const monthlyBudget = data?.monthlyBudget ?? null;
   const typeLabels = data?.typeLabels;
 
   // Resumen ya calculado de TODAS las secciones reales del mes, para el cierre de la página
@@ -557,29 +556,12 @@ export function InvestmentCalendar({
 
     const sentences: string[] = [];
 
-    if (monthlyBudget) {
-      const budgetPct = monthlyBudget > 0 ? monthTotal / monthlyBudget : 0;
-      const totalDaysInMonth = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
-      // En un mes anterior ya pasaron todos sus días — el "ritmo" ahí es simplemente gasto total
-      // vs. presupuesto total, no gasto vs. lo transcurrido (que sólo tiene sentido en el mes en curso).
-      const timePct = isCurrentMonth
-        ? totalDaysInMonth > 0
-          ? Math.min(today.getDate(), totalDaysInMonth) / totalDaysInMonth
-          : 0
-        : 1;
-      const paceDiff = budgetPct - timePct;
-      const paceText =
-        Math.abs(paceDiff) < 0.05
-          ? "al ritmo esperado para lo transcurrido del mes"
-          : paceDiff > 0
-            ? "por encima del ritmo esperado para lo transcurrido del mes"
-            : "por debajo del ritmo esperado para lo transcurrido del mes";
-      sentences.push(
-        `La inversión del mes lleva ${formatCurrency(monthTotal, currency)} de ${formatCurrency(monthlyBudget, currency)} presupuestados (${Math.round(budgetPct * 100)}%), ${paceText}.`
-      );
-    } else {
-      sentences.push(`La inversión del mes lleva ${formatCurrency(monthTotal, currency)}.`);
-    }
+    // Sin comparar contra el presupuesto asignado (a pedido de Martín): sólo lo invertido.
+    sentences.push(
+      isCurrentMonth
+        ? `En lo que va del mes se invirtieron ${formatCurrency(monthTotal, currency)}.`
+        : `En el mes se invirtieron ${formatCurrency(monthTotal, currency)}.`
+    );
 
     sentences.push(
       `Se generaron ${formatNumber(monthLeads)} leads a un CPL promedio de ${avgCpl > 0 ? formatCurrency(avgCpl, currency, 2) : "s/d"}.`
@@ -618,7 +600,6 @@ export function InvestmentCalendar({
     monthLeads,
     monthLeadsByType,
     monthCplByType,
-    monthlyBudget,
     currency,
     typeLabels,
   ]);
