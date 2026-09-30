@@ -623,6 +623,37 @@ export function InvestmentCalendar({
     typeLabels,
   ]);
 
+  // Cifras clave del Resumen ejecutivo como chips (mismo estilo que los insights de cada gráfico,
+  // ver ChartInsightPanel variant="card") — a pedido de Martín.
+  const executiveHighlights = useMemo(() => {
+    if (!data) return [] as { label: string; value: string }[];
+    const items: { label: string; value: string }[] = [
+      { label: "Inversión del mes", value: formatCurrency(monthTotal, currency) },
+      { label: "Resultados", value: formatNumber(monthLeads) },
+      {
+        label: "Costo por resultado promedio",
+        value: monthLeads > 0 ? formatCurrency(Math.round(monthTotal / monthLeads), currency) : "s/d",
+      },
+    ];
+    const topObjective = pickMax(visibleObjectiveTotals, (o) => o.leads);
+    if (topObjective) items.push({ label: "Más resultados", value: `${topObjective.label} (${formatNumber(topObjective.leads)})` });
+    const cheapestObjective = visibleObjectiveTotals.length > 1 ? pickMin(visibleObjectiveTotals, (o) => o.cpl) : null;
+    if (cheapestObjective) {
+      items.push({
+        label: "Más eficiente",
+        value: `${cheapestObjective.label} (${formatCurrency(Math.round(cheapestObjective.cpl), currency)})`,
+      });
+    }
+    const bestSpendDay = pickMax(data.days, (d) => d.spend);
+    if (bestSpendDay) {
+      items.push({
+        label: `Pico de inversión (${format(new Date(`${bestSpendDay.date}T00:00:00`), "d MMM", { locale: es })})`,
+        value: formatCurrency(bestSpendDay.spend, currency),
+      });
+    }
+    return items;
+  }, [data, monthTotal, monthLeads, visibleObjectiveTotals, currency]);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -780,7 +811,33 @@ export function InvestmentCalendar({
                   Martín: "espaciado top importante" antes del título. */}
               <div className="flex flex-col gap-2 border-t border-border pt-8">
                 <span className="text-lg font-bold text-foreground">Resumen ejecutivo</span>
-                <p className="text-sm leading-relaxed text-foreground">{executiveSummary}</p>
+                {/* Mismo look que las tarjetas de insight de los gráficos (ChartInsightPanel variant="card"). */}
+                <div
+                  className="flex flex-col gap-2 rounded-lg border-2 p-4"
+                  style={{
+                    borderColor: "hsl(var(--primary))",
+                    backgroundColor: "color-mix(in oklab, hsl(var(--primary)) 5%, transparent)",
+                  }}
+                >
+                  {executiveHighlights.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {executiveHighlights.map((highlight) => (
+                        <span
+                          key={highlight.label}
+                          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                          style={{
+                            borderColor: "hsl(var(--primary))",
+                            backgroundColor: "color-mix(in oklab, hsl(var(--primary)) 10%, transparent)",
+                          }}
+                        >
+                          <span className="text-muted-foreground">{highlight.label}:</span>
+                          <span className="font-semibold text-primary">{highlight.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-sm leading-relaxed text-foreground">{executiveSummary}</p>
+                </div>
               </div>
             </CardContent>
           </Card>
