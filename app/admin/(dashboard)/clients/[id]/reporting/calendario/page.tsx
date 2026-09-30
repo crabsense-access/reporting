@@ -46,7 +46,7 @@ export default async function ClientInvestmentCalendarPage({
       </div>
 
       {metaAdsSource ? (
-        <InvestmentCalendar clientId={client.id} initialMonth={month} />
+        <InvestmentCalendar clientId={client.id} initialMonth={month} showRecommendations />
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">

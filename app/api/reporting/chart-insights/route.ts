@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { canAccessClient, isAdminOrClientUser } from "@/lib/auth/roles";
+import { canAccessClient, isAdminEmail, isAdminOrClientUser } from "@/lib/auth/roles";
 import { withCache, LONG_TTL_SECONDS, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { generateCampaignHighlights, generateChartInsight, generateChartInsightsByType, generateRecommendations } from "@/lib/reports/chartInsights";
 import { isAnthropicPaused } from "@/lib/anthropic/client";
@@ -232,6 +232,12 @@ export async function POST(request: Request) {
     clientId?: string;
   };
   if (clientId && !(await canAccessClient(supabase, user.email, clientId))) {
+    return NextResponse.json({ error: "No autorizado." }, { status: 403 });
+  }
+
+  // Las Recomendaciones sólo las ven los admins (ver showRecommendations en InvestmentCalendar.tsx)
+  // — se bloquea también acá para que un usuario del cliente no pueda pedirlas directo a la API.
+  if (RECOMMENDATION_CHARTS.has(chart) && !(await isAdminEmail(supabase, user.email))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 403 });
   }
 

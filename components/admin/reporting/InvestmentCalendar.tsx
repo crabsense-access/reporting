@@ -235,8 +235,11 @@ function pickMin<T>(items: readonly T[], value: (item: T) => number): T | null {
 export function InvestmentCalendar({
   clientId,
   initialMonth,
+  showRecommendations = false,
 }: {
   clientId: string;
+  /** Módulo "Recomendaciones" — sólo para admins (a pedido de Martín); la vista del cliente no lo muestra. */
+  showRecommendations?: boolean;
   /** Mes a mostrar al abrir (yyyy-MM) — lo usa el listado "Ver informes mensuales" del Admin. Si no está entre los últimos 12 meses, se ignora. */
   initialMonth?: string;
 }) {
@@ -879,7 +882,7 @@ export function InvestmentCalendar({
             />
           )}
 
-          {recommendationsMetrics && (
+          {showRecommendations && recommendationsMetrics && (
             <RecommendationsPanel metrics={recommendationsMetrics} monthIsComplete={!isCurrentMonth} clientId={clientId} />
           )}
         </>

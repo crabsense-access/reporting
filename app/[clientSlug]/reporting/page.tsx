@@ -13,7 +13,7 @@ export default async function ClientReportPage({
   params: Promise<{ clientSlug: string }>;
 }) {
   const { clientSlug } = await params;
-  const { client } = await resolveClientAccess(clientSlug);
+  const { client, isAdminViewing } = await resolveClientAccess(clientSlug);
   const supabase = await createClient();
 
   const { data: metaAdsSource } = await supabase
@@ -31,7 +31,7 @@ export default async function ClientReportPage({
       </div>
 
       {metaAdsSource ? (
-        <InvestmentCalendar clientId={client.id} />
+        <InvestmentCalendar clientId={client.id} showRecommendations={isAdminViewing} />
       ) : (
         <Card>
           <CardContent className="py-10 text-center">
