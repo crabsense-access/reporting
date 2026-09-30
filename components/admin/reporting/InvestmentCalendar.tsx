@@ -667,18 +667,13 @@ export function InvestmentCalendar({
         <>
           <Card>
             <CardHeader className="pb-2">
+              {/* A pedido de Martín: sólo lo invertido, sin comparar contra el presupuesto asignado. */}
               <CardTitle className="text-base font-bold text-muted-foreground">
-                {monthlyBudget ? "Inversión del mes vs. presupuesto" : "Inversión del mes"}
+                {isCurrentMonth ? "Inversión acumulada en lo que va del mes" : "Inversión total del mes"}
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-2xl font-semibold text-foreground">{formatCurrency(monthTotal, currency)}</span>
-                {monthlyBudget && (
-                  <span className="text-sm text-muted-foreground">de {formatCurrency(monthlyBudget, currency)} presupuestados</span>
-                )}
-              </div>
-              {monthlyBudget && <BudgetBar spent={monthTotal} budget={monthlyBudget} currency={currency} showBudgetLabel />}
+              <span className="text-2xl font-semibold text-foreground">{formatCurrency(monthTotal, currency)}</span>
 
               {/* Una scorecard POR TIPO de Resultado (Objetivo) en vez de las 3 fijas de antes
                   (Leads/CPL/Resultados) — a pedido de Martín. Cada una lleva su valor, el Costo
@@ -971,40 +966,3 @@ function DailyTypeBarChart({
   );
 }
 
-function BudgetBar({
-  spent,
-  budget,
-  currency,
-  compact = false,
-  showBudgetLabel = false,
-}: {
-  spent: number;
-  budget: number;
-  currency: string;
-  compact?: boolean;
-  showBudgetLabel?: boolean;
-}) {
-  const pct = budget > 0 ? spent / budget : 0;
-  const widthPct = Math.min(100, Math.round(pct * 100));
-  const over = pct > 1;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <div className={cn("relative w-full", showBudgetLabel && "mt-4")}>
-        {showBudgetLabel && (
-          <span className="absolute -top-4 right-0 whitespace-nowrap text-[11px] font-medium text-muted-foreground">
-            Presupuesto: {formatCurrency(budget, currency)}
-          </span>
-        )}
-        <div className={cn("w-full overflow-hidden rounded-full bg-muted", compact ? "h-1.5" : "h-2")}>
-          <div className={cn("h-full rounded-full", over ? "bg-rose-500" : "bg-emerald-500")} style={{ width: `${widthPct}%` }} />
-        </div>
-        {showBudgetLabel && <div className="absolute right-0 top-0 h-full w-px bg-foreground/25" />}
-      </div>
-      <span className="text-[11px] text-muted-foreground">
-        {formatCurrency(spent, currency)} / {formatCurrency(budget, currency)} · {Math.round(pct * 100)}%
-        {over && " (excedido)"}
-      </span>
-    </div>
-  );
-}
