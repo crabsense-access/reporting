@@ -36,7 +36,7 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
-import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 interface HourlyAdBreakdownEntry extends AdBreakdownEntry {
   /** Ver comentario de HourlyTotals más abajo. */
@@ -65,14 +65,15 @@ interface HourlyTotals {
 function resolveHourlyEngagementTotals(
   byAd: Record<string, HourlyAdBreakdownEntry>,
   campaignId: string | null,
-  adId: string | null
+  adId: string | null,
+  adsetId: string | null = null
 ): { reach: number; impressions: number; clicks: number } | null {
   if (adId !== null) {
     const entry = byAd[adId];
     return entry ? { reach: entry.reach, impressions: entry.impressions, clicks: entry.clicks } : null;
   }
-  if (campaignId === null) return null;
-  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (campaignId === null && adsetId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => matchesCampaignAndAdset(entry, campaignId, adsetId));
   if (matching.length === 0) return null;
   return matching.reduce(
     (acc, entry) => ({
@@ -136,6 +137,7 @@ export function HourlyPerformanceChart({
   clientId,
   objectiveOptions,
   campaigns,
+  adsets = [],
   ads,
 }: {
   /** Un elemento por hora (0-23), sumando el mes completo — ver lib/reporting/metaInvestmentData.ts. */
@@ -149,11 +151,14 @@ export function HourlyPerformanceChart({
   /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
   campaigns: { id: string; name: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
-  ads: { id: string; name: string; campaignId: string }[];
+  /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
+  adsets?: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adsetId, setAdsetId] = useState<string | null>(null); // null = "Todos los grupos de anuncios"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -169,7 +174,14 @@ export function HourlyPerformanceChart({
     }
   }, [campaigns, campaignId]);
 
-  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  // Grupo de anuncios: en cascada con la Campaña (mismo criterio que el Anuncio, ver abajo).
+  const visibleAdsets = useMemo(() => visibleAdsetsForCampaign(adsets, campaignId), [adsets, campaignId]);
+  useEffect(() => {
+    if (adsetId !== null && !visibleAdsets.some((a) => a.id === adsetId)) {
+      setAdsetId(null);
+    }
+  }, [visibleAdsets, adsetId]);
+  const visibleAds = useMemo(() => visibleAdsForSelection(ads, campaignId, adsetId), [ads, campaignId, adsetId]);
   useEffect(() => {
     if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
       setAdId(null);
@@ -178,12 +190,12 @@ export function HourlyPerformanceChart({
 
   const hours = useMemo(() => {
     const byHour = new Map(hourlyTotals.map((h) => [h.hour, h]));
-    const hasFilter = campaignId !== null || adId !== null;
+    const hasFilter = campaignId !== null || adsetId !== null || adId !== null;
     return Array.from({ length: 24 }, (_, hour) => {
       const entry = byHour.get(hour);
       // Mismo criterio que InvestmentTrendChart: con Campaña/Anuncio elegidos, la hora se resuelve
       // contra SU desglose por anuncio (entry.byAd) en vez del total de cuenta.
-      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length) : null;
+      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length, adsetId) : null;
       const hasData = hasFilter ? scoped !== null : Boolean(entry);
       const spend = hasFilter ? (scoped?.spend ?? 0) : (entry?.spend ?? 0);
       const objectiveLeadsSource = hasFilter ? scoped?.objectiveLeads : entry?.objectiveLeads;
@@ -199,13 +211,13 @@ export function HourlyPerformanceChart({
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
       // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio —
       // mismo criterio que spend (ver comentario de cabecera).
-      const engagement = hasFilter && entry ? resolveHourlyEngagementTotals(entry.byAd, campaignId, adId) : null;
+      const engagement = hasFilter && entry ? resolveHourlyEngagementTotals(entry.byAd, campaignId, adId, adsetId) : null;
       const reach = hasFilter ? (engagement?.reach ?? 0) : (entry?.reach ?? 0);
       const impressions = hasFilter ? (engagement?.impressions ?? 0) : (entry?.impressions ?? 0);
       const clicks = hasFilter ? (engagement?.clicks ?? 0) : (entry?.clicks ?? 0);
       return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null, reach, impressions, clicks };
     });
-  }, [hourlyTotals, objectiveIndex, campaignId, adId]);
+  }, [hourlyTotals, objectiveIndex, campaignId, adsetId, adId]);
 
   const totalSpend = hours.reduce((sum, h) => sum + h.spend, 0);
   const totalLeads = hours.reduce((sum, h) => sum + h.leads, 0);
@@ -339,7 +351,8 @@ export function HourlyPerformanceChart({
               onChange={(event) => {
                 const value = event.target.value === "all" ? null : event.target.value;
                 setCampaignId(value);
-                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+                setAdsetId(null);
+                setAdId(null); // cambiar de Campaña invalida el Grupo de anuncios y el Anuncio elegidos (ver visibleAds).
               }}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
@@ -347,6 +360,23 @@ export function HourlyPerformanceChart({
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Grupo de anuncios"
+              value={adsetId ?? "all"}
+              onChange={(event) => {
+                setAdsetId(event.target.value === "all" ? null : event.target.value);
+                setAdId(null); // cambiar de Grupo de anuncios invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los grupos de anuncios</option>
+              {visibleAdsets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>

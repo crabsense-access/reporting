@@ -14,6 +14,8 @@
 
 export interface AdBreakdownEntry {
   campaignId: string;
+  /** Grupo de anuncios (ad set) del anuncio — para el combo de Grupo de anuncios. */
+  adsetId?: string;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
@@ -31,15 +33,16 @@ export function resolveAdFilteredTotals(
   byAd: Record<string, AdBreakdownEntry>,
   campaignId: string | null,
   adId: string | null,
-  objectivesCount: number
+  objectivesCount: number,
+  adsetId: string | null = null
 ): { spend: number; objectiveLeads: number[]; objectiveSpend: number[] } | null {
   if (adId !== null) {
     const entry = byAd[adId];
     return entry ? { spend: entry.spend, objectiveLeads: entry.objectiveLeads, objectiveSpend: entry.objectiveSpend } : null;
   }
-  if (campaignId === null) return null; // sin filtro: el llamador no debería llegar acá, ver el comentario de arriba.
+  if (campaignId === null && adsetId === null) return null; // sin filtro: el llamador no debería llegar acá, ver el comentario de arriba.
 
-  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  const matching = Object.values(byAd).filter((entry) => matchesCampaignAndAdset(entry, campaignId, adsetId));
   if (matching.length === 0) return null;
 
   const spend = matching.reduce((sum, entry) => sum + entry.spend, 0);
@@ -55,4 +58,27 @@ export function resolveAdFilteredTotals(
 /** Anuncios del combo de Anuncio, acotados en cascada a la Campaña elegida (o todos si no hay Campaña elegida) — mismo criterio en todos los charts con filtro. */
 export function visibleAdsForCampaign<T extends { campaignId: string }>(ads: T[], campaignId: string | null): T[] {
   return campaignId === null ? ads : ads.filter((ad) => ad.campaignId === campaignId);
+}
+
+/** true si la entrada de byAd pertenece a la Campaña y al Grupo de anuncios elegidos (null = cualquiera). */
+export function matchesCampaignAndAdset(
+  entry: { campaignId: string; adsetId?: string },
+  campaignId: string | null,
+  adsetId: string | null
+): boolean {
+  return (campaignId === null || entry.campaignId === campaignId) && (adsetId === null || entry.adsetId === adsetId);
+}
+
+/** Grupos de anuncios del combo, acotados en cascada a la Campaña elegida (o todos si no hay Campaña elegida). */
+export function visibleAdsetsForCampaign<T extends { campaignId: string }>(adsets: T[], campaignId: string | null): T[] {
+  return campaignId === null ? adsets : adsets.filter((adset) => adset.campaignId === campaignId);
+}
+
+/** Anuncios del combo, acotados en cascada a la Campaña y al Grupo de anuncios elegidos. */
+export function visibleAdsForSelection<T extends { campaignId: string; adsetId?: string }>(
+  ads: T[],
+  campaignId: string | null,
+  adsetId: string | null
+): T[] {
+  return ads.filter((ad) => matchesCampaignAndAdset(ad, campaignId, adsetId));
 }

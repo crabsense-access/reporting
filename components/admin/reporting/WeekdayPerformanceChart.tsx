@@ -32,7 +32,7 @@ import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
-import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 interface DailyAdBreakdownEntry extends AdBreakdownEntry {
   /** Ver comentario de DailyRealTotals más abajo. */
@@ -61,14 +61,15 @@ interface DailyRealTotals {
 function resolveDailyEngagementTotals(
   byAd: Record<string, DailyAdBreakdownEntry>,
   campaignId: string | null,
-  adId: string | null
+  adId: string | null,
+  adsetId: string | null = null
 ): { reach: number; impressions: number; totalClicks: number } | null {
   if (adId !== null) {
     const entry = byAd[adId];
     return entry ? { reach: entry.reach, impressions: entry.impressions, totalClicks: entry.totalClicks } : null;
   }
-  if (campaignId === null) return null;
-  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (campaignId === null && adsetId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => matchesCampaignAndAdset(entry, campaignId, adsetId));
   if (matching.length === 0) return null;
   return matching.reduce(
     (acc, entry) => ({
@@ -150,6 +151,7 @@ export function WeekdayPerformanceChart({
   clientId,
   objectiveOptions,
   campaigns,
+  adsets = [],
   ads,
 }: {
   /** Desglose día a día del mes seleccionado — mismo array que InvestmentTrendChart/LeadsByTypeTrendChart (ver InvestmentCalendar.tsx). */
@@ -163,11 +165,14 @@ export function WeekdayPerformanceChart({
   /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
   campaigns: { id: string; name: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
-  ads: { id: string; name: string; campaignId: string }[];
+  /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
+  adsets?: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adsetId, setAdsetId] = useState<string | null>(null); // null = "Todos los grupos de anuncios"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -183,7 +188,14 @@ export function WeekdayPerformanceChart({
     }
   }, [campaigns, campaignId]);
 
-  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  // Grupo de anuncios: en cascada con la Campaña (mismo criterio que el Anuncio, ver abajo).
+  const visibleAdsets = useMemo(() => visibleAdsetsForCampaign(adsets, campaignId), [adsets, campaignId]);
+  useEffect(() => {
+    if (adsetId !== null && !visibleAdsets.some((a) => a.id === adsetId)) {
+      setAdsetId(null);
+    }
+  }, [visibleAdsets, adsetId]);
+  const visibleAds = useMemo(() => visibleAdsForSelection(ads, campaignId, adsetId), [ads, campaignId, adsetId]);
   useEffect(() => {
     if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
       setAdId(null);
@@ -196,7 +208,7 @@ export function WeekdayPerformanceChart({
       { spend: number; leads: number; cplSpend: number; reach: number; impressions: number; totalClicks: number }
     >();
     for (let w = 0; w < 7; w += 1) totals.set(w, { spend: 0, leads: 0, cplSpend: 0, reach: 0, impressions: 0, totalClicks: 0 });
-    const hasFilter = campaignId !== null || adId !== null;
+    const hasFilter = campaignId !== null || adsetId !== null || adId !== null;
 
     for (const day of days) {
       // new Date("yyyy-MM-dd") se interpreta en UTC medianoche — para no correr de día según el
@@ -207,7 +219,7 @@ export function WeekdayPerformanceChart({
       // Con Campaña y/o Anuncio elegidos, el día se resuelve primero contra SU desglose por
       // anuncio — un día sin ningún anuncio que matchee el filtro no aporta nada a su día de la
       // semana (mismo criterio "sin datos" que el resto de la página).
-      const scoped = hasFilter ? resolveAdFilteredTotals(day.byAd, campaignId, adId, day.objectiveLeads.length) : null;
+      const scoped = hasFilter ? resolveAdFilteredTotals(day.byAd, campaignId, adId, day.objectiveLeads.length, adsetId) : null;
       if (hasFilter && !scoped) continue;
 
       const weekday = new Date(year, month - 1, dayOfMonth).getDay();
@@ -223,7 +235,7 @@ export function WeekdayPerformanceChart({
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
       // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio —
       // mismo criterio que spend (ver comentario de cabecera).
-      const engagement = hasFilter ? resolveDailyEngagementTotals(day.byAd, campaignId, adId) : null;
+      const engagement = hasFilter ? resolveDailyEngagementTotals(day.byAd, campaignId, adId, adsetId) : null;
       const reach = hasFilter ? (engagement?.reach ?? 0) : day.reach;
       const impressions = hasFilter ? (engagement?.impressions ?? 0) : day.impressions;
       const totalClicks = hasFilter ? (engagement?.totalClicks ?? 0) : day.totalClicks;
@@ -247,7 +259,7 @@ export function WeekdayPerformanceChart({
         totalClicks: entry.totalClicks,
       };
     });
-  }, [days, objectiveIndex, campaignId, adId]);
+  }, [days, objectiveIndex, campaignId, adsetId, adId]);
 
   const totalSpend = weekdays.reduce((sum, w) => sum + w.spend, 0);
   const totalLeads = weekdays.reduce((sum, w) => sum + w.leads, 0);
@@ -382,7 +394,8 @@ export function WeekdayPerformanceChart({
               onChange={(event) => {
                 const value = event.target.value === "all" ? null : event.target.value;
                 setCampaignId(value);
-                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+                setAdsetId(null);
+                setAdId(null); // cambiar de Campaña invalida el Grupo de anuncios y el Anuncio elegidos (ver visibleAds).
               }}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
@@ -390,6 +403,23 @@ export function WeekdayPerformanceChart({
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Grupo de anuncios"
+              value={adsetId ?? "all"}
+              onChange={(event) => {
+                setAdsetId(event.target.value === "all" ? null : event.target.value);
+                setAdId(null); // cambiar de Grupo de anuncios invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los grupos de anuncios</option>
+              {visibleAdsets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>

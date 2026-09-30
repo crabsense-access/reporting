@@ -144,17 +144,18 @@ function findMatchedObjective(
  * diferencia de fetchVideoRetentionByAge (que no matchea por Objetivo — ver ahí).
  */
 function addRowToByAd(
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>,
+  byAd: Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>,
   adId: string | undefined,
   campaignId: string | undefined,
   spend: number,
   matched: { index: number; value: number } | null,
-  objectivesCount: number
+  objectivesCount: number,
+  adsetId?: string
 ): void {
   if (!adId || !campaignId) return; // fila sin anuncio/campaña identificados: no entra al desglose (no debería pasar, pero no tiene que romper el resto).
   let entry = byAd[adId];
   if (!entry) {
-    entry = { campaignId, spend: 0, objectiveLeads: Array.from({ length: objectivesCount }, () => 0), objectiveSpend: Array.from({ length: objectivesCount }, () => 0) };
+    entry = { campaignId, adsetId, spend: 0, objectiveLeads: Array.from({ length: objectivesCount }, () => 0), objectiveSpend: Array.from({ length: objectivesCount }, () => 0) };
     byAd[adId] = entry;
   }
   entry.spend += spend;
@@ -177,6 +178,7 @@ const META_GENDER_TO_LABEL: Record<string, "mujeres" | "hombres"> = {
  */
 interface DailyAdBreakdownEntry {
   campaignId: string;
+  adsetId?: string;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
@@ -238,8 +240,10 @@ export interface RealInvestmentCalendarData {
   monthlyReach: number;
   /** Campañas con al menos 1 fila de gasto este mes, ordenadas por gasto descendente — para el combo de Campaña de los gráficos con filtro (ver DailyRealTotals.byAd). */
   campaigns: { id: string; name: string }[];
+  /** Grupos de anuncios con gasto este mes, ordenados por gasto descendente, cada uno con el id de SU campaña — combo de Grupo de anuncios (en cascada entre Campaña y Anuncio). */
+  adsets: { id: string; name: string; campaignId: string }[];
   /** Anuncios con al menos 1 fila de gasto este mes, ordenados por gasto descendente, cada uno con el id de SU campaña — para el combo de Anuncio, que se acota en cascada a los anuncios de la Campaña elegida (ver DailyRealTotals.byAd). */
-  ads: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
   /**
    * El action_type REAL de Meta que más matcheó este mes para cada Objetivo (mismo índice que
    * objectiveLabels), o null si ese Objetivo no matcheó nada. Se usa para mostrar el nombre real
@@ -270,6 +274,7 @@ export interface RealInvestmentCalendarData {
  */
 export interface HourlyAdBreakdownEntry {
   campaignId: string;
+  adsetId?: string;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
@@ -302,6 +307,7 @@ export interface HourlyTotals {
  */
 export interface AudienceAdBreakdownEntry {
   campaignId: string;
+  adsetId?: string;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
@@ -332,6 +338,7 @@ export interface AudienceSegmentTotals {
  */
 export interface RegionAdBreakdownEntry {
   campaignId: string;
+  adsetId?: string;
   spend: number;
   objectiveLeads: number[];
   objectiveSpend: number[];
@@ -371,7 +378,7 @@ export interface PlacementSegmentTotals {
   objectiveLeads: number[];
   objectiveSpend: number[];
   /** Desglose de ESTA ubicación por anuncio (clave = ad_id), mismo criterio que DailyRealTotals.byAd — para los combos de Campaña/Anuncio de PlacementAnalysis.tsx. */
-  byAd: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
+  byAd: Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>;
 }
 
 interface MetaCampaignDayRow {
@@ -380,6 +387,7 @@ interface MetaCampaignDayRow {
   actions?: { action_type: string; value: string }[];
   campaign_id?: string;
   campaign_name?: string;
+  adset_name?: string;
   adset_id?: string;
   ad_id?: string;
   ad_name?: string;
@@ -518,6 +526,7 @@ async function fetchAudienceSegments(
       if (!adEntry) {
         adEntry = {
           campaignId: row.campaign_id,
+          adsetId: row.adset_id,
           spend: 0,
           objectiveLeads: Array.from({ length: objectives.length }, () => 0),
           objectiveSpend: Array.from({ length: objectives.length }, () => 0),
@@ -608,6 +617,7 @@ async function fetchRegionSegments(
       if (!adEntry) {
         adEntry = {
           campaignId: row.campaign_id,
+          adsetId: row.adset_id,
           spend: 0,
           objectiveLeads: Array.from({ length: objectives.length }, () => 0),
           objectiveSpend: Array.from({ length: objectives.length }, () => 0),
@@ -727,6 +737,7 @@ async function fetchHourlyTotals(
       if (!adEntry) {
         adEntry = {
           campaignId: row.campaign_id,
+          adsetId: row.adset_id,
           spend: 0,
           objectiveLeads: Array.from({ length: objectives.length }, () => 0),
           objectiveSpend: Array.from({ length: objectives.length }, () => 0),
@@ -805,7 +816,7 @@ async function fetchPlacementSegments(
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
     }
-    addRowToByAd(entry.byAd, row.ad_id, row.campaign_id, spend, matched, objectives.length);
+    addRowToByAd(entry.byAd, row.ad_id, row.campaign_id, spend, matched, objectives.length, row.adset_id);
   }
 
   return Array.from(byPlacement.values());
@@ -823,7 +834,7 @@ export interface VideoRetentionByAge {
   p95: number;
   p100: number;
   /** Desglose de ESTE rango etario por anuncio (clave = ad_id) — para los combos de Campaña/Anuncio de VideoRetentionChart.tsx (sin Tipo de Resultado: la retención de video no se matchea por Objetivo, ver fetchVideoRetentionByAge). */
-  byAd: Record<string, { campaignId: string; videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number }>;
+  byAd: Record<string, { campaignId: string; adsetId?: string; videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number }>;
 }
 
 interface MetaVideoRetentionRow {
@@ -891,7 +902,7 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
       breakdowns: "age",
       time_range: JSON.stringify({ since, until }),
       fields:
-        "video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,campaign_id,ad_id",
+        "video_play_actions,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,video_p100_watched_actions,campaign_id,adset_id,ad_id",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -928,7 +939,7 @@ async function fetchVideoRetentionByAge(metaConfig: MetaAdsConfig, since: string
     if (adId && campaignId) {
       let adEntry = entry.byAd[adId];
       if (!adEntry) {
-        adEntry = { campaignId, videoPlays: 0, p25: 0, p50: 0, p75: 0, p95: 0, p100: 0 };
+        adEntry = { campaignId, adsetId: row.adset_id, videoPlays: 0, p25: 0, p50: 0, p75: 0, p95: 0, p100: 0 };
         entry.byAd[adId] = adEntry;
       }
       adEntry.videoPlays += videoPlays;
@@ -1032,7 +1043,7 @@ export async function fetchRealInvestmentCalendarData(
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
           // reach/impressions/clicks sumados a pedido de Martín — ver MetaCampaignDayRow.
-          fields: "spend,actions,campaign_id,campaign_name,adset_id,ad_id,ad_name,reach,impressions,clicks",
+          fields: "spend,actions,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,reach,impressions,clicks",
           limit: "5000",
         },
         metaConfig.system_user_token
@@ -1062,6 +1073,12 @@ export async function fetchRealInvestmentCalendarData(
   const campaignSpendTotals = new Map<string, number>();
   const adNames = new Map<string, string>();
   const adCampaignIds = new Map<string, string>();
+  // Grupo de anuncios (ad set) de cada anuncio y nombre/campaña/gasto de cada grupo — para el combo
+  // de Grupo de anuncios (entre Campaña y Anuncio, en cascada), a pedido de Martín.
+  const adAdsetIds = new Map<string, string>();
+  const adsetNames = new Map<string, string>();
+  const adsetCampaignIds = new Map<string, string>();
+  const adsetSpendTotals = new Map<string, number>();
   const adSpendTotals = new Map<string, number>();
 
   for (const row of insights.data) {
@@ -1105,6 +1122,11 @@ export async function fetchRealInvestmentCalendarData(
     const campaignId = row.campaign_id;
     const adId = row.ad_id;
     let adEntry: DailyAdBreakdownEntry | undefined;
+    if (campaignId && row.adset_id) {
+      adsetNames.set(row.adset_id, row.adset_name?.trim() || adsetNames.get(row.adset_id) || row.adset_id);
+      adsetCampaignIds.set(row.adset_id, campaignId);
+      adsetSpendTotals.set(row.adset_id, (adsetSpendTotals.get(row.adset_id) ?? 0) + spend);
+    }
     if (campaignId) {
       campaignNames.set(campaignId, row.campaign_name?.trim() || campaignNames.get(campaignId) || campaignId);
       campaignSpendTotals.set(campaignId, (campaignSpendTotals.get(campaignId) ?? 0) + spend);
@@ -1112,11 +1134,13 @@ export async function fetchRealInvestmentCalendarData(
     if (adId && campaignId) {
       adNames.set(adId, row.ad_name?.trim() || adNames.get(adId) || adId);
       adCampaignIds.set(adId, campaignId);
+      if (row.adset_id) adAdsetIds.set(adId, row.adset_id);
       adSpendTotals.set(adId, (adSpendTotals.get(adId) ?? 0) + spend);
       adEntry = entry.byAd[adId];
       if (!adEntry) {
         adEntry = {
           campaignId,
+          adsetId: row.adset_id,
           spend: 0,
           objectiveLeads: objectives.map(() => 0),
           objectiveSpend: objectives.map(() => 0),
@@ -1189,8 +1213,11 @@ export async function fetchRealInvestmentCalendarData(
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => (campaignSpendTotals.get(b.id) ?? 0) - (campaignSpendTotals.get(a.id) ?? 0));
   const ads = Array.from(adNames.entries())
-    .map(([id, name]) => ({ id, name, campaignId: adCampaignIds.get(id) ?? "" }))
+    .map(([id, name]) => ({ id, name, campaignId: adCampaignIds.get(id) ?? "", adsetId: adAdsetIds.get(id) }))
     .sort((a, b) => (adSpendTotals.get(b.id) ?? 0) - (adSpendTotals.get(a.id) ?? 0));
+  const adsets = Array.from(adsetNames.entries())
+    .map(([id, name]) => ({ id, name, campaignId: adsetCampaignIds.get(id) ?? "" }))
+    .sort((a, b) => (adsetSpendTotals.get(b.id) ?? 0) - (adsetSpendTotals.get(a.id) ?? 0));
 
   // El action_type real dominante de cada Objetivo este mes (mayor valor total acumulado) — ver
   // el comentario de objectiveActionTypes en la interfaz de arriba.
@@ -1236,6 +1263,7 @@ export async function fetchRealInvestmentCalendarData(
     objectiveActionTypes,
     monthlyReach,
     campaigns,
+    adsets,
     ads,
     detectedActionTypes,
     days,
@@ -1319,15 +1347,16 @@ function mergeDetectedActionTypes(
 /** Junta el tramo "estable" (cacheado, puede venir de la cache o recién pedido) con el día de hoy (siempre recién pedido) en un único RealInvestmentCalendarData — currency/monthlyBudget/typeLabels/configuredTypeCount/objectiveLabels son idénticos en ambos tramos (salen de metaConfig, no de Meta), así que se toman del tramo fresco sin más. */
 /** Suma dos byAd (mismo shape: campaignId + spend + objectiveLeads/objectiveSpend) entrada por entrada — compartido por los merge de Audience/Region/Hourly/Placement de abajo. Un anuncio que sólo aparece en uno de los dos tramos se conserva tal cual. */
 function mergeByAd(
-  a: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>,
-  b: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>
-): Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }> {
-  const result: Record<string, { campaignId: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }> = {};
+  a: Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>,
+  b: Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }>
+): Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }> {
+  const result: Record<string, { campaignId: string; adsetId?: string; spend: number; objectiveLeads: number[]; objectiveSpend: number[] }> = {};
   for (const [adId, adEntry] of [...Object.entries(a), ...Object.entries(b)]) {
     let existing = result[adId];
     if (!existing) {
       existing = {
         campaignId: adEntry.campaignId,
+        adsetId: adEntry.adsetId,
         spend: 0,
         objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
         objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
@@ -1365,6 +1394,7 @@ function mergeAudienceByAd(
     if (!existing) {
       existing = {
         campaignId: adEntry.campaignId,
+        adsetId: adEntry.adsetId,
         spend: 0,
         objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
         objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
@@ -1430,6 +1460,7 @@ function mergeRegionByAd(
     if (!existing) {
       existing = {
         campaignId: adEntry.campaignId,
+        adsetId: adEntry.adsetId,
         spend: 0,
         objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
         objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
@@ -1524,6 +1555,7 @@ function mergeHourlyByAd(
     if (!existing) {
       existing = {
         campaignId: adEntry.campaignId,
+        adsetId: adEntry.adsetId,
         spend: 0,
         objectiveLeads: Array.from({ length: adEntry.objectiveLeads.length }, () => 0),
         objectiveSpend: Array.from({ length: adEntry.objectiveSpend.length }, () => 0),
@@ -1629,6 +1661,7 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
     objectiveActionTypes: data.objectiveActionTypes ?? [],
     monthlyReach: data.monthlyReach ?? 0,
     campaigns: data.campaigns ?? [],
+    adsets: data.adsets ?? [],
     ads: data.ads ?? [],
     placementSegments: data.placementSegments ?? [],
   };
@@ -1645,17 +1678,20 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
 function withResultsOnlyEntities(data: RealInvestmentCalendarData): RealInvestmentCalendarData {
   const adLeadsTotal = new Map<string, number>();
   const campaignLeadsTotal = new Map<string, number>();
+  const adsetLeadsTotal = new Map<string, number>();
   for (const day of data.days) {
     for (const [adId, entry] of Object.entries(day.byAd)) {
       const leads = entry.objectiveLeads.reduce((sum, v) => sum + v, 0);
       if (leads <= 0) continue;
       adLeadsTotal.set(adId, (adLeadsTotal.get(adId) ?? 0) + leads);
       campaignLeadsTotal.set(entry.campaignId, (campaignLeadsTotal.get(entry.campaignId) ?? 0) + leads);
+      if (entry.adsetId) adsetLeadsTotal.set(entry.adsetId, (adsetLeadsTotal.get(entry.adsetId) ?? 0) + leads);
     }
   }
   return {
     ...data,
     campaigns: data.campaigns.filter((c) => (campaignLeadsTotal.get(c.id) ?? 0) > 0),
+    adsets: (data.adsets ?? []).filter((a) => (adsetLeadsTotal.get(a.id) ?? 0) > 0),
     ads: data.ads.filter((a) => (adLeadsTotal.get(a.id) ?? 0) > 0),
   };
 }
@@ -1694,6 +1730,7 @@ function mergeRealInvestmentCalendarData(
     // día en vez de acumularse día a día como pasaría sumando el alcance diario de todo el mes.
     monthlyReach: stable.monthlyReach + fresh.monthlyReach,
     campaigns: mergeNamedEntities(stable.campaigns, fresh.campaigns),
+    adsets: mergeNamedEntities(stable.adsets ?? [], fresh.adsets ?? []),
     ads: mergeNamedEntities(stable.ads, fresh.ads),
   };
 }
@@ -1788,7 +1825,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v20",
+        query: "investmentCalendar:v21",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1804,7 +1841,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v20",
+        query: "investmentCalendar:v21",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1818,7 +1855,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v20",
+        query: "investmentCalendar:v21",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1830,7 +1867,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v20",
+        query: "investmentCalendar:v21",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

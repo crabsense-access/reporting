@@ -39,7 +39,7 @@ import { ChartInsightByTypePanel } from "@/components/admin/reporting/ChartInsig
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
-import { resolveAdFilteredTotals, visibleAdsForCampaign } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign } from "@/lib/reporting/adFilter";
 
 interface DailyRealTotals {
   date: string; // yyyy-MM-dd
@@ -146,6 +146,7 @@ export function LeadsByTypeTrendChart({
   monthIsComplete,
   clientId,
   campaigns,
+  adsets = [],
   ads,
 }: {
   days: DailyRealTotals[];
@@ -165,10 +166,13 @@ export function LeadsByTypeTrendChart({
   /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
   campaigns: { id: string; name: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
-  ads: { id: string; name: string; campaignId: string }[];
+  /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
+  adsets?: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
 }) {
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adsetId, setAdsetId] = useState<string | null>(null); // null = "Todos los grupos de anuncios"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -183,7 +187,14 @@ export function LeadsByTypeTrendChart({
     }
   }, [campaigns, campaignId]);
 
-  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  // Grupo de anuncios: en cascada con la Campaña (mismo criterio que el Anuncio, ver abajo).
+  const visibleAdsets = useMemo(() => visibleAdsetsForCampaign(adsets, campaignId), [adsets, campaignId]);
+  useEffect(() => {
+    if (adsetId !== null && !visibleAdsets.some((a) => a.id === adsetId)) {
+      setAdsetId(null);
+    }
+  }, [visibleAdsets, adsetId]);
+  const visibleAds = useMemo(() => visibleAdsForSelection(ads, campaignId, adsetId), [ads, campaignId, adsetId]);
   useEffect(() => {
     if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
       setAdId(null);
@@ -242,13 +253,13 @@ export function LeadsByTypeTrendChart({
     // (entry.byAd — ver resolveAdFilteredTotals) en vez del total de cuenta; mismo criterio que
     // InvestmentTrendChart: si ninguno de los anuncios que matchean el filtro tuvo una fila ese
     // día, el día queda sin datos para ese filtro, no en 0.
-    const hasFilter = campaignId !== null || adId !== null;
+    const hasFilter = campaignId !== null || adsetId !== null || adId !== null;
     const result: DayTypePoint[] = [];
     for (let day = 1; day <= daysInMonth; day += 1) {
       const date = new Date(monthStart.getFullYear(), monthStart.getMonth(), day);
       const dateKey = format(date, "yyyy-MM-dd");
       const entry = byDate.get(dateKey);
-      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, objectivesCount) : null;
+      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, objectivesCount, adsetId) : null;
       const hasData = hasFilter ? scoped !== null : Boolean(entry);
       const objectiveLeads = hasFilter ? (scoped?.objectiveLeads ?? zeroArr) : (entry?.objectiveLeads ?? zeroArr);
       const objectiveSpend = hasFilter ? (scoped?.objectiveSpend ?? zeroArr) : (entry?.objectiveSpend ?? zeroArr);
@@ -256,7 +267,7 @@ export function LeadsByTypeTrendChart({
       result.push({ date, day, objectiveLeads, objectiveSpend, totalLeads, hasData });
     }
     return result;
-  }, [month, byDate, days, campaignId, adId]);
+  }, [month, byDate, days, campaignId, adsetId, adId]);
 
   const daysInMonth = points.length;
   const slot = INNER_W / daysInMonth;
@@ -410,7 +421,8 @@ export function LeadsByTypeTrendChart({
             onChange={(event) => {
               const value = event.target.value === "all" ? null : event.target.value;
               setCampaignId(value);
-              setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              setAdsetId(null);
+                setAdId(null); // cambiar de Campaña invalida el Grupo de anuncios y el Anuncio elegidos (ver visibleAds).
             }}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
@@ -418,6 +430,23 @@ export function LeadsByTypeTrendChart({
             {campaigns.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Grupo de anuncios"
+            value={adsetId ?? "all"}
+            onChange={(event) => {
+              setAdsetId(event.target.value === "all" ? null : event.target.value);
+              setAdId(null); // cambiar de Grupo de anuncios invalida el Anuncio elegido (ver visibleAds).
+            }}
+            className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todos los grupos de anuncios</option>
+            {visibleAdsets.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
               </option>
             ))}
           </select>

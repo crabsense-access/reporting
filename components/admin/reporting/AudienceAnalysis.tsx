@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
-import { resolveAdFilteredTotals, visibleAdsForCampaign, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 type Gender = "mujeres" | "hombres";
 
@@ -97,14 +97,15 @@ interface AudienceSegmentTotals {
 function resolveAudienceEngagementTotals(
   byAd: Record<string, AudienceAdBreakdownEntry>,
   campaignId: string | null,
-  adId: string | null
+  adId: string | null,
+  adsetId: string | null = null
 ): { reach: number; impressions: number } | null {
   if (adId !== null) {
     const entry = byAd[adId];
     return entry ? { reach: entry.reach, impressions: entry.impressions } : null;
   }
-  if (campaignId === null) return null;
-  const matching = Object.values(byAd).filter((entry) => entry.campaignId === campaignId);
+  if (campaignId === null && adsetId === null) return null;
+  const matching = Object.values(byAd).filter((entry) => matchesCampaignAndAdset(entry, campaignId, adsetId));
   if (matching.length === 0) return null;
   return matching.reduce(
     (acc, entry) => ({ reach: acc.reach + entry.reach, impressions: acc.impressions + entry.impressions }),
@@ -124,6 +125,7 @@ export function AudienceAnalysis({
   monthIsComplete,
   clientId,
   campaigns,
+  adsets = [],
   ads,
 }: {
   /** Un elemento por cada combinación género+rango etario con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
@@ -142,10 +144,13 @@ export function AudienceAnalysis({
   /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
   campaigns: { id: string; name: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
-  ads: { id: string; name: string; campaignId: string }[];
+  /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
+  adsets?: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
 }) {
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adsetId, setAdsetId] = useState<string | null>(null); // null = "Todos los grupos de anuncios"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
 
   useEffect(() => {
@@ -154,7 +159,14 @@ export function AudienceAnalysis({
     }
   }, [campaigns, campaignId]);
 
-  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  // Grupo de anuncios: en cascada con la Campaña (mismo criterio que el Anuncio, ver abajo).
+  const visibleAdsets = useMemo(() => visibleAdsetsForCampaign(adsets, campaignId), [adsets, campaignId]);
+  useEffect(() => {
+    if (adsetId !== null && !visibleAdsets.some((a) => a.id === adsetId)) {
+      setAdsetId(null);
+    }
+  }, [visibleAdsets, adsetId]);
+  const visibleAds = useMemo(() => visibleAdsForSelection(ads, campaignId, adsetId), [ads, campaignId, adsetId]);
   useEffect(() => {
     if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
       setAdId(null);
@@ -177,13 +189,13 @@ export function AudienceAnalysis({
   // (byAd) — un segmento sin ningún anuncio que matchee el filtro simplemente no aparece (ver
   // ageRanges más abajo, que se recalcula sobre effectiveSegments).
   const effectiveSegments = useMemo(() => {
-    if (campaignId === null && adId === null) return segments;
+    if (campaignId === null && adsetId === null && adId === null) return segments;
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     const result: AudienceSegmentTotals[] = [];
     for (const s of segments) {
-      const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount);
+      const scoped = resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount, adsetId);
       if (scoped) {
-        const engagement = resolveAudienceEngagementTotals(s.byAd, campaignId, adId);
+        const engagement = resolveAudienceEngagementTotals(s.byAd, campaignId, adId, adsetId);
         result.push({
           gender: s.gender,
           ageRange: s.ageRange,
@@ -196,7 +208,7 @@ export function AudienceAnalysis({
       }
     }
     return result;
-  }, [segments, campaignId, adId]);
+  }, [segments, campaignId, adsetId, adId]);
 
   const ageRanges = useMemo(
     () => Array.from(new Set(effectiveSegments.map((s) => s.ageRange))).sort(compareAgeRanges),
@@ -334,7 +346,8 @@ export function AudienceAnalysis({
             onChange={(event) => {
               const value = event.target.value === "all" ? null : event.target.value;
               setCampaignId(value);
-              setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+              setAdsetId(null);
+                setAdId(null); // cambiar de Campaña invalida el Grupo de anuncios y el Anuncio elegidos (ver visibleAds).
             }}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
@@ -342,6 +355,23 @@ export function AudienceAnalysis({
             {campaigns.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            aria-label="Grupo de anuncios"
+            value={adsetId ?? "all"}
+            onChange={(event) => {
+              setAdsetId(event.target.value === "all" ? null : event.target.value);
+              setAdId(null); // cambiar de Grupo de anuncios invalida el Anuncio elegido (ver visibleAds).
+            }}
+            className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <option value="all">Todos los grupos de anuncios</option>
+            {visibleAdsets.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
               </option>
             ))}
           </select>

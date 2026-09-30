@@ -198,8 +198,9 @@ interface InvestmentCalendarResponse {
   monthlyReach: number;
   /** Campañas con gasto este mes, ordenadas por gasto descendente — combo de Campaña de los gráficos con filtro. */
   campaigns: { id: string; name: string }[];
+  adsets?: { id: string; name: string; campaignId: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña. */
-  ads: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
   detectedActionTypes: DetectedActionType[];
   days: DailyRealTotals[];
   audienceSegments: AudienceSegmentTotals[];
@@ -794,6 +795,7 @@ export function InvestmentCalendar({
                 clientId={clientId}
                 objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
                 campaigns={data.campaigns}
+                adsets={data.adsets ?? []}
                 ads={data.ads}
               />
               <LeadsByTypeTrendChart
@@ -804,6 +806,7 @@ export function InvestmentCalendar({
                 monthIsComplete={!isCurrentMonth}
                 clientId={clientId}
                 campaigns={data.campaigns}
+                adsets={data.adsets ?? []}
                 ads={data.ads}
               />
             </>
@@ -822,6 +825,7 @@ export function InvestmentCalendar({
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
@@ -834,6 +838,7 @@ export function InvestmentCalendar({
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
@@ -846,6 +851,7 @@ export function InvestmentCalendar({
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               adIdsByObjectiveIndex={adIdsByObjectiveIndex}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
@@ -858,6 +864,7 @@ export function InvestmentCalendar({
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
@@ -870,6 +877,7 @@ export function InvestmentCalendar({
               currency={currency}
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
@@ -882,6 +890,7 @@ export function InvestmentCalendar({
               currency={currency}
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               campaigns={data.campaigns}
+              adsets={data.adsets ?? []}
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}

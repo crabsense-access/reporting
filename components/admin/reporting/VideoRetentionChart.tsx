@@ -32,7 +32,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
-import { visibleAdsForCampaign } from "@/lib/reporting/adFilter";
+import { visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset } from "@/lib/reporting/adFilter";
 
 interface VideoAdBreakdownEntry {
   campaignId: string;
@@ -70,7 +70,8 @@ function resolveVideoAdFilteredTotals(
   byAd: Record<string, VideoAdBreakdownEntry>,
   campaignId: string | null,
   adId: string | null,
-  objectiveAdIds: Set<string> | null
+  objectiveAdIds: Set<string> | null,
+  adsetId: string | null = null
 ): { videoPlays: number; p25: number; p50: number; p75: number; p95: number; p100: number } | null {
   let entries = Object.entries(byAd);
   if (objectiveAdIds !== null) {
@@ -82,8 +83,8 @@ function resolveVideoAdFilteredTotals(
       ? { videoPlays: found[1].videoPlays, p25: found[1].p25, p50: found[1].p50, p75: found[1].p75, p95: found[1].p95, p100: found[1].p100 }
       : null;
   }
-  if (campaignId !== null) {
-    entries = entries.filter(([, entry]) => entry.campaignId === campaignId);
+  if (campaignId !== null || adsetId !== null) {
+    entries = entries.filter(([, entry]) => matchesCampaignAndAdset(entry, campaignId, adsetId));
   }
   if (entries.length === 0) return null;
   return entries.reduce(
@@ -146,6 +147,7 @@ export function VideoRetentionChart({
   monthIsComplete,
   clientId,
   campaigns,
+  adsets = [],
   ads,
 }: {
   /** Un elemento por rango etario con reproducciones de video este mes — ver lib/reporting/metaInvestmentData.ts. */
@@ -160,11 +162,14 @@ export function VideoRetentionChart({
   /** Campañas con gasto este mes, para el combo — ver data.campaigns en InvestmentCalendar.tsx. */
   campaigns: { id: string; name: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña (ver visibleAdsForCampaign). */
-  ads: { id: string; name: string; campaignId: string }[];
+  /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
+  adsets?: { id: string; name: string; campaignId: string }[];
+  ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
+  const [adsetId, setAdsetId] = useState<string | null>(null); // null = "Todos los grupos de anuncios"
   const [adId, setAdId] = useState<string | null>(null); // null = "Todos los anuncios"
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -180,7 +185,14 @@ export function VideoRetentionChart({
     }
   }, [campaigns, campaignId]);
 
-  const visibleAds = useMemo(() => visibleAdsForCampaign(ads, campaignId), [ads, campaignId]);
+  // Grupo de anuncios: en cascada con la Campaña (mismo criterio que el Anuncio, ver abajo).
+  const visibleAdsets = useMemo(() => visibleAdsetsForCampaign(adsets, campaignId), [adsets, campaignId]);
+  useEffect(() => {
+    if (adsetId !== null && !visibleAdsets.some((a) => a.id === adsetId)) {
+      setAdsetId(null);
+    }
+  }, [visibleAdsets, adsetId]);
+  const visibleAds = useMemo(() => visibleAdsForSelection(ads, campaignId, adsetId), [ads, campaignId, adsetId]);
   useEffect(() => {
     if (adId !== null && !visibleAds.some((a) => a.id === adId)) {
       setAdId(null);
@@ -198,14 +210,14 @@ export function VideoRetentionChart({
 
   const curves = useMemo<AgeCurve[]>(() => {
     const byAge = new Map(segments.map((s) => [s.ageRange, s]));
-    const hasFilter = objectiveIndex !== null || campaignId !== null || adId !== null;
+    const hasFilter = objectiveIndex !== null || campaignId !== null || adsetId !== null || adId !== null;
     return AGE_ORDER.map((age) => {
       const s = byAge.get(age);
       if (!s) return null;
       // Con Tipo de Resultado, Campaña y/o Anuncio elegidos, el rango etario se resuelve contra
       // SU desglose por anuncio (s.byAd) en vez del total de cuenta — mismo criterio "sin datos
       // si nada matchea" que el resto de la página.
-      const scoped = hasFilter ? resolveVideoAdFilteredTotals(s.byAd, campaignId, adId, objectiveAdIds) : null;
+      const scoped = hasFilter ? resolveVideoAdFilteredTotals(s.byAd, campaignId, adId, objectiveAdIds, adsetId) : null;
       const videoPlays = hasFilter ? (scoped?.videoPlays ?? 0) : s.videoPlays;
       if (videoPlays <= 0) return null;
       const source = hasFilter ? scoped! : s;
@@ -216,7 +228,7 @@ export function VideoRetentionChart({
       });
       return { ageRange: age, videoPlays, retention };
     }).filter((c): c is AgeCurve => c !== null);
-  }, [segments, objectiveIndex, campaignId, adId, objectiveAdIds]);
+  }, [segments, objectiveIndex, campaignId, adsetId, adId, objectiveAdIds]);
 
   const totalVideoPlays = curves.reduce((sum, c) => sum + c.videoPlays, 0);
   const hasData = curves.length > 0 && totalVideoPlays > 0;
@@ -313,7 +325,8 @@ export function VideoRetentionChart({
               onChange={(event) => {
                 const value = event.target.value === "all" ? null : event.target.value;
                 setCampaignId(value);
-                setAdId(null); // cambiar de Campaña invalida el Anuncio elegido (ver visibleAds).
+                setAdsetId(null);
+                setAdId(null); // cambiar de Campaña invalida el Grupo de anuncios y el Anuncio elegidos (ver visibleAds).
               }}
               className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
@@ -321,6 +334,23 @@ export function VideoRetentionChart({
               {campaigns.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              aria-label="Grupo de anuncios"
+              value={adsetId ?? "all"}
+              onChange={(event) => {
+                setAdsetId(event.target.value === "all" ? null : event.target.value);
+                setAdId(null); // cambiar de Grupo de anuncios invalida el Anuncio elegido (ver visibleAds).
+              }}
+              className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="all">Todos los grupos de anuncios</option>
+              {visibleAdsets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
                 </option>
               ))}
             </select>
