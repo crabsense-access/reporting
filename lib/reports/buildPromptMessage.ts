@@ -47,7 +47,13 @@ export function buildPromptMessage(
   }
 
   const trimmedPeriodoInstrucciones = periodoInstrucciones.trim();
-  const periodoLines = [`Rango de fechas seleccionado: ${dateRangeStart} a ${dateRangeEnd}.`];
+  const periodoLines = [
+    `Rango de fechas seleccionado: ${dateRangeStart} a ${dateRangeEnd}.`,
+    // Las plataformas elegidas quedan explícitas en el prompt — además de darle contexto a Claude,
+    // hace que dos pedidos con distintas plataformas nunca tengan el mismo prompt_text (lo usa la
+    // cache de informes de meses completos, ver findCachedReport en lib/reports/generate.ts).
+    `Plataformas incluidas: ${selectedPlatforms.map((platform) => PLATFORM_LABELS[platform]).join(", ")}.`,
+  ];
   if (trimmedPeriodoInstrucciones) {
     periodoLines.push("", trimmedPeriodoInstrucciones);
   }

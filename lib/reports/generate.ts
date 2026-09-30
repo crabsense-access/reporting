@@ -60,6 +60,53 @@ async function markFailed(
     .eq("id", reportId);
 }
 
+/** Hoy en Buenos Aires (yyyy-MM-dd) — Vercel corre en UTC, ver el mismo helper en las rutas de reporting. */
+function todayInBuenosAiresIso(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/**
+ * true si el rango del informe termina antes del mes en curso (el/los mes/es ya están completos):
+ * esos datos no cambian más, así que un informe con el mismo pedido se puede reutilizar. Si el
+ * rango toca el mes en curso, siempre se genera de nuevo.
+ */
+export function isCompleteMonthRange(dateRangeEnd: string): boolean {
+  const currentMonthStart = `${todayInBuenosAiresIso().slice(0, 7)}-01`;
+  return dateRangeEnd < currentMonthStart;
+}
+
+/**
+ * Cache de informes con IA (a pedido de Martín): para rangos de meses completos, si ya existe un
+ * informe COMPLETADO de este cliente con exactamente el mismo prompt (que incluye rango de fechas
+ * y plataformas, ver buildPromptMessage), se devuelve ese en vez de volver a llamar a Claude. No
+ * vence: la data de un mes cerrado no cambia. La "cache" es la propia tabla reports.
+ */
+async function findCachedReport(
+  supabase: SupabaseClient<Database>,
+  clientId: string,
+  promptText: string,
+  dateRangeStart: string,
+  dateRangeEnd: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("reports")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("status", "completed")
+    .eq("date_range_start", dateRangeStart)
+    .eq("date_range_end", dateRangeEnd)
+    .eq("prompt_text", promptText)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
 // Instrumenta cada paso ya existente del loop de tool calling con eventos de progreso — la
 // lógica de negocio (loop, guardado, esquema de salida) es la misma que antes. Nunca throwea:
 // cualquier fallo se resuelve emitiendo un evento "error" y devolviendo (el caller cierra el
@@ -88,18 +135,6 @@ export async function generateReport(
   }: GenerateReportParams,
   onEvent: ReportProgressListener
 ): Promise<void> {
-  // Circuito de pausa manual (ver isAnthropicPaused): cortamos antes de tocar la base o de armar
-  // el prompt, así "Generar informe" no crea una fila huérfana en "reports" ni intenta pegarle a
-  // la API mientras está pausada.
-  if (isAnthropicPaused()) {
-    onEvent({
-      type: "error",
-      message:
-        "La generación de informes con IA está pausada temporalmente. Probá de nuevo más tarde.",
-    });
-    return;
-  }
-
   const rolPreview = rol.length > PROMPT_PREVIEW_LENGTH ? `${rol.slice(0, PROMPT_PREVIEW_LENGTH)}...` : rol;
   onEvent({ type: "status", message: `Analizando tu pedido: "${rolPreview}"` });
 
@@ -120,6 +155,28 @@ export async function generateReport(
     dateRangeStart,
     dateRangeEnd
   );
+
+  if (isCompleteMonthRange(dateRangeEnd)) {
+    const cachedReportId = await findCachedReport(supabase, clientId, promptText, dateRangeStart, dateRangeEnd);
+    if (cachedReportId) {
+      onEvent({ type: "status", message: "Ya existe un informe con este mismo pedido para un período cerrado. Abriéndolo..." });
+      onEvent({ type: "done", reportId: cachedReportId });
+      return;
+    }
+  }
+
+  // Circuito de pausa manual (ver isAnthropicPaused): cortamos antes de tocar la base, así
+  // "Generar informe" no crea una fila huérfana en "reports" ni intenta pegarle a la API mientras
+  // está pausada. Va DESPUÉS de la cache de meses completos: un informe ya generado se puede
+  // abrir aunque la IA esté pausada.
+  if (isAnthropicPaused()) {
+    onEvent({
+      type: "error",
+      message:
+        "La generación de informes con IA está pausada temporalmente. Probá de nuevo más tarde.",
+    });
+    return;
+  }
 
   const { data: report, error: insertError } = await supabase
     .from("reports")
