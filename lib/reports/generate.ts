@@ -80,11 +80,15 @@ export function isCompleteMonthRange(dateRangeEnd: string): boolean {
   return dateRangeEnd < currentMonthStart;
 }
 
+/** Vigencia de un informe reutilizable cuando el período todavía está abierto (toca el mes en curso) — mismo TTL que el resto del tablero para el mes en curso (ver THREE_HOURS_SECONDS en lib/cache/withCache.ts). */
+const OPEN_PERIOD_REPORT_TTL_MS = 3 * 60 * 60 * 1000;
+
 /**
- * Cache de informes con IA (a pedido de Martín): para rangos de meses completos, si ya existe un
- * informe COMPLETADO de este cliente con exactamente el mismo prompt (que incluye rango de fechas
- * y plataformas, ver buildPromptMessage), se devuelve ese en vez de volver a llamar a Claude. No
- * vence: la data de un mes cerrado no cambia. La "cache" es la propia tabla reports.
+ * Cache de informes con IA (a pedido de Martín): si ya existe un informe COMPLETADO de este
+ * cliente con exactamente el mismo prompt (que incluye rango de fechas y plataformas, ver
+ * buildPromptMessage), se devuelve ese en vez de volver a llamar a Claude. La "cache" es la propia
+ * tabla reports. Vigencia: sin vencimiento si el rango es de meses completos (la data no cambia
+ * más); si el rango toca el mes en curso, sólo sirve un informe generado en las últimas 3 horas.
  */
 async function findCachedReport(
   supabase: SupabaseClient<Database>,
@@ -93,17 +97,18 @@ async function findCachedReport(
   dateRangeStart: string,
   dateRangeEnd: string
 ): Promise<string | null> {
-  const { data } = await supabase
+  let query = supabase
     .from("reports")
     .select("id")
     .eq("client_id", clientId)
     .eq("status", "completed")
     .eq("date_range_start", dateRangeStart)
     .eq("date_range_end", dateRangeEnd)
-    .eq("prompt_text", promptText)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq("prompt_text", promptText);
+  if (!isCompleteMonthRange(dateRangeEnd)) {
+    query = query.gte("created_at", new Date(Date.now() - OPEN_PERIOD_REPORT_TTL_MS).toISOString());
+  }
+  const { data } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
   return data?.id ?? null;
 }
 
@@ -156,18 +161,16 @@ export async function generateReport(
     dateRangeEnd
   );
 
-  if (isCompleteMonthRange(dateRangeEnd)) {
-    const cachedReportId = await findCachedReport(supabase, clientId, promptText, dateRangeStart, dateRangeEnd);
-    if (cachedReportId) {
-      onEvent({ type: "status", message: "Ya existe un informe con este mismo pedido para un período cerrado. Abriéndolo..." });
-      onEvent({ type: "done", reportId: cachedReportId });
-      return;
-    }
+  const cachedReportId = await findCachedReport(supabase, clientId, promptText, dateRangeStart, dateRangeEnd);
+  if (cachedReportId) {
+    onEvent({ type: "status", message: "Ya existe un informe reciente con este mismo pedido. Abriéndolo..." });
+    onEvent({ type: "done", reportId: cachedReportId });
+    return;
   }
 
   // Circuito de pausa manual (ver isAnthropicPaused): cortamos antes de tocar la base, así
   // "Generar informe" no crea una fila huérfana en "reports" ni intenta pegarle a la API mientras
-  // está pausada. Va DESPUÉS de la cache de meses completos: un informe ya generado se puede
+  // está pausada. Va DESPUÉS de la cache de informes: un informe ya generado se puede
   // abrir aunque la IA esté pausada.
   if (isAnthropicPaused()) {
     onEvent({
