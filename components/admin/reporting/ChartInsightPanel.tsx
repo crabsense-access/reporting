@@ -163,7 +163,7 @@ export function ChartInsightPanel({
               {data.highlights.map((highlight, index) => (
                 <span
                   key={index}
-                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
                   style={{ borderColor: accentColor, backgroundColor: `color-mix(in oklab, ${accentColor} 10%, transparent)` }}
                 >
                   <span className="text-muted-foreground">{highlight.label}:</span>
@@ -188,7 +188,7 @@ export function ChartInsightPanel({
           {data.highlights.map((highlight, index) => (
             <span
               key={index}
-              className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+              className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm"
               style={{ borderColor: accentColor, backgroundColor: `${accentColor}1a` }}
             >
               <span className="text-muted-foreground">{highlight.label}:</span>

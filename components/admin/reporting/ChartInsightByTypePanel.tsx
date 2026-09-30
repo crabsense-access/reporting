@@ -139,7 +139,7 @@ export function ChartInsightByTypePanel({
                 {item.highlights.map((highlight, index) => (
                   <span
                     key={index}
-                    className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                    className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
                     style={{ borderColor: color, backgroundColor: `${color}1a` }}
                   >
                     <span className="text-muted-foreground">{highlight.label}:</span>

@@ -805,7 +805,7 @@ export function InvestmentCalendar({
                       {executiveHighlights.map((highlight) => (
                         <span
                           key={highlight.label}
-                          className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                          className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
                           style={{
                             borderColor: "hsl(var(--primary))",
                             backgroundColor: "color-mix(in oklab, hsl(var(--primary)) 10%, transparent)",
