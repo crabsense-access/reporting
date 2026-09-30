@@ -107,11 +107,11 @@ export function ChartInsightByTypePanel({
 
   return (
     <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-3">
-      {state.items.map((item) => {
+      {state.items.map((item, index) => {
         const color = colorForTipo(item.tipo);
         return (
           <div
-            key={item.tipo}
+            key={`${item.tipo}-${index}`}
             className={cn("flex flex-col gap-2 rounded-lg p-3", item.esMejor ? "border-2" : "border border-border")}
             style={item.esMejor ? { borderColor: color, backgroundColor: `${color}0d` } : undefined}
           >

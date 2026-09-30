@@ -152,9 +152,17 @@ export async function fetchResultObjectives(
     (a, b) => specificityRank(a) - specificityRank(b) || (spendByActionType.get(b) ?? 0) - (spendByActionType.get(a) ?? 0)
   );
 
-  return Promise.all(
+  const objectives = await Promise.all(
     ordered.map(async (actionType) => ({ event: actionType, label: await labelForActionType(actionType, metaConfig) }))
   );
+  // Los nombres se usan como clave en los gráficos: si dos tipos de Resultado distintos terminan
+  // con el mismo nombre, se desambiguan con un número para que no se pisen.
+  const seen = new Map<string, number>();
+  return objectives.map((objective) => {
+    const count = (seen.get(objective.label) ?? 0) + 1;
+    seen.set(objective.label, count);
+    return count === 1 ? objective : { ...objective, label: `${objective.label} (${count})` };
+  });
 }
 
 /** Nombre real del Resultado — para conversiones personalizadas, el nombre que tiene en Events Manager. */

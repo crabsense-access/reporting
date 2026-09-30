@@ -24,12 +24,14 @@
 const META_ACTION_TYPE_LABELS: Record<string, string> = {
   // Clientes potenciales (leads)
   lead: "Clientes potenciales",
-  "onsite_conversion.lead_grouped": "Clientes potenciales",
-  "offsite_conversion.fb_pixel_lead": "Clientes potenciales",
-  "onsite_conversion.lead": "Clientes potenciales",
+  // Mismos nombres que Ads Manager: distingue formulario instantáneo vs. sitio web (si no, dos
+  // tipos de Resultado distintos quedaban con el mismo nombre y se pisaban en los gráficos).
+  "onsite_conversion.lead_grouped": "Clientes potenciales (formulario)",
+  "offsite_conversion.fb_pixel_lead": "Clientes potenciales en el sitio web",
+  "onsite_conversion.lead": "Clientes potenciales (formulario)",
 
   // Mensajería (Messenger / Instagram / WhatsApp)
-  "onsite_conversion.messaging_conversation_started_7d": "Conversaciones de Messenger iniciadas",
+  "onsite_conversion.messaging_conversation_started_7d": "Conversaciones con mensajes iniciadas",
   "onsite_conversion.messaging_first_reply": "Nuevas conversaciones de mensajería",
   "onsite_conversion.messaging_block": "Conversaciones de mensajería bloqueadas",
   "onsite_conversion.total_messaging_connection": "Conexiones de mensajería",
