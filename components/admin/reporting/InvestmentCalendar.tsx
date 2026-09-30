@@ -726,7 +726,7 @@ export function InvestmentCalendar({
                                       className="text-2xl font-semibold leading-tight"
                                       style={{ color: o.leads > 0 ? objectiveColor(o.index) : undefined }}
                                     >
-                                      {o.leads > 0 ? formatCurrency(o.cpl, currency, 2) : "s/d"}
+                                      {o.leads > 0 ? formatCurrency(Math.round(o.cpl), currency) : "s/d"}
                                     </span>
                                     <span className="text-xs text-muted-foreground">Costo por resultado</span>
                                   </div>
