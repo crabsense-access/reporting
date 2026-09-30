@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Users } from "lucide-react";
 
 import { SignOutButton } from "@/components/SignOutButton";
 
@@ -14,7 +14,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </span>
             Panel de administración
           </Link>
-          <SignOutButton />
+          <div className="flex items-center gap-4">
+            <Link
+              href="/admin/clients"
+              className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Users className="h-4 w-4" />
+              Clientes
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
