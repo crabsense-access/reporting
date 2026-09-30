@@ -714,11 +714,22 @@ export function InvestmentCalendar({
                             >
                               <div className="flex flex-col gap-0.5">
                                 <span className="text-sm font-bold text-muted-foreground">{o.label}</span>
-                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                                  <span className="text-2xl font-semibold text-foreground">{formatNumber(o.leads)}</span>
-                                  <span className="text-xs text-muted-foreground">
-                                    {o.leads > 0 ? `${formatCurrency(o.cpl, currency, 2)} por resultado` : "s/d por resultado"}
-                                  </span>
+                                {/* Resultados y Costo por resultado lado a lado y del mismo tamaño — a pedido
+                                    de Martín, el costo por resultado va destacado (antes era un texto chico). */}
+                                <div className="mt-1 flex flex-wrap items-end gap-x-5 gap-y-2">
+                                  <div className="flex flex-col">
+                                    <span className="text-2xl font-semibold leading-tight text-foreground">{formatNumber(o.leads)}</span>
+                                    <span className="text-xs text-muted-foreground">Resultados</span>
+                                  </div>
+                                  <div className="flex flex-col border-l border-border pl-5">
+                                    <span
+                                      className="text-2xl font-semibold leading-tight"
+                                      style={{ color: o.leads > 0 ? objectiveColor(o.index) : undefined }}
+                                    >
+                                      {o.leads > 0 ? formatCurrency(o.cpl, currency, 2) : "s/d"}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">Costo por resultado</span>
+                                  </div>
                                 </div>
                               </div>
                               <DailyTypeBarChart days={data?.days ?? []} objectiveIndex={o.index} color={objectiveColor(o.index)} />
