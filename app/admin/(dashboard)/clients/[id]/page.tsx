@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FileText, History, LineChart } from "lucide-react";
+import { CalendarDays } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import { GoogleAdsConfigForm } from "@/components/admin/GoogleAdsConfigForm";
 import { MetaAdsConfigForm } from "@/components/admin/MetaAdsConfigForm";
 import { SearchConsoleConfigForm } from "@/components/admin/SearchConsoleConfigForm";
 import { ClientUsersManager } from "@/components/admin/ClientUsersManager";
-import { InformesPopup } from "@/components/admin/reports/InformesPopup";
 import type { GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
 
 export default async function ClientDetailPage({
@@ -64,11 +63,6 @@ export default async function ClientDetailPage({
     .eq("client_id", id)
     .order("created_at", { ascending: true });
 
-  const { data: reports } = await supabase
-    .from("reports")
-    .select("id, created_at, prompt_text, date_range_start, date_range_end, status")
-    .eq("client_id", id)
-    .order("created_at", { ascending: false });
 
   return (
     <div className="flex flex-col gap-6">
@@ -79,26 +73,9 @@ export default async function ClientDetailPage({
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline">
-            <Link href={`/admin/clients/${client.id}/reporting`}>
-              <LineChart className="h-4 w-4" />
-              Informes
-            </Link>
-          </Button>
-          <InformesPopup
-            clientId={client.id}
-            clientName={client.name}
-            reports={reports ?? []}
-            trigger={
-              <Button type="button" variant="outline">
-                <History className="h-4 w-4" />
-                Ver informes
-              </Button>
-            }
-          />
-          <Button asChild variant="outline">
-            <Link href={`/admin/clients/${client.id}/informes/nuevo`}>
-              <FileText className="h-4 w-4" />
-              Generar informe
+            <Link href={`/admin/clients/${client.id}/informes-mensuales`}>
+              <CalendarDays className="h-4 w-4" />
+              Ver informes mensuales
             </Link>
           </Button>
         </div>

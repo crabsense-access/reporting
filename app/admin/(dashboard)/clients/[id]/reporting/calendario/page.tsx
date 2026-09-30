@@ -9,10 +9,13 @@ import { InvestmentCalendar } from "@/components/admin/reporting/InvestmentCalen
 
 export default async function ClientInvestmentCalendarPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ month?: string }>;
 }) {
   const { id } = await params;
+  const { month } = await searchParams;
   const supabase = await createClient();
 
   const { data: client } = await supabase.from("clients").select("id, name").eq("id", id).maybeSingle();
@@ -32,7 +35,7 @@ export default async function ClientInvestmentCalendarPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="icon">
-          <Link href={`/admin/clients/${client.id}/reporting`} aria-label="Volver a reporting">
+          <Link href={`/admin/clients/${client.id}/informes-mensuales`} aria-label="Volver a informes mensuales">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -43,7 +46,7 @@ export default async function ClientInvestmentCalendarPage({
       </div>
 
       {metaAdsSource ? (
-        <InvestmentCalendar clientId={client.id} />
+        <InvestmentCalendar clientId={client.id} initialMonth={month} />
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">

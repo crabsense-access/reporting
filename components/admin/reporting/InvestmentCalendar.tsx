@@ -232,7 +232,14 @@ function pickMin<T>(items: readonly T[], value: (item: T) => number): T | null {
   return pickMax(items, (item) => -value(item));
 }
 
-export function InvestmentCalendar({ clientId }: { clientId: string }) {
+export function InvestmentCalendar({
+  clientId,
+  initialMonth,
+}: {
+  clientId: string;
+  /** Mes a mostrar al abrir (yyyy-MM) — lo usa el listado "Ver informes mensuales" del Admin. Si no está entre los últimos 12 meses, se ignora. */
+  initialMonth?: string;
+}) {
   const today = useMemo(() => new Date(), []);
 
   // Últimos 12 meses (incluido el actual), más reciente primero — el combo de mes no deja elegir
@@ -247,7 +254,9 @@ export function InvestmentCalendar({ clientId }: { clientId: string }) {
     });
   }, [today]);
 
-  const [selectedMonth, setSelectedMonth] = useState(() => monthOptions[0]!.value);
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    initialMonth && monthOptions.some((opt) => opt.value === initialMonth) ? initialMonth : monthOptions[0]!.value
+  );
   const [data, setData] = useState<InvestmentCalendarResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
