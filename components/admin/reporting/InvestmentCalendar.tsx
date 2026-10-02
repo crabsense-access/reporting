@@ -772,7 +772,7 @@ export function InvestmentCalendar({
                   excepción: Meta no permite deduplicar el alcance por tipo de conversión sin
                   perder la cuenta real de personas únicas, así que siempre muestra el total de la
                   cuenta, seleccionés lo que seleccionés (ver fetchMonthlyReach). */}
-              <div className="flex flex-col gap-3 border-t border-border pt-3">
+              <div className="flex flex-col gap-3 pt-6">
                 <span className="text-lg font-bold text-foreground">Performance de Resultados</span>
                 <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
                   <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
@@ -799,7 +799,7 @@ export function InvestmentCalendar({
 
               {/* pt-8 (en vez de pt-3, como el resto de los separadores de esta card) a pedido de
                   Martín: "espaciado top importante" antes del título. */}
-              <div className="flex flex-col gap-2 border-t border-border pt-8">
+              <div className="flex flex-col gap-2 pt-8">
                 <span className="text-lg font-bold text-foreground">Resumen ejecutivo</span>
                 {/* Mismo look que las tarjetas de insight de los gráficos (ChartInsightPanel variant="card"). */}
                 <div
