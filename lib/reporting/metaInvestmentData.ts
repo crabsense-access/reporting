@@ -1939,3 +1939,131 @@ async function withResultObjectives(
   }
   return metaConfig;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Performance por Campaña / Grupo de anuncios / Anuncio (bloque Facturación de clientes ecommerce,
+// ver EcommercePerformanceTable.tsx). Se pide aparte del Calendario (on-demand, según la dimensión
+// elegida en el combo) y para el mes completo de una vez, así:
+//   - Alcance: se pide al nivel elegido (Meta lo deduplica por entidad; sumar el alcance de
+//     anuncios o de días sobrestimaría el de un grupo/campaña).
+//   - Resto (impresiones, clics, resultados, inversión, compras, facturación): se pide a nivel
+//     anuncio y se agrega hacia arriba, para poder imputar los Resultados con el mismo criterio
+//     que el resto del tablero (tipo de Resultado de cada conjunto de anuncios, ver
+//     findMatchedObjective / withResultObjectives).
+// ---------------------------------------------------------------------------------------------
+
+export type PerformanceDimension = "campaign" | "adset" | "ad";
+
+export interface EntityPerformance {
+  id: string;
+  name: string;
+  spend: number;
+  reach: number;
+  impressions: number;
+  clicks: number;
+  results: number;
+  purchases: number;
+  revenue: number;
+}
+
+interface PerformanceAdRow {
+  campaign_id?: string;
+  campaign_name?: string;
+  adset_id?: string;
+  adset_name?: string;
+  ad_id?: string;
+  ad_name?: string;
+  spend?: string;
+  impressions?: string;
+  actions?: { action_type: string; value: string }[];
+  action_values?: { action_type: string; value: string }[];
+}
+
+interface PerformanceReachRow {
+  campaign_id?: string;
+  adset_id?: string;
+  ad_id?: string;
+  reach?: string;
+}
+
+export async function fetchEntityPerformance(
+  savedMetaConfig: MetaAdsConfig,
+  clientId: string,
+  dimension: PerformanceDimension,
+  monthStart: Date,
+  lastDataDate: Date
+): Promise<EntityPerformance[]> {
+  const metaConfig = await withResultObjectives(savedMetaConfig, clientId, monthStart, lastDataDate);
+  const objectives = metaConfig.objectives ?? [];
+  const objectiveEvents = objectives.map((o) => o.event.trim());
+  const since = format(monthStart, "yyyy-MM-dd");
+  const until = format(lastDataDate, "yyyy-MM-dd");
+  const monthIsComplete = until === format(endOfMonth(monthStart), "yyyy-MM-dd");
+  const idField = dimension === "campaign" ? "campaign_id" : dimension === "adset" ? "adset_id" : "ad_id";
+  const objectivesKey = objectives.map((o) => `${o.event}:${(o.adset_ids ?? []).join(",")}`).join("|");
+
+  return withCache(
+    {
+      clientId,
+      source: "meta_ads",
+      query: "entityPerformance:v1",
+      params: { accountId: metaConfig.ad_account_id, dimension, objectivesKey, from: since, to: until },
+      ...(monthIsComplete ? {} : { ttlSeconds: THREE_HOURS_SECONDS }),
+    },
+    async () => {
+      const [adRows, reachRows] = await Promise.all([
+        fetchMetaGraphApi<{ data: PerformanceAdRow[] }>(
+          `${metaConfig.ad_account_id}/insights`,
+          {
+            level: "ad",
+            time_range: JSON.stringify({ since, until }),
+            fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,actions,action_values",
+            limit: "5000",
+          },
+          metaConfig.system_user_token
+        ),
+        fetchMetaGraphApi<{ data: PerformanceReachRow[] }>(
+          `${metaConfig.ad_account_id}/insights`,
+          {
+            level: dimension,
+            time_range: JSON.stringify({ since, until }),
+            fields: `${idField},reach`,
+            limit: "5000",
+          },
+          metaConfig.system_user_token
+        ),
+      ]);
+
+      const byId = new Map<string, EntityPerformance>();
+      for (const row of adRows.data ?? []) {
+        const id = row[idField];
+        if (!id) continue;
+        const name =
+          (dimension === "campaign" ? row.campaign_name : dimension === "adset" ? row.adset_name : row.ad_name)?.trim() || id;
+        let entity = byId.get(id);
+        if (!entity) {
+          entity = { id, name, spend: 0, reach: 0, impressions: 0, clicks: 0, results: 0, purchases: 0, revenue: 0 };
+          byId.set(id, entity);
+        }
+        const actions = row.actions ?? [];
+        entity.spend += Number(row.spend ?? 0);
+        entity.impressions += Number(row.impressions ?? 0);
+        // Mismo "Clicks" que el bloque Performance de Resultados: clics en el enlace.
+        entity.clicks += findActionValue(actions, "link_click");
+        const matched = findMatchedObjective(actions, objectiveEvents, row.adset_id, objectives);
+        if (matched) entity.results += matched.value;
+        const purchaseTotals = findPurchaseTotals(actions, row.action_values ?? []);
+        entity.purchases += purchaseTotals.purchases;
+        entity.revenue += purchaseTotals.purchaseValue;
+      }
+      for (const row of reachRows.data ?? []) {
+        const id = row[idField];
+        const entity = id ? byId.get(id) : undefined;
+        if (entity) entity.reach += Number(row.reach ?? 0);
+      }
+      return Array.from(byId.values())
+        .filter((e) => e.spend > 0)
+        .sort((a, b) => b.spend - a.spend);
+    }
+  );
+}

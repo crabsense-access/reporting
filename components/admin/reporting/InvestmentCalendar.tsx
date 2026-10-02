@@ -55,6 +55,7 @@ import { CampaignAnalysis } from "@/components/admin/reporting/CampaignAnalysis"
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
+import { EcommercePerformanceTable } from "@/components/admin/reporting/EcommercePerformanceTable";
 import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
 
 const ZERO_BY_TYPE: Record<LeadType, number> = LEAD_TYPES.reduce(
@@ -839,6 +840,7 @@ export function InvestmentCalendar({
               currency={currency}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
+              month={selectedMonth}
             />
           )}
 
@@ -1067,11 +1069,14 @@ function EcommerceBlock({
   currency,
   monthIsComplete,
   clientId,
+  month,
 }: {
   days: DailyRealTotals[];
   currency: string;
   monthIsComplete: boolean;
   clientId: string;
+  /** yyyy-MM — para la tabla de Performance por campaña/grupo/anuncio. */
+  month: string;
 }) {
   const revenue = days.reduce((sum, d) => sum + (d.purchaseValue ?? 0), 0);
   const purchases = days.reduce((sum, d) => sum + (d.purchases ?? 0), 0);
@@ -1195,6 +1200,8 @@ function EcommerceBlock({
             )}
           </>
         )}
+        {/* Tabla "Performance por ..." — debajo del insight, dentro del mismo bloque. */}
+        <EcommercePerformanceTable clientId={clientId} month={month} currency={currency} />
       </CardContent>
     </Card>
   );
