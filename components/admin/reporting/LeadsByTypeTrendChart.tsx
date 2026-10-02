@@ -390,7 +390,7 @@ export function LeadsByTypeTrendChart({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <CardTitle className="text-lg font-bold text-foreground">Leads y CPL por tipo de campaña</CardTitle>
+          <CardTitle className="text-lg font-bold text-foreground">Resultados y costos por resultados por tipo de campaña</CardTitle>
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {visibleIndexes.map((idx) => (
               <span key={idx} className="flex items-center gap-1">

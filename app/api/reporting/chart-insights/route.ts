@@ -55,7 +55,7 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "para el mes en curso. Identificá el hallazgo principal (tendencia, pico o valle, día más o menos " +
     "eficiente, etc.) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
   "leads-by-type":
-    'Estás mirando el gráfico "Leads y CPL por tipo de campaña" del calendario de inversión de un ' +
+    'Estás mirando el gráfico "Resultados y costos por resultados por tipo de campaña" del calendario de inversión de un ' +
     "cliente de marketing digital: barras apiladas de leads diarios por tipo de campaña (Iniciaron " +
     "chat, Formulario Landing, Formulario Meta) + una línea de CPL del tipo elegido, para el mes en " +
     "curso. Para cada tipo de campaña del array \"porTipo\" de los datos, identificá su hallazgo " +
