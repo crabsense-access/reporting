@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { LEAD_TYPE_COLOR, LEAD_TYPES, objectiveColor, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
 import { resolveResultLabel } from "@/lib/reporting/metaResultLabels";
+import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
 import { AudienceAnalysis } from "@/components/admin/reporting/AudienceAnalysis";
 import { VideoRetentionChart } from "@/components/admin/reporting/VideoRetentionChart";
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
@@ -237,10 +238,13 @@ export function InvestmentCalendar({
   clientId,
   initialMonth,
   showRecommendations = false,
+  restrictToClientWindow = false,
 }: {
   clientId: string;
   /** Módulo "Recomendaciones" — sólo para admins (a pedido de Martín); la vista del cliente no lo muestra. */
   showRecommendations?: boolean;
+  /** true para los usuarios del cliente: sólo pueden elegir meses desde FIRST_CLIENT_VISIBLE_MONTH (ver lib/reporting/reportWindow.ts); el resto queda grisado. Los admins no tienen límite. */
+  restrictToClientWindow?: boolean;
   /** Mes a mostrar al abrir (yyyy-MM) — lo usa el listado "Ver informes mensuales" del Admin. Si no está entre los últimos 12 meses, se ignora. */
   initialMonth?: string;
 }) {
@@ -259,7 +263,11 @@ export function InvestmentCalendar({
   }, [today]);
 
   const [selectedMonth, setSelectedMonth] = useState(() =>
-    initialMonth && monthOptions.some((opt) => opt.value === initialMonth) ? initialMonth : monthOptions[0]!.value
+    initialMonth &&
+    monthOptions.some((opt) => opt.value === initialMonth) &&
+    (!restrictToClientWindow || isMonthVisibleToClients(initialMonth))
+      ? initialMonth
+      : monthOptions[0]!.value
   );
   const [data, setData] = useState<InvestmentCalendarResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -274,9 +282,6 @@ export function InvestmentCalendar({
     [monthOptions, selectedMonth]
   );
   const isCurrentMonth = selectedMonth === monthOptions[0]!.value;
-  // Mes anterior (ej. agosto mientras estamos en septiembre) — el único, además del actual, que
-  // por ahora se puede elegir (ver el `disabled` del <option> más abajo).
-  const previousMonthValue = monthOptions[1]!.value;
 
   useEffect(() => {
     let cancelled = false;
@@ -643,18 +648,16 @@ export function InvestmentCalendar({
           <select
             value={selectedMonth}
             onChange={(event) => setSelectedMonth(event.target.value)}
-            title="Por el momento sólo se pueden ver el mes en curso y el mes anterior — el resto está grisado"
+            title={restrictToClientWindow ? "Por el momento sólo están disponibles los meses desde agosto 2026" : undefined}
             className="h-9 w-fit rounded-md border border-input bg-background px-2.5 text-lg font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {monthOptions.map((opt) => (
-              // Por ahora, a pedido de Martín, sólo se pueden ELEGIR el mes en curso y el
-              // anterior (agosto, mientras estamos en septiembre) — el resto se listan igual
-              // (para que se vea qué meses existen) pero grisados y sin poder seleccionarlos
-              // (sacar este `disabled` cuando se habilite de nuevo la selección de mes completa).
+              // Usuarios del cliente: sólo desde FIRST_CLIENT_VISIBLE_MONTH (agosto 2026); los meses
+              // anteriores se listan igual pero grisados. Admins: todos los meses habilitados.
               <option
                 key={opt.value}
                 value={opt.value}
-                disabled={opt.value !== monthOptions[0]!.value && opt.value !== previousMonthValue}
+                disabled={restrictToClientWindow && !isMonthVisibleToClients(opt.value)}
               >
                 {opt.label}
               </option>

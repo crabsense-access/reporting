@@ -31,7 +31,7 @@ export default async function ClientReportPage({
       </div>
 
       {metaAdsSource ? (
-        <InvestmentCalendar clientId={client.id} showRecommendations={isAdminViewing} />
+        <InvestmentCalendar clientId={client.id} showRecommendations={isAdminViewing} restrictToClientWindow={!isAdminViewing} />
       ) : (
         <Card>
           <CardContent className="py-10 text-center">
