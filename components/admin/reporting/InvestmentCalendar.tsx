@@ -54,6 +54,7 @@ import { RecommendationsPanel } from "@/components/admin/reporting/Recommendatio
 import { CampaignAnalysis } from "@/components/admin/reporting/CampaignAnalysis";
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
+import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
 
 const ZERO_BY_TYPE: Record<LeadType, number> = LEAD_TYPES.reduce(
@@ -771,8 +772,6 @@ export function InvestmentCalendar({
                   excepción: Meta no permite deduplicar el alcance por tipo de conversión sin
                   perder la cuenta real de personas únicas, así que siempre muestra el total de la
                   cuenta, seleccionés lo que seleccionés (ver fetchMonthlyReach). */}
-              {data?.isEcommerce && <EcommerceBlock days={data.days} currency={currency} />}
-
               <div className="flex flex-col gap-3 border-t border-border pt-3">
                 <span className="text-lg font-bold text-foreground">Performance de Resultados</span>
                 <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
@@ -832,6 +831,16 @@ export function InvestmentCalendar({
               </div>
             </CardContent>
           </Card>
+
+          {/* Bloque aparte "Facturación" — sólo clientes marcados como ecommerce en el Admin. */}
+          {data?.isEcommerce && (
+            <EcommerceBlock
+              days={data.days}
+              currency={currency}
+              monthIsComplete={!isCurrentMonth}
+              clientId={clientId}
+            />
+          )}
 
           {data && typeLabels && (
             <>
@@ -1045,21 +1054,67 @@ function DailyTypeBarChart({
 const ECOMMERCE_COLORS = { revenue: "#16a34a", ticket: "#0ea5e9", roas: "#f59e0b" };
 
 /**
- * Bloque "Ecommerce" (sólo clientes marcados como ecommerce en el Admin): Facturación, Ticket
- * promedio y ROAS del mes, con su evolución diaria — mismo formato de tarjeta que las scorecards de
- * "Resultados". Datos de toda la cuenta a partir de las compras que reporta Meta (ver
- * findPurchaseTotals en lib/reporting/metaInvestmentData.ts):
+ * Bloque "Facturación" (card aparte, sólo clientes marcados como ecommerce en el Admin):
+ * Facturación, Ticket promedio y ROAS del mes, con su evolución diaria, más el insight de IA
+ * debajo (mismo formato que "Inversión y rendimiento por día"). Datos de toda la cuenta a partir
+ * de las compras que reporta Meta (ver findPurchaseTotals en lib/reporting/metaInvestmentData.ts):
  *   - Facturación = valor de conversión de compras.
  *   - Ticket promedio = facturación / cantidad de compras.
  *   - ROAS = facturación / inversión total del mes.
  */
-function EcommerceBlock({ days, currency }: { days: DailyRealTotals[]; currency: string }) {
+function EcommerceBlock({
+  days,
+  currency,
+  monthIsComplete,
+  clientId,
+}: {
+  days: DailyRealTotals[];
+  currency: string;
+  monthIsComplete: boolean;
+  clientId: string;
+}) {
   const revenue = days.reduce((sum, d) => sum + (d.purchaseValue ?? 0), 0);
   const purchases = days.reduce((sum, d) => sum + (d.purchases ?? 0), 0);
   const spend = days.reduce((sum, d) => sum + d.spend, 0);
   const ticket = purchases > 0 ? revenue / purchases : null;
   const roas = spend > 0 ? revenue / spend : null;
   const formatRoas = (value: number) => `${value.toLocaleString("es-AR", { maximumFractionDigits: 2 })}x`;
+  const hasData = purchases > 0 || revenue > 0;
+
+  // Métricas que recibe Claude para el insight (ver "billing" en app/api/reporting/chart-insights/route.ts).
+  const insightMetrics = useMemo(() => {
+    if (!hasData) return null;
+    const withRevenue = days.filter((d) => (d.purchaseValue ?? 0) > 0);
+    const dayLabel = (d: DailyRealTotals) => format(parseISO(d.date), "d MMM", { locale: es });
+    const bestRevenueDay = pickMax(withRevenue, (d) => d.purchaseValue ?? 0);
+    const bestRoasDay = pickMax(withRevenue.filter((d) => d.spend > 0), (d) => (d.purchaseValue ?? 0) / d.spend);
+    const worstRoasDay = pickMin(withRevenue.filter((d) => d.spend > 0), (d) => (d.purchaseValue ?? 0) / d.spend);
+    return {
+      moneda: currency,
+      mesCompleto: monthIsComplete,
+      facturacion: formatCurrency(Math.round(revenue), currency),
+      compras: purchases,
+      ticketPromedio: ticket !== null ? formatCurrency(Math.round(ticket), currency) : "s/d",
+      inversion: formatCurrency(Math.round(spend), currency),
+      roas: roas !== null ? formatRoas(roas) : "s/d",
+      diasConVentas: withRevenue.length,
+      mejorDiaFacturacion: bestRevenueDay
+        ? { fecha: dayLabel(bestRevenueDay), facturacion: formatCurrency(Math.round(bestRevenueDay.purchaseValue ?? 0), currency) }
+        : null,
+      mejorDiaRoas: bestRoasDay
+        ? { fecha: dayLabel(bestRoasDay), roas: formatRoas((bestRoasDay.purchaseValue ?? 0) / bestRoasDay.spend) }
+        : null,
+      peorDiaRoas: worstRoasDay
+        ? { fecha: dayLabel(worstRoasDay), roas: formatRoas((worstRoasDay.purchaseValue ?? 0) / worstRoasDay.spend) }
+        : null,
+      porDia: days.map((d) => ({
+        fecha: d.date,
+        inversion: Math.round(d.spend),
+        compras: d.purchases ?? 0,
+        facturacion: Math.round(d.purchaseValue ?? 0),
+      })),
+    };
+  }, [days, currency, monthIsComplete, hasData, revenue, purchases, ticket, spend, roas]);
 
   const cards = [
     {
@@ -1095,32 +1150,49 @@ function EcommerceBlock({ days, currency }: { days: DailyRealTotals[]; currency:
   ];
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border pt-10">
-      <span className="text-lg font-bold text-foreground">Ecommerce</span>
-      {purchases === 0 && revenue === 0 ? (
-        <p className="text-xs text-muted-foreground">Meta no reportó compras este mes.</p>
-      ) : (
-        <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-          {cards.map((card) => (
-            <div key={card.key} className="flex flex-col gap-3 rounded-lg border border-border p-3">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-bold text-muted-foreground">{card.label}</span>
-                <span className="mt-1 text-2xl font-semibold leading-tight" style={{ color: card.color }}>
-                  {card.value}
-                </span>
-                <span className="text-xs text-muted-foreground">{card.detail}</span>
-              </div>
-              <DailyTypeBarChart
-                days={days}
-                color={card.color}
-                getValue={card.getValue}
-                formatValue={card.formatValue}
-                title={card.title}
-              />
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg font-bold text-foreground">Facturación</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {!hasData ? (
+          <p className="text-xs text-muted-foreground">Meta no reportó compras este mes.</p>
+        ) : (
+          <>
+            <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+              {cards.map((card) => (
+                <div key={card.key} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-bold text-muted-foreground">{card.label}</span>
+                    <span className="mt-1 text-2xl font-semibold leading-tight" style={{ color: card.color }}>
+                      {card.value}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{card.detail}</span>
+                  </div>
+                  <DailyTypeBarChart
+                    days={days}
+                    color={card.color}
+                    getValue={card.getValue}
+                    formatValue={card.formatValue}
+                    title={card.title}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+            {insightMetrics && (
+              <ChartInsightPanel
+                chart="billing"
+                metrics={insightMetrics}
+                accentColor="hsl(var(--primary))"
+                variant="card"
+                topSpacing="lg"
+                monthIsComplete={monthIsComplete}
+                clientId={clientId}
+              />
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

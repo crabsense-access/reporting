@@ -42,6 +42,13 @@ import {
 // real del Calendario (ver fetchRealInvestmentCalendarDataCached en metaInvestmentData.ts).
 
 const CHART_INSTRUCTIONS: Record<string, string> = {
+  billing:
+    'Estás mirando el bloque "Facturación" del calendario de inversión de un cliente ecommerce: ' +
+    "facturación (valor de las compras reportadas por Meta Ads), cantidad de compras, ticket " +
+    "promedio y ROAS (facturación / inversión) del mes, con su evolución diaria. Identificá el " +
+    "hallazgo principal (días de mayor facturación, cambios en el ticket promedio, días con mejor o " +
+    "peor ROAS, relación entre inversión y facturación) y redactalo para que un cliente no técnico " +
+    "lo entienda de un vistazo.",
   "investment-trend":
     'Estás mirando el gráfico "Inversión y rendimiento por día" del calendario de inversión de un ' +
     "cliente de marketing digital: barras de inversión diaria + una línea de CPL o Leads diarios, " +
