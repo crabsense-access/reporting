@@ -6,7 +6,9 @@
 // derecha. La dimensión se elige con el combo y el título cambia con ella. Datos: ver
 // fetchEntityPerformance en lib/reporting/metaInvestmentData.ts.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 
 import { formatCurrency, formatNumber } from "@/lib/format";
 
@@ -48,11 +50,13 @@ export function EcommercePerformanceTable({
   clientId,
   month,
   currency,
+  monthIsComplete,
 }: {
   clientId: string;
   /** yyyy-MM */
   month: string;
   currency: string;
+  monthIsComplete: boolean;
 }) {
   const [dimension, setDimension] = useState<Dimension>("campaign");
   const [entities, setEntities] = useState<EntityPerformance[] | null>(null);
@@ -83,6 +87,32 @@ export function EcommercePerformanceTable({
   const maxRevenue = Math.max(...(entities ?? []).map((e) => e.revenue), 1);
   const money = (v: number) => formatCurrency(Math.round(v), currency);
   const roasText = (v: number) => `${v.toLocaleString("es-AR", { maximumFractionDigits: 2 })}x`;
+
+  // Métricas para el insight de IA de la dimensión elegida (ver "entity-performance" en
+  // app/api/reporting/chart-insights/route.ts) — se re-pide cuando cambia el filtro.
+  const insightMetrics = useMemo(() => {
+    if (!entities || entities.length === 0) return null;
+    const fmtRoas = (v: number) => `${v.toLocaleString("es-AR", { maximumFractionDigits: 2 })}x`;
+    const fmtMoney = (v: number) => formatCurrency(Math.round(v), currency);
+    const rows = entities.slice(0, 15).map((e) => ({
+      nombre: e.name,
+      inversion: fmtMoney(e.spend),
+      alcance: e.reach,
+      impresiones: e.impressions,
+      clicks: e.clicks,
+      resultados: e.results,
+      costoPorResultado: e.results > 0 ? fmtMoney(e.spend / e.results) : "s/d",
+      facturacion: fmtMoney(e.revenue),
+      roas: e.spend > 0 ? fmtRoas(e.revenue / e.spend) : "s/d",
+      ticketPromedio: e.purchases > 0 ? fmtMoney(e.revenue / e.purchases) : "s/d",
+    }));
+    return {
+      dimension: DIMENSION_LABEL[dimension].option,
+      moneda: currency,
+      cantidad: entities.length,
+      filas: rows,
+    };
+  }, [entities, dimension, currency]);
 
   return (
     <div className="flex flex-col gap-4 pt-8">
@@ -165,6 +195,18 @@ export function EcommercePerformanceTable({
             })}
           </div>
         </div>
+      )}
+
+      {insightMetrics && (
+        <ChartInsightPanel
+          chart="entity-performance"
+          metrics={insightMetrics}
+          accentColor="hsl(var(--primary))"
+          variant="card"
+          bordered={false}
+          monthIsComplete={monthIsComplete}
+          clientId={clientId}
+        />
       )}
     </div>
   );

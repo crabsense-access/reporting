@@ -42,6 +42,14 @@ import {
 // real del Calendario (ver fetchRealInvestmentCalendarDataCached en metaInvestmentData.ts).
 
 const CHART_INSTRUCTIONS: Record<string, string> = {
+  "entity-performance":
+    'Estás mirando la tabla "Performance por campaña / grupo de anuncios / anuncio" del bloque ' +
+    "Facturación de un cliente ecommerce: alcance, impresiones, clics, resultados, costo por " +
+    "resultado, facturación, ROAS y ticket promedio del mes por cada entidad de la dimensión " +
+    'elegida ("dimension" en los datos — el cliente puede cambiarla, así que el insight debe hablar ' +
+    "de ESA dimensión: campañas, grupos de anuncios o anuncios). Identificá el hallazgo principal " +
+    "(qué entidad genera más facturación, cuál tiene el mejor y el peor ROAS, si hay alguna con mucha " +
+    "inversión y poca facturación) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
   billing:
     'Estás mirando el bloque "Facturación" del calendario de inversión de un cliente ecommerce: ' +
     "facturación (valor de las compras reportadas por Meta Ads), cantidad de compras, ticket " +

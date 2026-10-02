@@ -1201,7 +1201,7 @@ function EcommerceBlock({
           </>
         )}
         {/* Tabla "Performance por ..." — debajo del insight, dentro del mismo bloque. */}
-        <EcommercePerformanceTable clientId={clientId} month={month} currency={currency} />
+        <EcommercePerformanceTable clientId={clientId} month={month} currency={currency} monthIsComplete={monthIsComplete} />
       </CardContent>
     </Card>
   );
