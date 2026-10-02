@@ -238,12 +238,12 @@ export function InvestmentCalendar({
   clientId,
   initialMonth,
   showRecommendations = false,
-  restrictToClientWindow = false,
+  restrictToClientWindow = true,
 }: {
   clientId: string;
   /** Módulo "Recomendaciones" — sólo para admins (a pedido de Martín); la vista del cliente no lo muestra. */
   showRecommendations?: boolean;
-  /** true para los usuarios del cliente: sólo pueden elegir meses desde FIRST_CLIENT_VISIBLE_MONTH (ver lib/reporting/reportWindow.ts); el resto queda grisado. Los admins no tienen límite. */
+  /** Sólo se pueden elegir meses desde FIRST_CLIENT_VISIBLE_MONTH (ver lib/reporting/reportWindow.ts); el resto queda grisado. Default true para todos. */
   restrictToClientWindow?: boolean;
   /** Mes a mostrar al abrir (yyyy-MM) — lo usa el listado "Ver informes mensuales" del Admin. Si no está entre los últimos 12 meses, se ignora. */
   initialMonth?: string;
@@ -652,8 +652,8 @@ export function InvestmentCalendar({
             className="h-9 w-fit rounded-md border border-input bg-background px-2.5 text-lg font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {monthOptions.map((opt) => (
-              // Usuarios del cliente: sólo desde FIRST_CLIENT_VISIBLE_MONTH (agosto 2026); los meses
-              // anteriores se listan igual pero grisados. Admins: todos los meses habilitados.
+              // Sólo desde FIRST_CLIENT_VISIBLE_MONTH (agosto 2026), para todos; los meses
+              // anteriores se listan igual pero grisados.
               <option
                 key={opt.value}
                 value={opt.value}

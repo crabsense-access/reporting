@@ -12,6 +12,7 @@ import { fetchMetaGraphApi } from "@/lib/meta-ads/client";
 import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { formatCurrency } from "@/lib/format";
 import type { MetaAdsConfig } from "@/lib/types";
+import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
 
 // Listado de informes mensuales de un cliente (reemplaza los botones "Informes", "Ver informes" y
 // "Generar informe" del detalle del cliente, a pedido de Martín). Cada mes es el Calendario de
@@ -133,12 +134,9 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-border">
-              {result.months.map((month) => (
-                <li key={month.value}>
-                  <Link
-                    href={`/admin/clients/${client.id}/reporting/calendario?month=${month.value}`}
-                    className="flex items-center justify-between gap-4 rounded-md px-2 py-3 transition-colors hover:bg-secondary/60"
-                  >
+              {result.months.map((month) => {
+                const content = (
+                  <>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">{month.label}</span>
                       {month.isCurrent && <Badge variant="secondary">En curso</Badge>}
@@ -147,9 +145,30 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
                       <span>Inversión {formatCurrency(month.spend, result!.currency)}</span>
                       <ChevronRight className="h-4 w-4" />
                     </div>
-                  </Link>
-                </li>
-              ))}
+                  </>
+                );
+                // Meses anteriores a FIRST_CLIENT_VISIBLE_MONTH (agosto 2026): grisados y sin link.
+                return (
+                  <li key={month.value}>
+                    {isMonthVisibleToClients(month.value) ? (
+                      <Link
+                        href={`/admin/clients/${client.id}/reporting/calendario?month=${month.value}`}
+                        className="flex items-center justify-between gap-4 rounded-md px-2 py-3 transition-colors hover:bg-secondary/60"
+                      >
+                        {content}
+                      </Link>
+                    ) : (
+                      <div
+                        aria-disabled="true"
+                        title="Por el momento sólo están disponibles los meses desde agosto 2026"
+                        className="flex cursor-not-allowed items-center justify-between gap-4 rounded-md px-2 py-3 opacity-40"
+                      >
+                        {content}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </CardContent>
