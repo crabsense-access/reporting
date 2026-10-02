@@ -197,6 +197,9 @@ export interface DailyRealTotals {
   objectiveSpend: number[];
   /** Interacciones (post_engagement) y Clics en el enlace (link_click) de TODAS las filas del día, matcheen o no algún Objetivo — para el bloque "Performance de Resultados" sin ningún tipo seleccionado. */
   interactions: number;
+  /** Compras y su valor (facturación) del día, de TODA la cuenta — para el bloque Ecommerce (ver findPurchaseTotals). Opcional por entradas viejas de cache. */
+  purchases?: number;
+  purchaseValue?: number;
   clicks: number;
   /** Mismo desglose que objectiveLeads/objectiveSpend, pero de Interacciones/Clics — para cuando se selecciona un tipo de Resultado puntual. */
   objectiveInteractions: number[];
@@ -385,6 +388,8 @@ interface MetaCampaignDayRow {
   date_start?: string;
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  /** Valor monetario de cada acción (ej. compras) — para la Facturación del bloque Ecommerce. */
+  action_values?: { action_type: string; value: string }[];
   campaign_id?: string;
   campaign_name?: string;
   adset_name?: string;
@@ -881,6 +886,25 @@ function findActionValue(actions: { action_type: string; value: string }[], acti
   return action ? Number(action.value ?? 0) : 0;
 }
 
+// Meta reporta la misma compra bajo varios action_type (omni_purchase agrupa web + app + tienda;
+// offsite_conversion.fb_pixel_purchase es sólo el píxel; purchase es el genérico). Se toma UNO por
+// fila, en este orden de prioridad, para no contar dos veces la misma compra — mismo número que
+// muestra Ads Manager en "Compras" / "Valor de conversión de compras".
+const PURCHASE_ACTION_TYPES = ["omni_purchase", "offsite_conversion.fb_pixel_purchase", "purchase"];
+
+/** Compras y facturación de UNA fila de insights (ver PURCHASE_ACTION_TYPES). */
+function findPurchaseTotals(
+  actions: { action_type: string; value: string }[],
+  actionValues: { action_type: string; value: string }[]
+): { purchases: number; purchaseValue: number } {
+  for (const actionType of PURCHASE_ACTION_TYPES) {
+    const purchases = findActionValue(actions, actionType);
+    const purchaseValue = findActionValue(actionValues, actionType);
+    if (purchases > 0 || purchaseValue > 0) return { purchases, purchaseValue };
+  }
+  return { purchases: 0, purchaseValue: 0 };
+}
+
 /**
  * Desglose por edad de la retención de video del mes completo [since, until], a nivel CAMPAÑA.
  * A diferencia de fetchAudienceSegments/fetchRegionSegments/fetchHourlyTotals, esto NO se matchea
@@ -1043,7 +1067,7 @@ export async function fetchRealInvestmentCalendarData(
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
           // reach/impressions/clicks sumados a pedido de Martín — ver MetaCampaignDayRow.
-          fields: "spend,actions,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,reach,impressions,clicks",
+          fields: "spend,actions,action_values,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,reach,impressions,clicks",
           limit: "5000",
         },
         metaConfig.system_user_token
@@ -1095,6 +1119,8 @@ export async function fetchRealInvestmentCalendarData(
         objectiveLeads: objectives.map(() => 0),
         objectiveSpend: objectives.map(() => 0),
         interactions: 0,
+        purchases: 0,
+        purchaseValue: 0,
         clicks: 0,
         objectiveInteractions: objectives.map(() => 0),
         objectiveClicks: objectives.map(() => 0),
@@ -1173,6 +1199,10 @@ export async function fetchRealInvestmentCalendarData(
     const clicksValue = findActionValue(actions, "link_click");
     entry.interactions += interactionsValue;
     entry.clicks += clicksValue;
+
+    const purchaseTotals = findPurchaseTotals(actions, row.action_values ?? []);
+    entry.purchases = (entry.purchases ?? 0) + purchaseTotals.purchases;
+    entry.purchaseValue = (entry.purchaseValue ?? 0) + purchaseTotals.purchaseValue;
 
     // Ver findMatchedObjective arriba: exacto primero, "contiene" después, el primero que
     // matchea en orden se queda con la fila entera.
@@ -1825,7 +1855,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v21",
+        query: "investmentCalendar:v22",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1841,7 +1871,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v21",
+        query: "investmentCalendar:v22",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1855,7 +1885,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v21",
+        query: "investmentCalendar:v22",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1867,7 +1897,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v21",
+        query: "investmentCalendar:v22",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },

@@ -63,6 +63,8 @@ export interface MetaAdsObjective {
 
 export interface MetaAdsConfig {
   ad_account_id: string;
+  /** El cliente es un ecommerce: el Calendario de inversión suma el bloque "Ecommerce" (Facturación, Ticket promedio y ROAS, ver EcommerceBlock en InvestmentCalendar.tsx). */
+  is_ecommerce?: boolean;
   /** Objetivos configurados para este cliente en Meta Ads (arranca vacío — se cargan de a uno por vez, ver MetaAdsConfigForm). */
   objectives?: MetaAdsObjective[];
   /**

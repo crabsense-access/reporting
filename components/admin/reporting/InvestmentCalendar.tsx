@@ -86,6 +86,9 @@ export interface DailyRealTotals {
   /** Mismo desglose que objectiveLeads/objectiveSpend, para cuando se selecciona un tipo de Resultado puntual (ver bloque "Performance de Resultados"). */
   objectiveInteractions: number[];
   objectiveClicks: number[];
+  /** Compras y facturación del día (toda la cuenta) — bloque Ecommerce. Opcional por cache vieja. */
+  purchases?: number;
+  purchaseValue?: number;
   /** Alcance/impresiones/clics TOTALES de este día (el campo "clicks" de Meta, distinto del
    *  "clicks" de arriba que son sólo los del enlace/link_click) — no varían por Tipo de Resultado,
    *  sólo por Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
@@ -188,6 +191,8 @@ interface VideoRetentionByAge {
 
 interface InvestmentCalendarResponse {
   currency: string;
+  /** El cliente está marcado como ecommerce en el Admin (Meta Ads → "Es un ecommerce") — muestra el bloque Ecommerce. */
+  isEcommerce?: boolean;
   monthlyBudget: number | null;
   typeLabels: Record<LeadType, string>;
   configuredTypeCount: number;
@@ -766,6 +771,8 @@ export function InvestmentCalendar({
                   excepción: Meta no permite deduplicar el alcance por tipo de conversión sin
                   perder la cuenta real de personas únicas, así que siempre muestra el total de la
                   cuenta, seleccionés lo que seleccionés (ver fetchMonthlyReach). */}
+              {data?.isEcommerce && <EcommerceBlock days={data.days} currency={currency} />}
+
               <div className="flex flex-col gap-3 border-t border-border pt-3">
                 <span className="text-lg font-bold text-foreground">Performance de Resultados</span>
                 <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
@@ -967,18 +974,25 @@ function chunk<T>(items: T[], size: number): T[][] {
  */
 function DailyTypeBarChart({
   days,
-  objectiveIndex,
+  objectiveIndex = 0,
   color,
+  getValue,
+  formatValue = formatNumber,
+  title = "Resultados por día",
 }: {
   days: DailyRealTotals[];
-  objectiveIndex: number;
+  objectiveIndex?: number;
   color: string;
+  /** Valor de cada día (default: resultados del Objetivo objectiveIndex) — el bloque Ecommerce lo usa para facturación/ticket/ROAS. */
+  getValue?: (day: DailyRealTotals) => number;
+  formatValue?: (value: number) => string;
+  title?: string;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   if (days.length === 0) return null;
 
-  const values = days.map((d) => d.objectiveLeads[objectiveIndex] ?? 0);
+  const values = days.map((d) => (getValue ? getValue(d) : (d.objectiveLeads[objectiveIndex] ?? 0)));
   const max = Math.max(...values, 1);
   const hovered = hoverIndex !== null ? days[hoverIndex] : null;
   const hoveredValue = hoverIndex !== null ? (values[hoverIndex] ?? 0) : 0;
@@ -988,7 +1002,7 @@ function DailyTypeBarChart({
 
   return (
     <div className="flex flex-col gap-1.5 border-t border-border pt-3">
-      <span className="text-xs text-muted-foreground">Resultados por día</span>
+      <span className="text-xs text-muted-foreground">{title}</span>
       <div className="relative">
         {hovered && (
           <div
@@ -1000,7 +1014,7 @@ function DailyTypeBarChart({
           >
             <span className="font-semibold text-foreground">{format(parseISO(hovered.date), "d MMM", { locale: es })}</span>
             <span className="text-muted-foreground">·</span>
-            <span className="font-medium text-foreground">{formatNumber(hoveredValue)}</span>
+            <span className="font-medium text-foreground">{formatValue(hoveredValue)}</span>
           </div>
         )}
         <div className="flex h-12 items-end gap-px">
@@ -1027,3 +1041,86 @@ function DailyTypeBarChart({
   );
 }
 
+
+const ECOMMERCE_COLORS = { revenue: "#16a34a", ticket: "#0ea5e9", roas: "#f59e0b" };
+
+/**
+ * Bloque "Ecommerce" (sólo clientes marcados como ecommerce en el Admin): Facturación, Ticket
+ * promedio y ROAS del mes, con su evolución diaria — mismo formato de tarjeta que las scorecards de
+ * "Resultados". Datos de toda la cuenta a partir de las compras que reporta Meta (ver
+ * findPurchaseTotals en lib/reporting/metaInvestmentData.ts):
+ *   - Facturación = valor de conversión de compras.
+ *   - Ticket promedio = facturación / cantidad de compras.
+ *   - ROAS = facturación / inversión total del mes.
+ */
+function EcommerceBlock({ days, currency }: { days: DailyRealTotals[]; currency: string }) {
+  const revenue = days.reduce((sum, d) => sum + (d.purchaseValue ?? 0), 0);
+  const purchases = days.reduce((sum, d) => sum + (d.purchases ?? 0), 0);
+  const spend = days.reduce((sum, d) => sum + d.spend, 0);
+  const ticket = purchases > 0 ? revenue / purchases : null;
+  const roas = spend > 0 ? revenue / spend : null;
+  const formatRoas = (value: number) => `${value.toLocaleString("es-AR", { maximumFractionDigits: 2 })}x`;
+
+  const cards = [
+    {
+      key: "revenue",
+      label: "Facturación",
+      value: formatCurrency(Math.round(revenue), currency),
+      detail: `${formatNumber(purchases)} compras`,
+      color: ECOMMERCE_COLORS.revenue,
+      getValue: (d: DailyRealTotals) => d.purchaseValue ?? 0,
+      formatValue: (v: number) => formatCurrency(Math.round(v), currency),
+      title: "Facturación por día",
+    },
+    {
+      key: "ticket",
+      label: "Ticket promedio",
+      value: ticket !== null ? formatCurrency(Math.round(ticket), currency) : "s/d",
+      detail: "Facturación / compras",
+      color: ECOMMERCE_COLORS.ticket,
+      getValue: (d: DailyRealTotals) => ((d.purchases ?? 0) > 0 ? (d.purchaseValue ?? 0) / (d.purchases ?? 1) : 0),
+      formatValue: (v: number) => formatCurrency(Math.round(v), currency),
+      title: "Ticket promedio por día",
+    },
+    {
+      key: "roas",
+      label: "ROAS",
+      value: roas !== null ? formatRoas(roas) : "s/d",
+      detail: "Facturación / inversión",
+      color: ECOMMERCE_COLORS.roas,
+      getValue: (d: DailyRealTotals) => (d.spend > 0 ? (d.purchaseValue ?? 0) / d.spend : 0),
+      formatValue: formatRoas,
+      title: "ROAS por día",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-10">
+      <span className="text-lg font-bold text-foreground">Ecommerce</span>
+      {purchases === 0 && revenue === 0 ? (
+        <p className="text-xs text-muted-foreground">Meta no reportó compras este mes.</p>
+      ) : (
+        <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+          {cards.map((card) => (
+            <div key={card.key} className="flex flex-col gap-3 rounded-lg border border-border p-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-bold text-muted-foreground">{card.label}</span>
+                <span className="mt-1 text-2xl font-semibold leading-tight" style={{ color: card.color }}>
+                  {card.value}
+                </span>
+                <span className="text-xs text-muted-foreground">{card.detail}</span>
+              </div>
+              <DailyTypeBarChart
+                days={days}
+                color={card.color}
+                getValue={card.getValue}
+                formatValue={card.formatValue}
+                title={card.title}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

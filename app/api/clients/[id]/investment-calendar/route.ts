@@ -59,7 +59,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   try {
     const data = await fetchRealInvestmentCalendarDataCached(metaAdsConfig, clientId, monthStart, lastDataDate);
-    return NextResponse.json(data);
+    // isEcommerce viene de la config del cliente (no de Meta): habilita el bloque Ecommerce del Calendario.
+    return NextResponse.json({ ...data, isEcommerce: metaAdsConfig.is_ecommerce === true });
   } catch (error) {
     if (error instanceof MetaAdsAuthError) {
       return NextResponse.json({ error: error.message }, { status: 401 });

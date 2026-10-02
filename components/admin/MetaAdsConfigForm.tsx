@@ -43,6 +43,7 @@ export function MetaAdsConfigForm({
 }: MetaAdsConfigFormProps) {
   const [enabled, setEnabled] = useState(Boolean(initialConfig?.ad_account_id));
   const [adAccountId, setAdAccountId] = useState(initialConfig?.ad_account_id ?? "");
+  const [isEcommerce, setIsEcommerce] = useState(Boolean(initialConfig?.is_ecommerce));
   // La sección "Objetivos" se sacó del admin (a pedido de Martín), pero el Calendario de inversión
   // sigue armando resultados/leads a partir de estos eventos (ver lib/reporting/metaInvestmentData.ts),
   // así que al guardar se conservan tal cual estaban en vez de borrarlos.
@@ -105,6 +106,7 @@ export function MetaAdsConfigForm({
         ? {
             ad_account_id: normalizedAccountId,
             objectives: cleanObjectives,
+            ...(isEcommerce ? { is_ecommerce: true } : {}),
             ...(hasMonthlyBudgets ? { monthly_budgets: cleanMonthlyBudgets } : {}),
           }
         : null;
@@ -170,6 +172,16 @@ export function MetaAdsConfigForm({
               <p className="text-xs text-muted-foreground">
                 Ingresá el Ad Account ID en formato act_XXXXXXXXXX.
               </p>
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="meta-ads-ecommerce">Es un ecommerce</Label>
+                <p className="text-xs text-muted-foreground">
+                  Suma al informe el bloque Ecommerce con Facturación, Ticket promedio y ROAS (a partir de las compras que reporta Meta).
+                </p>
+              </div>
+              <Switch id="meta-ads-ecommerce" checked={isEcommerce} onCheckedChange={setIsEcommerce} />
             </div>
 
             <div className="flex flex-col gap-2">
