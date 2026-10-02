@@ -1180,15 +1180,18 @@ function EcommerceBlock({
               ))}
             </div>
             {insightMetrics && (
-              <ChartInsightPanel
+              <div className="pt-3">
+                {/* Sin línea divisoria entre las scorecards y el insight (a pedido de Martín). */}
+                <ChartInsightPanel
                 chart="billing"
                 metrics={insightMetrics}
                 accentColor="hsl(var(--primary))"
                 variant="card"
-                topSpacing="lg"
+                bordered={false}
                 monthIsComplete={monthIsComplete}
                 clientId={clientId}
-              />
+                />
+              </div>
             )}
           </>
         )}
