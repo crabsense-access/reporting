@@ -2,13 +2,13 @@
 
 // "Performance por campaña / grupo de anuncios / anuncio" — tabla del bloque Facturación (sólo
 // clientes ecommerce, ver EcommerceBlock en InvestmentCalendar.tsx). Mismo look que "Análisis de
-// campañas": nombre + barra de participación en la inversión a la izquierda, métricas a la
+// campañas": nombre + barra de participación en la facturación a la izquierda, métricas a la
 // derecha. La dimensión se elige con el combo y el título cambia con ella. Datos: ver
 // fetchEntityPerformance en lib/reporting/metaInvestmentData.ts.
 
 import { useEffect, useState } from "react";
 
-import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
+import { formatCurrency, formatNumber } from "@/lib/format";
 
 type Dimension = "campaign" | "adset" | "ad";
 
@@ -32,18 +32,17 @@ const DIMENSION_LABEL: Record<Dimension, { option: string; title: string }> = {
 
 const BAR_COLOR = "#16a34a";
 const COLUMNS = [
-  "Inversión",
-  "% Inv.",
   "Alcance",
   "Impresiones",
   "Clicks",
   "Resultados",
   "Costo por resultado",
-  "Facturación",
+  "Facturación total",
   "ROAS",
   "Ticket promedio",
 ];
-const GRID_COLUMNS = `repeat(${COLUMNS.length}, minmax(76px, auto))`;
+// Columnas de ancho fijo e igual, con título y valores centrados (a pedido de Martín).
+const GRID_COLUMNS = `repeat(${COLUMNS.length}, 108px)`;
 
 export function EcommercePerformanceTable({
   clientId,
@@ -80,8 +79,8 @@ export function EcommercePerformanceTable({
     };
   }, [clientId, month, dimension]);
 
-  const totalSpend = (entities ?? []).reduce((sum, e) => sum + e.spend, 0);
-  const maxSpend = Math.max(...(entities ?? []).map((e) => e.spend), 1);
+  // La barra muestra el peso de cada fila en la facturación total (ya no hay columna de inversión).
+  const maxRevenue = Math.max(...(entities ?? []).map((e) => e.revenue), 1);
   const money = (v: number) => formatCurrency(Math.round(v), currency);
   const roasText = (v: number) => `${v.toLocaleString("es-AR", { maximumFractionDigits: 2 })}x`;
 
@@ -117,11 +116,11 @@ export function EcommercePerformanceTable({
         // Con 10 columnas de métricas la tabla no entra en pantallas angostas: scroll horizontal
         // en vez de apretar los números.
         <div className="overflow-x-auto">
-          <div className="flex min-w-[1100px] flex-col gap-3.5">
+          <div className="flex min-w-[1150px] flex-col gap-3.5">
             <div className="flex items-end gap-4">
               <span className="min-w-[220px] flex-1" />
               <div
-                className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                className="grid shrink-0 items-end gap-x-2 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
                 style={{ gridTemplateColumns: GRID_COLUMNS }}
               >
                 {COLUMNS.map((c) => (
@@ -131,8 +130,7 @@ export function EcommercePerformanceTable({
             </div>
 
             {entities.map((e) => {
-              const widthPct = Math.max(4, Math.round((e.spend / maxSpend) * 100));
-              const share = totalSpend > 0 ? e.spend / totalSpend : 0;
+              const widthPct = e.revenue > 0 ? Math.max(4, Math.round((e.revenue / maxRevenue) * 100)) : 0;
               const costPerResult = e.results > 0 ? e.spend / e.results : null;
               const roas = e.spend > 0 ? e.revenue / e.spend : null;
               const ticket = e.purchases > 0 ? e.revenue / e.purchases : null;
@@ -150,11 +148,9 @@ export function EcommercePerformanceTable({
                     </div>
                   </div>
                   <div
-                    className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums"
+                    className="grid shrink-0 gap-x-2 text-center text-xs tabular-nums"
                     style={{ gridTemplateColumns: GRID_COLUMNS }}
                   >
-                    <span className="whitespace-nowrap text-muted-foreground">{money(e.spend)}</span>
-                    <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(share)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(e.reach)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(e.impressions)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(e.clicks)}</span>
