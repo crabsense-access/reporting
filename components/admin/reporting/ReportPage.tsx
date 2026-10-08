@@ -7,10 +7,10 @@ import { getClientLogoUrl } from "@/lib/reporting/clientLogo";
 import { ReportBody } from "@/components/admin/reporting/ReportBody";
 import { ReportWithSidebar, type ReportPlatform } from "@/components/admin/reporting/ReportSidebar";
 
-// Armado común de las páginas de reporte (Server Component): una página por plataforma (Meta Ads /
-// Google Ads), con el mismo encabezado (logo + título) y el menú lateral, que linkea entre ambas.
-// Lo usan las 4 rutas: admin (/admin/clients/[id]/reporting/{calendario,google-ads}) y vista del
-// cliente (/[clientSlug]/reporting y /[clientSlug]/reporting/google-ads).
+// Armado común de las páginas de reporte (Server Component): una página por hoja (Resumen general /
+// Meta Ads / Google Ads), con el mismo encabezado (logo + título) y el menú lateral, que linkea
+// entre ellas. Rutas: admin (/admin/clients/[id]/reporting/{resumen,calendario,google-ads}) y vista
+// del cliente (/[clientSlug]/reporting = Resumen general, /meta-ads, /google-ads).
 
 export async function ReportPage({
   clientId,
@@ -43,10 +43,9 @@ export async function ReportPage({
     .in("source_type", ["meta_ads", "google_ads"]);
   const platforms = (["meta_ads", "google_ads"] as const).filter((p) => sources?.some((s) => s.source_type === p));
 
-  // Si la plataforma pedida no está configurada pero la otra sí, se va directo a la otra.
-  if (!platforms.includes(platform) && platforms.length > 0) {
-    const other = platforms[0]!;
-    redirect(month ? `${hrefs[other]}?month=${month}` : hrefs[other]);
+  // Si la plataforma pedida no está configurada (pero hay alguna), se va al Resumen general.
+  if (platform !== "summary" && !platforms.includes(platform) && platforms.length > 0) {
+    redirect(month ? `${hrefs.summary}?month=${month}` : hrefs.summary);
   }
 
   const logoUrl = await getClientLogoUrl(clientId);
@@ -77,7 +76,14 @@ export async function ReportPage({
 
   return (
     <ReportWithSidebar platforms={platforms} current={platform} hrefs={hrefs} header={header}>
-      <ReportBody clientId={clientId} platform={platform} initialMonth={month} showRecommendations={showRecommendations} />
+      <ReportBody
+        clientId={clientId}
+        platform={platform}
+        initialMonth={month}
+        showRecommendations={showRecommendations}
+        platforms={platforms}
+        hrefs={hrefs}
+      />
     </ReportWithSidebar>
   );
 }

@@ -6,9 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { ReportPage } from "@/components/admin/reporting/ReportPage";
 
-// Reporte de Google Ads del cliente (vista admin). Cada plataforma tiene su página; el menú lateral
-// linkea entre las dos (ver components/admin/reporting/ReportPage.tsx).
-export default async function ClientGoogleAdsReportPage({
+// Resumen general del informe del cliente (vista admin): primera hoja del menú y destino de "Ver
+// informes mensuales". Consolida Meta Ads y Google Ads (ver SummaryReport.tsx).
+export default async function ClientSummaryReportPage({
   params,
   searchParams,
 }: {
@@ -26,7 +26,7 @@ export default async function ClientGoogleAdsReportPage({
     <ReportPage
       clientId={client.id}
       clientName={client.name}
-      platform="google_ads"
+      platform="summary"
       hrefs={{
         summary: `/admin/clients/${client.id}/reporting/resumen`,
         meta_ads: `/admin/clients/${client.id}/reporting/calendario`,

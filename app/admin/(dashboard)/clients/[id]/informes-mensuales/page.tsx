@@ -152,7 +152,7 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
                   <li key={month.value}>
                     {isMonthVisibleToClients(month.value) ? (
                       <Link
-                        href={`/admin/clients/${client.id}/reporting/calendario?month=${month.value}`}
+                        href={`/admin/clients/${client.id}/reporting/resumen?month=${month.value}`}
                         className="flex items-center justify-between gap-4 rounded-md px-2 py-3 transition-colors hover:bg-secondary/60"
                       >
                         {content}

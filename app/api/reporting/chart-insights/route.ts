@@ -56,6 +56,16 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de ESA dimensión: campañas, grupos de anuncios o anuncios). Identificá el hallazgo principal " +
     "(qué entidad genera más facturación, cuál tiene el mejor y el peor ROAS, si hay alguna con mucha " +
     "inversión y poca facturación) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
+  "general-summary":
+    'Estás mirando el "Resumen general" del informe mensual de un cliente, que consolida sus ' +
+    "plataformas de anuncios (Meta Ads y/o Google Ads): inversión total y, por plataforma, inversión, " +
+    "% de la inversión total, resultados (en Meta, la suma de sus tipos de Resultado con su desglose; " +
+    "en Google, las compras), costo por resultado, facturación y ROAS. Ojo: los resultados de cada " +
+    "plataforma no siempre son el mismo tipo de conversión, así que compará eficiencia con cuidado " +
+    "(y decilo si no son comparables). Si las plataformas usan monedas distintas, no sumes ni " +
+    "compares montos directamente. Identificá el hallazgo principal del mes (qué plataforma aporta " +
+    "más resultados o facturación, cuál es más eficiente, cómo se reparte la inversión) y redactalo " +
+    "para que un cliente no técnico lo entienda de un vistazo.",
   "google-ads-results":
     'Estás mirando el bloque "Resultados" del reporte de Google Ads de un cliente ecommerce: ' +
     "compras del mes y su evolución diaria, y la \"Performance de Resultados\" (tasa de conversión = " +

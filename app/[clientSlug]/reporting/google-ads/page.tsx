@@ -19,7 +19,11 @@ export default async function ClientGoogleAdsReportPage({
       clientId={client.id}
       clientName={client.name}
       platform="google_ads"
-      hrefs={{ meta_ads: `/${clientSlug}/reporting`, google_ads: `/${clientSlug}/reporting/google-ads` }}
+      hrefs={{
+        summary: `/${clientSlug}/reporting`,
+        meta_ads: `/${clientSlug}/reporting/meta-ads`,
+        google_ads: `/${clientSlug}/reporting/google-ads`,
+      }}
       month={month}
       showRecommendations={isAdminViewing}
       title="Google Ads"

@@ -12,8 +12,9 @@ import { es } from "date-fns/locale";
 
 import { InvestmentCalendar } from "@/components/admin/reporting/InvestmentCalendar";
 import { GoogleAdsReport } from "@/components/admin/reporting/GoogleAdsReport";
+import { SummaryReport } from "@/components/admin/reporting/SummaryReport";
 import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
-import type { ReportPlatform } from "@/components/admin/reporting/ReportSidebar";
+import type { AdPlatform, ReportPlatform } from "@/components/admin/reporting/ReportSidebar";
 
 function syncMonthToUrl(month: string) {
   const url = new URL(window.location.href);
@@ -27,11 +28,16 @@ export function ReportBody({
   platform,
   initialMonth,
   showRecommendations,
+  platforms,
+  hrefs,
 }: {
   clientId: string;
   platform: ReportPlatform;
   initialMonth?: string;
   showRecommendations: boolean;
+  /** Plataformas configuradas (para el Resumen general). */
+  platforms: AdPlatform[];
+  hrefs: Record<ReportPlatform, string>;
 }) {
   const monthOptions = useMemo(
     () =>
@@ -64,23 +70,41 @@ export function ReportBody({
     );
   }
 
+  const monthSelect = (label: string) => (
+    <div className="flex flex-col gap-1">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <select
+        aria-label="Mes"
+        value={month}
+        onChange={(e) => handleMonthChange(e.target.value)}
+        className="h-10 w-fit rounded-md border border-input bg-background px-3 text-lg font-semibold"
+      >
+        {monthOptions.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
+  if (platform === "summary") {
+    return (
+      <div data-report-platform="summary" className="flex min-w-0 flex-col gap-4">
+        {monthSelect("Resumen general")}
+        <SummaryReport
+          clientId={clientId}
+          month={month}
+          platforms={platforms}
+          hrefs={{ meta_ads: hrefs.meta_ads, google_ads: hrefs.google_ads }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div data-report-platform="google_ads" className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm text-muted-foreground">Reporte de Google Ads</span>
-        <select
-          aria-label="Mes"
-          value={month}
-          onChange={(e) => handleMonthChange(e.target.value)}
-          className="h-10 w-fit rounded-md border border-input bg-background px-3 text-lg font-semibold"
-        >
-          {monthOptions.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {monthSelect("Reporte de Google Ads")}
       <GoogleAdsReport clientId={clientId} month={month} />
     </div>
   );

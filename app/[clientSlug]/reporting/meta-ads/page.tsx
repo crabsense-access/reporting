@@ -1,10 +1,10 @@
 import { resolveClientAccess } from "@/lib/auth/resolveClientAccess";
 import { ReportPage } from "@/components/admin/reporting/ReportPage";
 
-// Resumen general del informe para los usuarios del cliente (client_users): portada del informe, a
-// donde los manda /auth/callback después del login (ver lib/auth/roles.ts). Consolida Meta Ads y
-// Google Ads (ver SummaryReport.tsx); desde el menú se pasa al reporte de cada plataforma.
-export default async function ClientSummaryReportPage({
+// Reporte de Meta Ads (Calendario de inversión) para los usuarios del cliente (client_users). Antes vivía en
+// /[clientSlug]/reporting, que ahora es el Resumen general (la portada a la que manda el login). Mismo contenido que la
+// vista admin (app/admin/(dashboard)/clients/[id]/reporting/...), sin los links de administración.
+export default async function ClientReportPage({
   params,
   searchParams,
 }: {
@@ -19,7 +19,7 @@ export default async function ClientSummaryReportPage({
     <ReportPage
       clientId={client.id}
       clientName={client.name}
-      platform="summary"
+      platform="meta_ads"
       hrefs={{
         summary: `/${clientSlug}/reporting`,
         meta_ads: `/${clientSlug}/reporting/meta-ads`,
@@ -27,7 +27,7 @@ export default async function ClientSummaryReportPage({
       }}
       month={month}
       showRecommendations={isAdminViewing}
-      title="Resumen general"
+      title="Calendario de inversión"
       emptyState={
         <p className="text-sm text-muted-foreground">
           Todavía no hay datos disponibles para este reporte. Tu agencia te va a avisar cuando esté listo.

@@ -28,6 +28,7 @@ export default async function ClientInvestmentCalendarPage({
       clientName={client.name}
       platform="meta_ads"
       hrefs={{
+        summary: `/admin/clients/${client.id}/reporting/resumen`,
         meta_ads: `/admin/clients/${client.id}/reporting/calendario`,
         google_ads: `/admin/clients/${client.id}/reporting/google-ads`,
       }}

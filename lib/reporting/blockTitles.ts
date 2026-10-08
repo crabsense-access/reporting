@@ -30,6 +30,8 @@ export const REPORT_BLOCK_TITLES = {
   horario: { title: "Resultados por Horario", subtitle: "En qué momento del día se consiguen los resultados" },
   diaSemana: { title: "Resultados por día de la semana", subtitle: "Qué día de la semana rinde mejor" },
   recomendaciones: { title: "Recomendaciones" },
+  // ─── Resumen general ───
+  resumenComparativa: { title: "Comparativa por plataforma", subtitle: "Meta Ads y Google Ads, lado a lado" },
   // ─── Google Ads ───
   googleAdsResultados: { title: "Resultados" },
   /** Resumen ejecutivo (insight de IA) del reporte de Google Ads. */

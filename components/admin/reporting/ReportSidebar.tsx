@@ -14,10 +14,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SiMeta } from "react-icons/si";
+import { LayoutDashboard } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type ReportPlatform = "meta_ads" | "google_ads";
+/** "summary" = Resumen general (consolida las plataformas; siempre disponible si hay al menos una). */
+export type ReportPlatform = "summary" | "meta_ads" | "google_ads";
+/** Plataformas de anuncios reales (las que se configuran en el Admin). */
+export type AdPlatform = Exclude<ReportPlatform, "summary">;
 
 interface SectionLink {
   id: string;
@@ -25,6 +29,8 @@ interface SectionLink {
 }
 
 const PLATFORMS: { key: ReportPlatform; label: string; icon: ReactNode }[] = [
+  // Primera del menú y pantalla de inicio del informe (a pedido de Martín).
+  { key: "summary", label: "Resumen general", icon: <LayoutDashboard className="h-5 w-5 text-primary" /> },
   { key: "meta_ads", label: "Meta Ads", icon: <SiMeta color="#0467DF" className="h-6 w-6" /> },
   // Logo original a color (el mismo PNG que usa el Admin, ver SourceIcon) en vez del ícono de una
   // sola tinta de react-icons; un poco más chico que h-6 porque el logo llena todo el cuadrado y el
@@ -110,14 +116,14 @@ export function ReportSidebar({
   hrefs,
 }: {
   /** Plataformas con reporte para este cliente; el resto se muestra como "Próximamente". */
-  platforms: ReportPlatform[];
+  platforms: AdPlatform[];
   /** Plataforma de la página que se está viendo. */
   current: ReportPlatform;
   /** URL de la página de cada plataforma. */
   hrefs: Record<ReportPlatform, string>;
 }) {
   const router = useRouter();
-  const [sections, setSections] = useState<Record<ReportPlatform, SectionLink[]>>({ meta_ads: [], google_ads: [] });
+  const [sections, setSections] = useState<Record<ReportPlatform, SectionLink[]>>({ summary: [], meta_ads: [], google_ads: [] });
   const [activeId, setActiveId] = useState<string | null>(null);
   useScrollbarWidthVar();
 
@@ -125,7 +131,7 @@ export function ReportSidebar({
   // el menú se recalcula cada vez que cambia el DOM del reporte.
   useEffect(() => {
     const refresh = () => {
-      const next = { meta_ads: readSections("meta_ads"), google_ads: readSections("google_ads") };
+      const next = { summary: readSections("summary"), meta_ads: readSections("meta_ads"), google_ads: readSections("google_ads") };
       setSections((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     };
     refresh();
@@ -138,7 +144,7 @@ export function ReportSidebar({
 
   // Resalta el bloque que se está mirando: el último título que ya pasó el tercio superior de la pantalla.
   useEffect(() => {
-    const all = [...sections.meta_ads, ...sections.google_ads];
+    const all = [...sections.summary, ...sections.meta_ads, ...sections.google_ads];
     if (all.length === 0) return;
     const onScroll = () => {
       const line = window.innerHeight / 3;
@@ -167,7 +173,7 @@ export function ReportSidebar({
   return (
     <nav className="flex flex-col gap-7 text-sm" aria-label="Secciones del reporte">
       {PLATFORMS.map((platform) => {
-        const enabled = platforms.includes(platform.key);
+        const enabled = platform.key === "summary" ? platforms.length > 0 : platforms.includes(platform.key);
         const items = sections[platform.key];
         return (
           <div key={platform.key} className="flex flex-col gap-2.5">
@@ -237,7 +243,7 @@ export function ReportWithSidebar({
   header,
   children,
 }: {
-  platforms: ReportPlatform[];
+  platforms: AdPlatform[];
   current: ReportPlatform;
   hrefs: Record<ReportPlatform, string>;
   header?: ReactNode;
