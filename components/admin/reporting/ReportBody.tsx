@@ -105,7 +105,7 @@ export function ReportBody({
   return (
     <div data-report-platform="google_ads" className="flex min-w-0 flex-col gap-4">
       {monthSelect("Reporte de Google Ads")}
-      <GoogleAdsReport clientId={clientId} month={month} />
+      <GoogleAdsReport clientId={clientId} month={month} showRecommendations={showRecommendations} />
     </div>
   );
 }

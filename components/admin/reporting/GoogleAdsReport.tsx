@@ -21,6 +21,7 @@ import {
   GoogleAdsCampaignAnalysisBlock,
   GoogleAdsHourlyBlock,
   GoogleAdsPlacementBlock,
+  GoogleAdsRecommendationsBlock,
   GoogleAdsRegionBlock,
   GoogleAdsResultsBlock,
   GoogleAdsResultsByCampaignBlock,
@@ -28,7 +29,16 @@ import {
   type GoogleAdsSummaryResponse,
 } from "@/components/admin/reporting/GoogleAdsBlocks";
 
-export function GoogleAdsReport({ clientId, month }: { clientId: string; month: string }) {
+export function GoogleAdsReport({
+  clientId,
+  month,
+  showRecommendations = false,
+}: {
+  clientId: string;
+  month: string;
+  /** Recomendaciones sólo para admins, igual que en el reporte de Meta Ads. */
+  showRecommendations?: boolean;
+}) {
   const [summary, setSummary] = useState<GoogleAdsSummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +108,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsRegionBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Resultados por Horario" que Meta Ads. */}
       <GoogleAdsHourlyBlock summary={s} clientId={clientId} />
+      {/* Recomendaciones: cierre del reporte, sólo admins (mismo criterio que Meta Ads). */}
+      {showRecommendations && <GoogleAdsRecommendationsBlock summary={s} clientId={clientId} />}
     </>
   );
 }

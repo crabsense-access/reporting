@@ -248,6 +248,17 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "provincia o segmento de audiencia), recortar lo menos eficiente, o ajustar la duración/gancho " +
     "de los videos si la retención es baja en algún rango etario. Redactalo para que un cliente no " +
     "técnico lo entienda de un vistazo.",
+  "google-ads-recommendations":
+    "Estás mirando el cierre del reporte de Google Ads de un cliente ecommerce: un resumen YA " +
+    'CALCULADO de TODAS las secciones reales del mes (ver las claves "resumenGeneral", "campanias", ' +
+    '"redes", "provincias", "edad", "genero", "horario" y "diaDeLaSemana" de los datos; cualquiera puede ' +
+    "faltar si esa sección no tuvo actividad). El resultado son las COMPRAS y su costo por compra, " +
+    "más la facturación y el ROAS. Elegí entre 5 y 8 acciones concretas de alto impacto para mejorar " +
+    "las compras, la facturación y el ROAS del próximo período, priorizando lo que tenga mayor " +
+    "potencial de impacto y menor riesgo/esfuerzo — por ejemplo reasignar presupuesto hacia las " +
+    "campañas, redes, provincias, edades u horarios más eficientes, recortar o revisar lo que gasta " +
+    "sin vender, o ajustar pujas/horarios. Hablá de compras y costo por compra (no de leads ni CPL). " +
+    "Redactalo para que un cliente no técnico lo entienda de un vistazo.",
 };
 
 // Charts cuya respuesta es un hallazgo por cada tipo/segmento (ver generateChartInsightsByType),
@@ -259,7 +270,7 @@ const BY_TYPE_CHARTS = new Set(["leads-by-type", "google-ads-results-by-campaign
 const CAMPAIGN_HIGHLIGHT_CHARTS = new Set(["campaign-highlights", "google-ads-campaign-highlights"]);
 
 // Charts cuya respuesta es una lista de acciones con rol fijo {accion, detalle, plazo} (ver generateRecommendations), en vez de un hallazgo de texto libre.
-const RECOMMENDATION_CHARTS = new Set(["recommendations"]);
+const RECOMMENDATION_CHARTS = new Set(["recommendations", "google-ads-recommendations"]);
 
 // Contenido cacheado a mano (ver lib/reports/chartInsightFallbacks.ts) que se devuelve mientras
 // ANTHROPIC_PAUSED=true, en vez de pedirle un resumen nuevo a Claude. "audience" y "regions" son
@@ -295,6 +306,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     case "video-retention":
       return VIDEO_RETENTION_FALLBACK;
     case "recommendations":
+    case "google-ads-recommendations":
       return { items: RECOMMENDATIONS_FALLBACK };
     case "audience": {
       const tipoCampania =

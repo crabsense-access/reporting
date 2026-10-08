@@ -41,7 +41,10 @@ export function RecommendationsPanel({
   metrics,
   monthIsComplete,
   clientId,
+  chart = "recommendations",
 }: {
+  /** Clave del prompt (ver app/api/reporting/chart-insights/route.ts) — "google-ads-recommendations" en Google Ads. */
+  chart?: string;
   /** Resumen ya calculado de TODAS las secciones reales del mes — ver InvestmentCalendar.tsx (recommendationsMetrics). Si es null (todavía no hay datos), el panel no se renderiza. */
   metrics: unknown;
   /** true cuando el mes que están mostrando estas métricas ya terminó — sólo entonces la ruta cachea la respuesta de Claude (ver app/api/reporting/chart-insights/route.ts). */
@@ -60,7 +63,7 @@ export function RecommendationsPanel({
     fetch("/api/reporting/chart-insights", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chart: "recommendations", metrics: JSON.parse(metricsKey), monthIsComplete, clientId }),
+      body: JSON.stringify({ chart, metrics: JSON.parse(metricsKey), monthIsComplete, clientId }),
     })
       .then(async (response) => {
         if (!response.ok) {
@@ -81,7 +84,7 @@ export function RecommendationsPanel({
     return () => {
       cancelled = true;
     };
-  }, [metricsKey, monthIsComplete, clientId]);
+  }, [chart, metricsKey, monthIsComplete, clientId]);
 
   return (
     <Card className="border-2" style={{ borderColor: ACCENT }}>

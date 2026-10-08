@@ -20,6 +20,7 @@ import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHig
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
 import { HourlyPerformanceChart } from "@/components/admin/reporting/HourlyPerformanceChart";
+import { RecommendationsPanel } from "@/components/admin/reporting/RecommendationsPanel";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
@@ -1118,6 +1119,152 @@ function DemoStat({ value, label }: { value: string; label: string }) {
       <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{value}</span>
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
     </div>
+  );
+}
+
+// ─────────────────────────────── Recomendaciones ───────────────────────────────
+
+/**
+ * Mismo bloque "Recomendaciones" que el reporte de Meta Ads (RecommendationsPanel): entre 5 y 8
+ * acciones de alto impacto, generadas por la IA a partir de un resumen YA CALCULADO de todas las
+ * secciones del reporte de Google Ads (cuenta, campañas, redes, provincias, edad, género, horario y
+ * día de la semana), sin filtros (toda la cuenta).
+ */
+export function GoogleAdsRecommendationsBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  const metrics = useMemo(() => {
+    if (!summary || (summary.spend === 0 && summary.purchases === 0)) return null;
+    const c = summary.currency;
+    const money = (v: number) => formatCurrency(Math.round(v), c);
+    const cpaOf = (spend: number, purchases: number) => (purchases > 0 ? formatCurrency(spend / purchases, c, 2) : "s/d");
+    const { breakdown } = summary;
+
+    // Agrupa filas por una clave y devuelve totales ordenables.
+    type T = { name: string; spend: number; purchases: number };
+    const group = <R,>(rows: R[], key: (r: R) => string | null, spend: (r: R) => number, purchases: (r: R) => number): T[] => {
+      const by = new Map<string, T>();
+      for (const r of rows) {
+        const k = key(r);
+        if (k === null) continue;
+        const t = by.get(k) ?? { name: k, spend: 0, purchases: 0 };
+        t.spend += spend(r);
+        t.purchases += purchases(r);
+        by.set(k, t);
+      }
+      return [...by.values()].filter((t) => t.spend > 0 || t.purchases > 0);
+    };
+    // Mayor inversión + más / menos eficiente (por costo por compra) de una lista.
+    const extremes = (items: T[]) => {
+      if (items.length === 0) return null;
+      const withCpa = items.filter((t) => t.purchases > 0).map((t) => ({ ...t, cpa: t.spend / t.purchases }));
+      const top = [...items].sort((a, b) => b.spend - a.spend)[0]!;
+      const best = withCpa.length > 0 ? [...withCpa].sort((a, b) => a.cpa - b.cpa)[0]! : null;
+      const worst = withCpa.length > 1 ? [...withCpa].sort((a, b) => b.cpa - a.cpa)[0]! : null;
+      const sinCompras = items.filter((t) => t.purchases === 0 && t.spend > 0).sort((a, b) => b.spend - a.spend);
+      return {
+        mayorInversion: { nombre: top.name, inversion: money(top.spend) },
+        masEficiente: best ? { nombre: best.name, costoPorCompra: formatCurrency(best.cpa, c, 2) } : null,
+        menosEficiente: worst && worst.name !== best?.name ? { nombre: worst.name, costoPorCompra: formatCurrency(worst.cpa, c, 2) } : null,
+        conInversionYSinCompras: sinCompras.slice(0, 3).map((t) => ({ nombre: t.name, inversion: money(t.spend) })),
+      };
+    };
+
+    const campaignName = new Map(breakdown.campaigns.map((x) => [x.id, x.name]));
+    const campaigns = group(
+      breakdown.rows.filter((r) => r.level === "campaign"),
+      (r) => campaignName.get(r.id) ?? null,
+      (r) => r.spend,
+      (r) => r.purchases
+    );
+    const revenueByCampaign = new Map<string, number>();
+    for (const r of breakdown.rows) {
+      if (r.level === "campaign") {
+        const name = campaignName.get(r.id);
+        if (name) revenueByCampaign.set(name, (revenueByCampaign.get(name) ?? 0) + r.revenue);
+      }
+    }
+    const networks = group(
+      (breakdown.networks ?? []).filter((n) => n.level === "campaign"),
+      (n) => n.network,
+      (n) => n.spend,
+      (n) => n.purchases
+    );
+    const regions = group(
+      (breakdown.regions ?? []).filter((r) => r.level === "campaign"),
+      (r) => r.region,
+      (r) => r.spend,
+      (r) => r.purchases
+    );
+    const demo = breakdown.demographics ?? [];
+    const ages = group(demo.filter((d) => d.dimension === "edad"), (d) => d.segment, (d) => d.spend, (d) => d.purchases);
+    const genders = group(demo.filter((d) => d.dimension === "genero"), (d) => d.segment, (d) => d.spend, (d) => d.purchases);
+
+    // Horario: mismas 3 franjas que HourlyPerformanceChart.tsx.
+    const BANDS = [
+      { label: "09:00 a 20:00", start: 9, end: 20 },
+      { label: "21:00 a 23:00", start: 21, end: 23 },
+      { label: "00:00 a 08:00", start: 0, end: 8 },
+    ];
+    const hours = (breakdown.hours ?? []).filter((h) => h.level === "campaign");
+    const bands = BANDS.map((b) => {
+      const rows = hours.filter((h) => h.hour >= b.start && h.hour <= b.end);
+      return { name: b.label, spend: rows.reduce((s, h) => s + h.spend, 0), purchases: rows.reduce((s, h) => s + h.purchases, 0) };
+    }).filter((t) => t.spend > 0 || t.purchases > 0);
+
+    // Día de la semana: hábiles vs. fin de semana (misma forma de parsear que el reporte de Meta).
+    const week = { habil: { spend: 0, purchases: 0 }, finde: { spend: 0, purchases: 0 } };
+    for (const d of summary.daily) {
+      const [y, m, day] = d.date.split("-").map(Number);
+      if (!y || !m || !day) continue;
+      const wd = new Date(y, m - 1, day).getDay();
+      const bucket = wd === 0 || wd === 6 ? week.finde : week.habil;
+      bucket.spend += d.spend;
+      bucket.purchases += d.purchases;
+    }
+
+    return {
+      resumenGeneral: {
+        inversionTotal: money(summary.spend),
+        compras: round2(summary.purchases),
+        costoPorCompra: cpaOf(summary.spend, summary.purchases),
+        facturacion: money(summary.revenue),
+        roas: fmtRoas(ratio(summary.revenue, summary.spend)),
+        tasaConversion: fmtPct(ratio(summary.purchases, summary.clicks)),
+        impresiones: summary.impressions,
+        clicks: summary.clicks,
+      },
+      campanias: {
+        ...extremes(campaigns),
+        detalle: [...campaigns]
+          .sort((a, b) => b.spend - a.spend)
+          .slice(0, 10)
+          .map((t) => ({
+            nombre: t.name,
+            inversion: money(t.spend),
+            compras: round2(t.purchases),
+            costoPorCompra: cpaOf(t.spend, t.purchases),
+            roas: fmtRoas(ratio(revenueByCampaign.get(t.name) ?? 0, t.spend)),
+          })),
+      },
+      redes: extremes(networks),
+      provincias: extremes(regions),
+      edad: extremes(ages),
+      genero: extremes(genders),
+      horario: extremes(bands),
+      diaDeLaSemana: {
+        habiles: { inversion: money(week.habil.spend), costoPorCompra: cpaOf(week.habil.spend, week.habil.purchases) },
+        finDeSemana: { inversion: money(week.finde.spend), costoPorCompra: cpaOf(week.finde.spend, week.finde.purchases) },
+      },
+    };
+  }, [summary]);
+
+  if (!summary || !metrics) return null;
+  return (
+    <RecommendationsPanel
+      chart="google-ads-recommendations"
+      metrics={metrics}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+    />
   );
 }
 
