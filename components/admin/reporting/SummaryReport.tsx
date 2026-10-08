@@ -21,13 +21,12 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
-import { SummaryConsolidatedBlocks, type MetaSegmentsData } from "@/components/admin/reporting/SummaryBlocks";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type { GoogleAdsMonthlySummary } from "@/lib/google-ads/monthlySummary";
 
 type PlatformKey = "meta_ads" | "google_ads";
 
-interface MetaResponse extends MetaSegmentsData {
+interface MetaResponse {
   currency: string;
   objectiveLabels: string[];
   days: { date: string; spend: number; objectiveLeads: number[]; purchases?: number; purchaseValue?: number }[];
@@ -83,10 +82,7 @@ export function SummaryReport({
   month,
   platforms,
   hrefs,
-  showRecommendations = false,
 }: {
-  /** Recomendaciones sólo para admins, igual que en los reportes de cada plataforma. */
-  showRecommendations?: boolean;
   clientId: string;
   /** yyyy-MM */
   month: string;
@@ -245,27 +241,6 @@ export function SummaryReport({
           )}
         </CardContent>
       </Card>
-
-      {/* 3. Bloques consolidados (Meta + Google sumados): ubicaciones, audiencia, provincias,
-          horario y recomendaciones — ver SummaryBlocks.tsx. Sólo si las dos plataformas usan la
-          misma moneda (si no, sumar montos no tiene sentido). */}
-      {!stillLoading && loaded.length > 0 && sameCurrency && (
-        <SummaryConsolidatedBlocks
-          meta={meta?.status === "ok" ? meta.data : null}
-          google={google?.status === "ok" ? google.data.breakdown : null}
-          currency={currency}
-          isCurrentMonth={isCurrentMonth}
-          clientId={clientId}
-          showRecommendations={showRecommendations}
-          platformSummaries={loaded.map((t) => ({
-            plataforma: t.label,
-            inversion: t.spend,
-            resultados: t.results,
-            tipoDeResultado: t.resultsLabel,
-            facturacion: t.revenue,
-          }))}
-        />
-      )}
     </>
   );
 }

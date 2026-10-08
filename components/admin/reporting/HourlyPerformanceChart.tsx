@@ -153,7 +153,6 @@ export function HourlyPerformanceChart({
   resultsLabel = "Resultados",
   costLabel = "Costo por Resultado",
   insightChart = "hourly-performance",
-  hideAdFilters = false,
 }: {
   /** Resuelve una hora para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
    *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd). */
@@ -172,8 +171,6 @@ export function HourlyPerformanceChart({
   costLabel?: string;
   /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
   insightChart?: string;
-  /** Oculta los combos de Campaña / Grupo / Anuncio (ej. en el Resumen general, que mezcla plataformas). */
-  hideAdFilters?: boolean;
   /** Un elemento por hora (0-23), sumando el mes completo — ver lib/reporting/metaInvestmentData.ts. */
   hourlyTotals: HourlyTotals[];
   currency: string;
@@ -388,8 +385,6 @@ export function HourlyPerformanceChart({
             </select>
             )}
 
-            {!hideAdFilters && (
-            <>
             <select
               aria-label="Campaña"
               value={campaignId ?? "all"}
@@ -439,8 +434,6 @@ export function HourlyPerformanceChart({
                 </option>
               ))}
             </select>
-            </>
-            )}
           </div>
         </div>
 

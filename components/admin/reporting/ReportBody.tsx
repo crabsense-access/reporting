@@ -97,7 +97,6 @@ export function ReportBody({
           month={month}
           platforms={platforms}
           hrefs={{ meta_ads: hrefs.meta_ads, google_ads: hrefs.google_ads }}
-          showRecommendations={showRecommendations}
         />
       </div>
     );
