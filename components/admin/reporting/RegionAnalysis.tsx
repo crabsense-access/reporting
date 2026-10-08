@@ -141,6 +141,7 @@ export function RegionAnalysis({
   avgCostLabel = "CPL promedio",
   emptyText = "Todavía no hay resultados este mes.",
   insightChart = "regions",
+  hideAdFilters = false,
 }: {
   /** Resuelve una región para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
    *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd). */
@@ -159,6 +160,8 @@ export function RegionAnalysis({
   emptyText?: string;
   /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
   insightChart?: string;
+  /** Oculta los combos de Campaña / Grupo / Anuncio (ej. en el Resumen general, que mezcla plataformas). */
+  hideAdFilters?: boolean;
   /** Un elemento por provincia/región con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: RegionSegmentTotals[];
   /**
@@ -325,6 +328,8 @@ export function RegionAnalysis({
           </select>
           )}
 
+          {!hideAdFilters && (
+          <>
           <select
             aria-label="Campaña"
             value={campaignId ?? "all"}
@@ -374,6 +379,8 @@ export function RegionAnalysis({
               </option>
             ))}
           </select>
+          </>
+          )}
         </div>
       </CardHeader>
 

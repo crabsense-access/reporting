@@ -99,6 +99,7 @@ export function PlacementAnalysis({
   rankingLabel = "ubicación",
   emptyText = "Todavía no hay leads este período.",
   insightChart = "placements",
+  hideAdFilters = false,
 }: {
   /** Resuelve una ubicación para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
    *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd, resolveAdFilteredTotals). */
@@ -116,6 +117,8 @@ export function PlacementAnalysis({
   emptyText?: string;
   /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
   insightChart?: string;
+  /** Oculta los combos de Campaña / Grupo / Anuncio (ej. en el Resumen general, que mezcla plataformas). */
+  hideAdFilters?: boolean;
   /** Un elemento por ubicación de publicación con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: PlacementSegmentTotals[];
   /**
@@ -262,6 +265,8 @@ export function PlacementAnalysis({
           </select>
           )}
 
+          {!hideAdFilters && (
+          <>
           <select
             aria-label="Campaña"
             value={campaignId ?? "all"}
@@ -311,6 +316,8 @@ export function PlacementAnalysis({
               </option>
             ))}
           </select>
+          </>
+          )}
         </div>
       </CardHeader>
 

@@ -137,6 +137,60 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
     'identificó cuál es la campaña "mejor" (mejor CPL) y cuál la "peor" (peor CPL) del mes — ' +
     "redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo.",
+  "general-placements":
+    'Estás mirando "Ubicación de los anuncios" del Resumen general de un cliente, que suma Meta Ads y ' +
+    "Google Ads: inversión y resultados por ubicación de Meta (Feed, Stories, Reels…, con prefijo " +
+    "\"Meta ·\") y por red de Google (Búsqueda, Display, YouTube…, con prefijo \"Google ·\"). " +
+    "En los datos, \"resultados\" / \"leads\" / \"contactos\" son la SUMA de los resultados de Meta Ads " +
+    "(leads, contactos u otros tipos de Resultado) y de las compras de Google Ads, y \"cpl\" / " +
+    "\"costoPorContacto\" / \"costoPorResultado\" es el costo por resultado de esa suma; hablá de " +
+    "\"resultados\" y \"costo por resultado\" (no de leads ni CPL) y, si hace falta, aclarás que mezcla " +
+    "tipos de conversión distintos. Identificá el hallazgo principal (dónde se concentra la inversión, qué " +
+    "ubicaciones o redes son más y menos eficientes, comparando plataformas si aporta) y redactalo " +
+    "para que un cliente no técnico lo entienda de un vistazo.",
+  "general-audience":
+    'Estás mirando "Quién responde a los anuncios" del Resumen general de un cliente, que suma Meta ' +
+    "Ads y Google Ads: resultados, inversión y costo por resultado por rango etario (\"porEdad\") y por " +
+    "género (\"porGenero\"), por separado (no hables de combinaciones edad × género). Google no " +
+    "incluye Performance Max. " +
+    "En los datos, \"resultados\" / \"leads\" / \"contactos\" son la SUMA de los resultados de Meta Ads " +
+    "(leads, contactos u otros tipos de Resultado) y de las compras de Google Ads, y \"cpl\" / " +
+    "\"costoPorContacto\" / \"costoPorResultado\" es el costo por resultado de esa suma; hablá de " +
+    "\"resultados\" y \"costo por resultado\" (no de leads ni CPL) y, si hace falta, aclarás que mezcla " +
+    "tipos de conversión distintos. Identificá el hallazgo principal (qué edades y qué género concentran los " +
+    "resultados, cuáles son más y menos eficientes) y redactalo para que un cliente no técnico lo " +
+    "entienda de un vistazo.",
+  "general-regions":
+    'Estás mirando "Ubicación geográfica" del Resumen general de un cliente, que suma Meta Ads y ' +
+    "Google Ads por provincia/región (el alcance no se informa, no lo menciones). " +
+    "En los datos, \"resultados\" / \"leads\" / \"contactos\" son la SUMA de los resultados de Meta Ads " +
+    "(leads, contactos u otros tipos de Resultado) y de las compras de Google Ads, y \"cpl\" / " +
+    "\"costoPorContacto\" / \"costoPorResultado\" es el costo por resultado de esa suma; hablá de " +
+    "\"resultados\" y \"costo por resultado\" (no de leads ni CPL) y, si hace falta, aclarás que mezcla " +
+    "tipos de conversión distintos. Identificá el hallazgo principal (qué provincias concentran la inversión y " +
+    "los resultados, cuáles son más y menos eficientes) y redactalo para que un cliente no técnico " +
+    "lo entienda de un vistazo.",
+  "general-hourly":
+    'Estás mirando "Resultados por Horario" del Resumen general de un cliente, que suma Meta Ads y ' +
+    "Google Ads por hora del día (el alcance no se informa, no lo menciones), más un resumen por " +
+    "franja horaria. " +
+    "En los datos, \"resultados\" / \"leads\" / \"contactos\" son la SUMA de los resultados de Meta Ads " +
+    "(leads, contactos u otros tipos de Resultado) y de las compras de Google Ads, y \"cpl\" / " +
+    "\"costoPorContacto\" / \"costoPorResultado\" es el costo por resultado de esa suma; hablá de " +
+    "\"resultados\" y \"costo por resultado\" (no de leads ni CPL) y, si hace falta, aclarás que mezcla " +
+    "tipos de conversión distintos. Identificá el hallazgo principal (en qué horas y franjas se concentran " +
+    "los resultados, cuáles son más y menos eficientes) y redactalo para que un cliente no técnico " +
+    "lo entienda de un vistazo.",
+  "general-recommendations":
+    "Estás mirando el cierre del Resumen general de un cliente, que consolida Meta Ads y Google Ads: " +
+    'un resumen YA CALCULADO (ver "porPlataforma" — inversión, resultados, tipo de resultado, costo por ' +
+    'resultado y facturación de cada plataforma — y "ubicaciones", "provincias", "edad", "genero" y ' +
+    '"horario", que suman las dos plataformas; cualquiera puede faltar). Los resultados de Meta son ' +
+    "sus tipos de Resultado (leads, contactos…) y los de Google son compras: no los compares como si " +
+    "fueran lo mismo. Elegí entre 5 y 8 acciones concretas de alto impacto para el próximo período, " +
+    "incluyendo cómo repartir la inversión entre Meta y Google si los datos lo justifican, priorizando " +
+    "mayor impacto y menor riesgo/esfuerzo. Redactalo para que un cliente no técnico lo entienda de un " +
+    "vistazo.",
   "google-ads-hourly":
     'Estás mirando "Resultados por Horario" del reporte de Google Ads de un cliente ecommerce: ' +
     "inversión y costo por compra por hora del día (huso horario de la cuenta), sumando el mes, más un " +
@@ -270,7 +324,7 @@ const BY_TYPE_CHARTS = new Set(["leads-by-type", "google-ads-results-by-campaign
 const CAMPAIGN_HIGHLIGHT_CHARTS = new Set(["campaign-highlights", "google-ads-campaign-highlights"]);
 
 // Charts cuya respuesta es una lista de acciones con rol fijo {accion, detalle, plazo} (ver generateRecommendations), en vez de un hallazgo de texto libre.
-const RECOMMENDATION_CHARTS = new Set(["recommendations", "google-ads-recommendations"]);
+const RECOMMENDATION_CHARTS = new Set(["recommendations", "google-ads-recommendations", "general-recommendations"]);
 
 // Contenido cacheado a mano (ver lib/reports/chartInsightFallbacks.ts) que se devuelve mientras
 // ANTHROPIC_PAUSED=true, en vez de pedirle un resumen nuevo a Claude. "audience" y "regions" son
@@ -288,8 +342,10 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
       return { items: CAMPAIGN_HIGHLIGHTS_FALLBACK };
     case "placements":
     case "google-ads-placements":
+    case "general-placements":
       return PLACEMENTS_FALLBACK;
     case "google-ads-regions":
+    case "general-regions":
     case "regions": {
       const tipoCampania =
         typeof metrics === "object" && metrics !== null && "tipoCampania" in metrics
@@ -300,6 +356,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     }
     case "hourly-performance":
     case "google-ads-hourly":
+    case "general-hourly":
       return HOURLY_PERFORMANCE_FALLBACK;
     case "weekday-performance":
       return WEEKDAY_PERFORMANCE_FALLBACK;
@@ -307,6 +364,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
       return VIDEO_RETENTION_FALLBACK;
     case "recommendations":
     case "google-ads-recommendations":
+    case "general-recommendations":
       return { items: RECOMMENDATIONS_FALLBACK };
     case "audience": {
       const tipoCampania =

@@ -935,14 +935,14 @@ export function GoogleAdsHourlyBlock({ summary, clientId }: { summary: GoogleAds
 
 // ─────────────────────────── Quién responde a los anuncios ───────────────────────────
 
-const AGE_ORDER = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+", "Sin determinar"];
-const GENDER_ORDER = ["Mujeres", "Hombres", "Sin determinar"];
+export const AGE_ORDER = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+", "Sin determinar"];
+export const GENDER_ORDER = ["Mujeres", "Hombres", "Sin determinar"];
 // Mismos colores de género que AudienceAnalysis.tsx (Meta Ads); edad con el acento ámbar de los otros gráficos.
-const DEMO_COLOR: Record<string, string> = { Mujeres: "#db2777", Hombres: "#2563eb", "Sin determinar": "#94a3b8" };
-const AGE_COLOR = "#d97706";
+export const DEMO_COLOR: Record<string, string> = { Mujeres: "#db2777", Hombres: "#2563eb", "Sin determinar": "#94a3b8" };
+export const AGE_COLOR = "#d97706";
 const DEMO_BAR_HEIGHT = 112; // px, mismo alto que el área de barras de AudienceAnalysis.tsx
 
-interface DemoTotals {
+export interface DemoTotals {
   segment: string;
   spend: number;
   impressions: number;
@@ -1069,17 +1069,21 @@ export function GoogleAdsAudienceBlock({ summary, clientId }: { summary: GoogleA
   );
 }
 
-/** Columnas de barras + recuadro de métricas debajo (mismo diseño que AudienceAnalysis.tsx). */
-function DemoColumns({
+/** Columnas de barras + recuadro de métricas debajo (mismo diseño que AudienceAnalysis.tsx). También lo usa el Resumen general. */
+export function DemoColumns({
   title,
   items,
   colorFor,
   currency,
+  resultLabel = "Compras",
+  costLabel = "Costo por compra",
 }: {
   title: string;
   items: DemoTotals[];
   colorFor: (segment: string) => string;
   currency: string;
+  resultLabel?: string;
+  costLabel?: string;
 }) {
   if (items.length === 0) return null;
   const max = Math.max(...items.map((t) => t.purchases), 1);
@@ -1100,8 +1104,8 @@ function DemoColumns({
               </div>
               <span className="text-xs font-semibold text-foreground">{t.segment}</span>
               <div className="flex w-full flex-col divide-y divide-border rounded-md border border-border bg-muted/40 px-2 py-1 text-center">
-                <DemoStat value={formatNumber(round2(t.purchases))} label="Compras" />
-                <DemoStat value={cpa !== null ? formatCurrency(cpa, currency, 2) : "0"} label="Costo por compra" />
+                <DemoStat value={formatNumber(round2(t.purchases))} label={resultLabel} />
+                <DemoStat value={cpa !== null ? formatCurrency(cpa, currency, 2) : "0"} label={costLabel} />
                 <DemoStat value={formatCurrency(Math.round(t.spend), currency)} label="Inversión" />
                 <DemoStat value={formatNumber(t.impressions)} label="Impresiones" />
               </div>
