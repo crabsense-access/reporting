@@ -15,7 +15,12 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
-import { GoogleAdsBillingBlock, GoogleAdsResultsBlock, type GoogleAdsSummaryResponse } from "@/components/admin/reporting/GoogleAdsBlocks";
+import {
+  GoogleAdsBillingBlock,
+  GoogleAdsResultsBlock,
+  GoogleAdsTrendBlock,
+  type GoogleAdsSummaryResponse,
+} from "@/components/admin/reporting/GoogleAdsBlocks";
 
 export function GoogleAdsReport({ clientId, month }: { clientId: string; month: string }) {
   const [summary, setSummary] = useState<GoogleAdsSummaryResponse | null>(null);
@@ -73,6 +78,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
           (ver GoogleAdsBlocks.tsx). */}
       <GoogleAdsResultsBlock summary={s} clientId={clientId} />
       <GoogleAdsBillingBlock summary={s} clientId={clientId} />
+      {/* Mismo bloque "Inversión y rendimiento por día" que Meta Ads (ver GoogleAdsTrendBlock). */}
+      <GoogleAdsTrendBlock summary={s} clientId={clientId} />
     </>
   );
 }

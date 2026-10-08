@@ -103,6 +103,13 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "cliente de marketing digital: barras de inversión diaria + una línea de CPL o Leads diarios, " +
     "para el mes en curso. Identificá el hallazgo principal (tendencia, pico o valle, día más o menos " +
     "eficiente, etc.) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-investment-trend":
+    'Estás mirando el gráfico "Inversión y rendimiento por día" del reporte de Google Ads de un ' +
+    "cliente ecommerce: barras de compras diarias (los \"resultados\" de los datos son compras) + una " +
+    "línea de costo por compra diario, para el mes elegido, con la inversión diaria. El campo " +
+    "\"campania\" indica si se filtró por una campaña. Identificá el hallazgo principal (tendencia, " +
+    "pico o valle, día más o menos eficiente, relación entre inversión y compras) y redactalo para " +
+    "que un cliente no técnico lo entienda de un vistazo.",
   "leads-by-type":
     'Estás mirando el gráfico "Resultados y costos por resultados por tipo de campaña" del calendario de inversión de un ' +
     "cliente de marketing digital: barras apiladas de leads diarios por tipo de campaña (Iniciaron " +

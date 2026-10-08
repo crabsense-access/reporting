@@ -5,7 +5,7 @@
 // bloque se filtra por separado): los valores, la evolución diaria y el insight de IA se recalculan
 // para el filtro elegido (ver lib/google-ads/filter.ts).
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { eachDayOfInterval, format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
@@ -14,6 +14,7 @@ import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { DailyMiniBarChart } from "@/components/admin/reporting/DailyMiniBarChart";
 import { GoogleAdsFilterSelects } from "@/components/admin/reporting/GoogleAdsFilterSelects";
+import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   applyGoogleAdsFilter,
@@ -309,6 +310,71 @@ export function GoogleAdsBillingBlock({ summary, clientId }: { summary: GoogleAd
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─────────────────────── Inversión y rendimiento por día ───────────────────────
+
+/**
+ * Mismo bloque "Inversión y rendimiento por día" que el reporte de Meta Ads (InvestmentTrendChart):
+ * barras de Compras por día + línea de Costo por compra, con promedios, día más caro/barato,
+ * combos de Campaña / Grupo de anuncios / Anuncio e insight de IA. Google tiene un único tipo de
+ * resultado (Compras), así que no lleva el combo de tipo.
+ */
+export function GoogleAdsTrendBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  // Filas del desglose indexadas por nivel|id|fecha, para resolver cada día del filtro elegido.
+  const rowsByKey = useMemo(() => {
+    const map = new Map<string, { spend: number; purchases: number }>();
+    for (const r of summary?.breakdown.rows ?? []) map.set(`${r.level}|${r.id}|${r.date}`, { spend: r.spend, purchases: r.purchases });
+    return map;
+  }, [summary]);
+
+  const resolveFilteredDay = useCallback(
+    (date: string, sel: { campaignId: string | null; adsetId: string | null; adId: string | null }) => {
+      // Manda el nivel más específico elegido (mismo criterio que applyGoogleAdsFilter).
+      const key =
+        sel.adId !== null ? `ad|${sel.adId}` : sel.adsetId !== null ? `adGroup|${sel.adsetId}` : `campaign|${sel.campaignId}`;
+      const row = rowsByKey.get(`${key}|${date}`);
+      return row ? { spend: row.spend, objectiveLeads: [row.purchases], objectiveSpend: [row.spend] } : null;
+    },
+    [rowsByKey]
+  );
+
+  if (!summary) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="inversionPorDia" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <InvestmentTrendChart
+      days={summary.daily.map((d) => ({
+        date: d.date,
+        spend: d.spend,
+        objectiveLeads: [d.purchases],
+        objectiveSpend: [d.spend],
+        byAd: {},
+      }))}
+      currency={summary.currency}
+      month={parseISO(summary.from)}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+      objectiveOptions={[{ index: 0, label: "Compras" }]}
+      campaigns={summary.breakdown.campaigns}
+      adsets={summary.breakdown.adGroups}
+      ads={summary.breakdown.ads.map((a) => ({ id: a.id, name: a.name, campaignId: a.campaignId, adsetId: a.adGroupId }))}
+      resolveFilteredDay={resolveFilteredDay}
+      insightChart="google-ads-investment-trend"
+      resultNoun="compra"
+      hideObjectiveSelect
+    />
   );
 }
 

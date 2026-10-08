@@ -26,6 +26,12 @@
 // dashboard). Recibe los datos reales del mes (ver components/admin/reporting/InvestmentCalendar.tsx,
 // que los pide una sola vez a /api/clients/[id]/investment-calendar y los reparte entre este
 // chart y LeadsByTypeTrendChart).
+//
+// También lo usa el reporte de Google Ads (ver GoogleAdsTrendBlock en GoogleAdsBlocks.tsx), con un
+// único "tipo de Resultado" (Compras, sin combo de tipo — hideObjectiveSelect), sus propios
+// combos de Campaña / Grupo / Anuncio resueltos con resolveFilteredDay (el desglose de Google no
+// se arma por anuncio como el de Meta: cada nivel trae sus propios datos) y su propio prompt de
+// insight (insightChart).
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
@@ -155,6 +161,10 @@ export function InvestmentTrendChart({
   campaigns,
   adsets = [],
   ads,
+  resolveFilteredDay,
+  insightChart = "investment-trend",
+  resultNoun = "Resultado",
+  hideObjectiveSelect = false,
 }: {
   days: DailyRealTotals[];
   currency: string;
@@ -171,6 +181,18 @@ export function InvestmentTrendChart({
   /** Grupos de anuncios con gasto este mes, cada uno con el id de su campaña — combo de Grupo de anuncios (entre Campaña y Anuncio). */
   adsets?: { id: string; name: string; campaignId: string }[];
   ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
+  /** Resuelve un día para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos ese
+   *  día). Si no se pasa, se usa el desglose por anuncio de Meta (byAd, resolveAdFilteredTotals). */
+  resolveFilteredDay?: (
+    date: string,
+    selection: { campaignId: string | null; adsetId: string | null; adId: string | null }
+  ) => { spend: number; objectiveLeads: number[]; objectiveSpend: number[] } | null;
+  /** Clave del prompt del insight de IA (ver app/api/reporting/chart-insights/route.ts). */
+  insightChart?: string;
+  /** Nombre del resultado para "Costo por …" (ej. "compra" en Google Ads). */
+  resultNoun?: string;
+  /** Oculta el combo de Tipo de Resultado (cuando hay un único tipo, ej. Compras en Google Ads). */
+  hideObjectiveSelect?: boolean;
 }) {
   const [objectiveIndex, setObjectiveIndex] = useState<number | null>(null); // null = "Todos los Resultados"
   const [campaignId, setCampaignId] = useState<string | null>(null); // null = "Todas las campañas"
@@ -230,7 +252,12 @@ export function InvestmentTrendChart({
       // filtro, no en 0 (mismo criterio que ya usa `days` para "sin datos" a nivel de cuenta
       // completa).
       const hasFilter = campaignId !== null || adsetId !== null || adId !== null;
-      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length, adsetId) : null;
+      const scoped =
+        hasFilter && entry
+          ? resolveFilteredDay
+            ? resolveFilteredDay(dateKey, { campaignId, adsetId, adId })
+            : resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length, adsetId)
+          : null;
       const hasData = hasFilter ? scoped !== null : Boolean(entry);
       const spend = hasFilter ? (scoped?.spend ?? 0) : (entry?.spend ?? 0);
       const objectiveLeadsSource = hasFilter ? scoped?.objectiveLeads : entry?.objectiveLeads;
@@ -248,7 +275,7 @@ export function InvestmentTrendChart({
       result.push({ date, day, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null, hasData });
     }
     return result;
-  }, [month, byDate, objectiveIndex, campaignId, adsetId, adId]);
+  }, [month, byDate, objectiveIndex, campaignId, adsetId, adId, resolveFilteredDay]);
 
   const daysInMonth = points.length;
   const slot = INNER_W / daysInMonth;
@@ -297,9 +324,9 @@ export function InvestmentTrendChart({
   const selectedObjectiveLabel = objectiveIndex !== null ? (objectiveOptions.find((o) => o.index === objectiveIndex)?.label ?? null) : null;
   const selectedCampaignName = campaignId !== null ? (campaigns.find((c) => c.id === campaignId)?.name ?? null) : null;
   const secondaryColor = objectiveIndex !== null ? objectiveColor(objectiveIndex) : COSTO_DEFAULT_COLOR;
-  const tipoLabel = selectedObjectiveLabel ?? "Todos los Resultados";
+  const tipoLabel = selectedObjectiveLabel ?? (hideObjectiveSelect ? (objectiveOptions[0]?.label ?? "Resultados") : "Todos los Resultados");
   const cantidadLegend = `Cantidad · ${tipoLabel}`;
-  const costoLegend = `Costo por Resultado · ${tipoLabel}`;
+  const costoLegend = hideObjectiveSelect ? `Costo por ${resultNoun}` : `Costo por ${resultNoun} · ${tipoLabel}`;
 
   // Métricas para la leyenda de hallazgos (independientes de los combos, así no hace falta volver
   // a pedirle el resumen a Claude cada vez que el usuario cambia de tipo o campaña).
@@ -367,6 +394,7 @@ export function InvestmentTrendChart({
           <BlockTitle block="inversionPorDia" />
 
           <div className="flex flex-col items-stretch gap-2">
+            {!hideObjectiveSelect && (
             <select
               aria-label="Tipo de Resultado"
               value={objectiveIndex === null ? "all" : String(objectiveIndex)}
@@ -380,6 +408,7 @@ export function InvestmentTrendChart({
                 </option>
               ))}
             </select>
+            )}
 
             <select
               aria-label="Campaña"
@@ -618,7 +647,7 @@ export function InvestmentTrendChart({
                   </span>
                   <span className="flex items-center justify-between gap-3 text-muted-foreground">
                     <span className="flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> Costo por Resultado
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: secondaryColor }} /> Costo por {resultNoun}
                     </span>
                     <span className="font-medium text-foreground">{hovered.cpl !== null ? formatSecondaryCurrency(hovered.cpl, currency) : "0"}</span>
                   </span>
@@ -634,7 +663,7 @@ export function InvestmentTrendChart({
             importante") — variant="card" es el default de ChartInsightPanel (ver su comentario de
             cabecera), se pasa igual acá por explícito. */}
         <ChartInsightPanel
-          chart="investment-trend"
+          chart={insightChart}
           metrics={insightMetrics}
           accentColor="hsl(var(--primary))"
           variant="card"
