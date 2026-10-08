@@ -15,6 +15,7 @@ import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPane
 import { DailyMiniBarChart } from "@/components/admin/reporting/DailyMiniBarChart";
 import { GoogleAdsFilterSelects } from "@/components/admin/reporting/GoogleAdsFilterSelects";
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
+import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import {
   applyGoogleAdsFilter,
@@ -374,6 +375,123 @@ export function GoogleAdsTrendBlock({ summary, clientId }: { summary: GoogleAdsS
       insightChart="google-ads-investment-trend"
       resultNoun="compra"
       hideObjectiveSelect
+    />
+  );
+}
+
+// ─────────────────────────── Resultados por campaña ───────────────────────────
+
+/** Máximo de campañas con color propio (la paleta de objectiveColor tiene 8); el resto va a "Otras campañas". */
+const MAX_CAMPAIGN_SERIES = 7;
+
+/**
+ * Mismo bloque "Resultados por campaña" que el reporte de Meta Ads (LeadsByTypeTrendChart), pero
+ * cada "tipo" es una campaña: barras apiladas de compras por campaña y por día + línea de costo
+ * por compra de la campaña elegida (o de todas), con insight de IA por campaña. Como en Meta, sólo
+ * entran las campañas con al menos 1 compra en el mes.
+ */
+export function GoogleAdsResultsByCampaignBlock({
+  summary,
+  clientId,
+}: {
+  summary: GoogleAdsSummaryResponse | null;
+  clientId: string;
+}) {
+  const chartData = useMemo(() => {
+    if (!summary) return null;
+    const { breakdown } = summary;
+
+    // Compras del mes por campaña, para elegir y ordenar las series.
+    const purchasesByCampaign = new Map<string, number>();
+    for (const r of breakdown.rows) {
+      if (r.level === "campaign") purchasesByCampaign.set(r.id, (purchasesByCampaign.get(r.id) ?? 0) + r.purchases);
+    }
+    const withPurchases = breakdown.campaigns
+      .filter((c) => (purchasesByCampaign.get(c.id) ?? 0) > 0)
+      .sort((a, b) => (purchasesByCampaign.get(b.id) ?? 0) - (purchasesByCampaign.get(a.id) ?? 0));
+    const needsOther = withPurchases.length > MAX_CAMPAIGN_SERIES + 1;
+    const own = needsOther ? withPurchases.slice(0, MAX_CAMPAIGN_SERIES) : withPurchases;
+    const indexByCampaign = new Map<string, number>(own.map((c, i) => [c.id, i]));
+    const otherIndex = needsOther ? own.length : null;
+    if (needsOther) for (const c of withPurchases.slice(MAX_CAMPAIGN_SERIES)) indexByCampaign.set(c.id, otherIndex!);
+    const seriesCount = own.length + (needsOther ? 1 : 0);
+
+    // Compras y gasto por día y por serie (desde las filas de nivel campaña).
+    const byDate = new Map<string, { leads: number[]; spend: number[] }>();
+    for (const r of breakdown.rows) {
+      if (r.level !== "campaign") continue;
+      const idx = indexByCampaign.get(r.id);
+      if (idx === undefined) continue;
+      const day = byDate.get(r.date) ?? {
+        leads: Array.from({ length: seriesCount }, () => 0),
+        spend: Array.from({ length: seriesCount }, () => 0),
+      };
+      day.leads[idx] = (day.leads[idx] ?? 0) + r.purchases;
+      day.spend[idx] = (day.spend[idx] ?? 0) + r.spend;
+      byDate.set(r.date, day);
+    }
+
+    return {
+      options: [
+        ...own.map((c, i) => ({ index: i, label: c.name })),
+        ...(needsOther ? [{ index: otherIndex!, label: "Otras campañas" }] : []),
+      ],
+      days: summary.daily.map((d) => {
+        const day = byDate.get(d.date);
+        return {
+          date: d.date,
+          spend: d.spend,
+          objectiveLeads: day?.leads ?? Array.from({ length: seriesCount }, () => 0),
+          objectiveSpend: day?.spend ?? Array.from({ length: seriesCount }, () => 0),
+          byAd: {},
+        };
+      }),
+    };
+  }, [summary]);
+
+  if (!summary || !chartData) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="resultadosPorTipo" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (chartData.options.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="resultadosPorTipo" subtitle="Compras y costo por compra por campaña" />
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground">Ninguna campaña registró compras este mes.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <LeadsByTypeTrendChart
+      days={chartData.days}
+      currency={summary.currency}
+      objectiveOptions={chartData.options}
+      month={parseISO(summary.from)}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+      campaigns={[]}
+      ads={[]}
+      hideAdFilters
+      typeSelectLabel="Campaña"
+      allTypesLabel="Todas las campañas"
+      totalLabel="Total compras"
+      costLabel="Costo/compra"
+      insightChart="google-ads-results-by-campaign"
+      subtitle="Compras y costo por compra por campaña"
     />
   );
 }

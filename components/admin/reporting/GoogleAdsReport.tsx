@@ -18,6 +18,7 @@ import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import {
   GoogleAdsBillingBlock,
   GoogleAdsResultsBlock,
+  GoogleAdsResultsByCampaignBlock,
   GoogleAdsTrendBlock,
   type GoogleAdsSummaryResponse,
 } from "@/components/admin/reporting/GoogleAdsBlocks";
@@ -80,6 +81,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsBillingBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Inversión y rendimiento por día" que Meta Ads (ver GoogleAdsTrendBlock). */}
       <GoogleAdsTrendBlock summary={s} clientId={clientId} />
+      {/* Mismo bloque "Resultados por campaña" que Meta Ads, con una serie por campaña. */}
+      <GoogleAdsResultsByCampaignBlock summary={s} clientId={clientId} />
     </>
   );
 }

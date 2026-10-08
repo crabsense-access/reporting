@@ -110,6 +110,15 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "\"campania\" indica si se filtró por una campaña. Identificá el hallazgo principal (tendencia, " +
     "pico o valle, día más o menos eficiente, relación entre inversión y compras) y redactalo para " +
     "que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-results-by-campaign":
+    'Estás mirando el gráfico "Resultados por campaña" del reporte de Google Ads de un cliente ' +
+    "ecommerce: barras apiladas de compras diarias por campaña + una línea de costo por compra de la " +
+    "campaña elegida, para el mes. En los datos, cada elemento de \"porTipo\" es una CAMPAÑA (\"tipo\" " +
+    "es el nombre de la campaña, \"leads\" son sus compras y \"cpl\" su costo por compra; \"Otras " +
+    "campañas\" agrupa las de menor volumen). Para cada campaña del array \"porTipo\", identificá su " +
+    "hallazgo propio (volumen de compras, eficiencia, participación) y redactalo para que un cliente " +
+    "no técnico lo entienda de un vistazo, hablando de compras y costo por compra (no de leads). " +
+    "Indicá además cuál de las campañas tiene mejor performance general.",
   "leads-by-type":
     'Estás mirando el gráfico "Resultados y costos por resultados por tipo de campaña" del calendario de inversión de un ' +
     "cliente de marketing digital: barras apiladas de leads diarios por tipo de campaña (Iniciaron " +
@@ -205,7 +214,7 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
 
 // Charts cuya respuesta es un hallazgo por cada tipo/segmento (ver generateChartInsightsByType),
 // en vez de un único resumen combinado.
-const BY_TYPE_CHARTS = new Set(["leads-by-type"]);
+const BY_TYPE_CHARTS = new Set(["leads-by-type", "google-ads-results-by-campaign"]);
 
 // Charts cuya respuesta son exactamente 2 hallazgos con rol fijo — mejor/peor — decidido de
 // antemano en el código (ver generateCampaignHighlights).
@@ -223,6 +232,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     case "investment-trend":
       return INVESTMENT_TREND_FALLBACK;
     case "leads-by-type":
+    case "google-ads-results-by-campaign":
       return { items: LEADS_BY_TYPE_FALLBACK };
     case "campaign-highlights":
       return { items: CAMPAIGN_HIGHLIGHTS_FALLBACK };

@@ -29,6 +29,12 @@
 // Recibe los datos reales del mes (ver components/admin/reporting/InvestmentCalendar.tsx, que
 // los pide una sola vez a /api/clients/[id]/investment-calendar y los reparte entre este chart e
 // InvestmentTrendChart).
+//
+// También lo usa el reporte de Google Ads (ver GoogleAdsResultsByCampaignBlock en
+// GoogleAdsBlocks.tsx): ahí cada "tipo" es una CAMPAÑA (barras apiladas de compras por campaña y
+// línea de costo por compra de la campaña elegida), así que se ocultan los combos de Campaña /
+// Grupo / Anuncio (hideAdFilters) y se cambian los textos (typeSelectLabel, allTypesLabel,
+// totalLabel, costLabel) y el prompt del insight (insightChart).
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
@@ -149,7 +155,25 @@ export function LeadsByTypeTrendChart({
   campaigns,
   adsets = [],
   ads,
+  hideAdFilters = false,
+  typeSelectLabel = "Tipo de Resultado",
+  allTypesLabel = "Todos los Resultados",
+  totalLabel = "Total leads",
+  costLabel = "CPL",
+  insightChart = "leads-by-type",
+  subtitle,
 }: {
+  /** Oculta los combos de Campaña / Grupo / Anuncio (cuando los "tipos" ya son campañas, ej. Google Ads). */
+  hideAdFilters?: boolean;
+  /** Textos del combo de tipo, del total del tooltip y de la sigla del costo. */
+  typeSelectLabel?: string;
+  allTypesLabel?: string;
+  totalLabel?: string;
+  costLabel?: string;
+  /** Clave del prompt del insight por tipo (ver app/api/reporting/chart-insights/route.ts). */
+  insightChart?: string;
+  /** Pisa el subtítulo del bloque (lib/reporting/blockTitles.ts). */
+  subtitle?: string;
   days: DailyRealTotals[];
   currency: string;
   /**
@@ -391,7 +415,7 @@ export function LeadsByTypeTrendChart({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <BlockTitle block="resultadosPorTipo" />
+          <BlockTitle block="resultadosPorTipo" subtitle={subtitle} />
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {visibleIndexes.map((idx) => (
               <span key={idx} className="flex items-center gap-1">
@@ -403,12 +427,12 @@ export function LeadsByTypeTrendChart({
 
         <div className="flex flex-col items-stretch gap-2">
           <select
-            aria-label="Tipo de Resultado"
+            aria-label={typeSelectLabel}
             value={objectiveIndex === null ? "all" : String(objectiveIndex)}
             onChange={(event) => setObjectiveIndex(event.target.value === "all" ? null : Number(event.target.value))}
             className="h-8 w-[260px] truncate rounded-md border border-input bg-background px-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
-            <option value="all">Todos los Resultados</option>
+            <option value="all">{allTypesLabel}</option>
             {visibleIndexes.map((idx) => (
               <option key={idx} value={idx}>
                 {labelByIndex[idx]}
@@ -416,6 +440,8 @@ export function LeadsByTypeTrendChart({
             ))}
           </select>
 
+          {!hideAdFilters && (
+          <>
           <select
             aria-label="Campaña"
             value={campaignId ?? "all"}
@@ -465,6 +491,8 @@ export function LeadsByTypeTrendChart({
               </option>
             ))}
           </select>
+          </>
+          )}
         </div>
       </CardHeader>
 
@@ -632,7 +660,7 @@ export function LeadsByTypeTrendChart({
               {hovered.hasData ? (
                 <>
                   <span className="flex items-center justify-between gap-3 text-muted-foreground">
-                    <span>Total leads</span>
+                    <span>{totalLabel}</span>
                     <span className="font-medium text-foreground">{formatNumber(hovered.totalLeads)}</span>
                   </span>
                   {visibleIndexes.map((idx) => {
@@ -645,7 +673,7 @@ export function LeadsByTypeTrendChart({
                           <span className="h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: objectiveColor(idx) }} /> {labelByIndex[idx]}
                         </span>
                         <span className="font-medium text-foreground">
-                          {formatNumber(qty)} · CPL {cpl !== null ? formatCurrency(cpl, currency, 2) : "0"}
+                          {formatNumber(qty)} · {costLabel} {cpl !== null ? formatCurrency(cpl, currency, 2) : "0"}
                         </span>
                       </span>
                     );
@@ -658,7 +686,7 @@ export function LeadsByTypeTrendChart({
           )}
         </div>
 
-        <ChartInsightByTypePanel chart="leads-by-type" metrics={insightMetrics} colorForTipo={colorForTipo} monthIsComplete={monthIsComplete} clientId={clientId} />
+        <ChartInsightByTypePanel chart={insightChart} metrics={insightMetrics} colorForTipo={colorForTipo} monthIsComplete={monthIsComplete} clientId={clientId} />
       </CardContent>
     </Card>
   );
