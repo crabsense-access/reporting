@@ -126,6 +126,12 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "curso. Para cada tipo de campaña del array \"porTipo\" de los datos, identificá su hallazgo " +
     "propio (volumen, eficiencia, participación) y redactalo para que un cliente no técnico lo " +
     "entienda de un vistazo. Indicá además cuál de los tipos tiene mejor performance general.",
+  "google-ads-campaign-highlights":
+    'Estás mirando el ranking de campañas del reporte de Google Ads de un cliente ecommerce ' +
+    "(inversión, compras, costo por compra, facturación y ROAS por campaña). Ya se identificó cuál " +
+    'es la campaña "mejor" (menor costo por compra) y cuál la "peor" (mayor costo por compra) del ' +
+    "mes — redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo, " +
+    "hablando de compras y costo por compra (no de leads ni CPL).",
   "campaign-highlights":
     'Estás mirando el ranking de campañas individuales del calendario de inversión de un cliente ' +
     "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
@@ -218,7 +224,7 @@ const BY_TYPE_CHARTS = new Set(["leads-by-type", "google-ads-results-by-campaign
 
 // Charts cuya respuesta son exactamente 2 hallazgos con rol fijo — mejor/peor — decidido de
 // antemano en el código (ver generateCampaignHighlights).
-const CAMPAIGN_HIGHLIGHT_CHARTS = new Set(["campaign-highlights"]);
+const CAMPAIGN_HIGHLIGHT_CHARTS = new Set(["campaign-highlights", "google-ads-campaign-highlights"]);
 
 // Charts cuya respuesta es una lista de acciones con rol fijo {accion, detalle, plazo} (ver generateRecommendations), en vez de un hallazgo de texto libre.
 const RECOMMENDATION_CHARTS = new Set(["recommendations"]);
@@ -235,6 +241,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     case "google-ads-results-by-campaign":
       return { items: LEADS_BY_TYPE_FALLBACK };
     case "campaign-highlights":
+    case "google-ads-campaign-highlights":
       return { items: CAMPAIGN_HIGHLIGHTS_FALLBACK };
     case "placements":
       return PLACEMENTS_FALLBACK;

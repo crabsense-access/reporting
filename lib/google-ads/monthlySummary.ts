@@ -73,7 +73,7 @@ export const WHATSAPP_CAMPAIGN_PATTERN = /whats\s*app|\bwsp\b|\bwpp\b|\bwa\b|con
 interface Row {
   customer?: { currency_code?: string };
   segments?: { date?: string; conversion_action_category?: string | number };
-  campaign?: { id?: number | string; name?: string };
+  campaign?: { id?: number | string; name?: string; status?: number | string };
   ad_group?: { id?: number | string; name?: string };
   ad_group_ad?: {
     ad?: {
@@ -113,7 +113,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
   // breakdownFailed para que el route no cachee ese resultado incompleto).
   let breakdownFailed = false;
   const breakdownQueries = Promise.all([
-    q(`SELECT segments.date, campaign.id, campaign.name, ${PERF} FROM campaign WHERE ${range}`),
+    q(`SELECT segments.date, campaign.id, campaign.name, campaign.status, ${PERF} FROM campaign WHERE ${range}`),
     q(`SELECT segments.date, campaign.id, campaign.name, ${CONV} FROM campaign WHERE ${range}`),
     q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${PERF} FROM ad_group WHERE ${range}`),
     q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${CONV} FROM ad_group WHERE ${range}`),
@@ -183,6 +183,10 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
 
   // ── Desglose diario por Campaña / Grupo de anuncios / Anuncio
   const campaignNames = new Map<string, string>();
+  const campaignStatus = new Map<string, "activa" | "pausada" | "eliminada">();
+  // CampaignStatus de Google Ads: ENABLED = 2, PAUSED = 3, REMOVED = 4 (número o texto según la librería).
+  const toStatus = (v: unknown) =>
+    v === 2 || v === "ENABLED" ? "activa" : v === 3 || v === "PAUSED" ? "pausada" : v === 4 || v === "REMOVED" ? "eliminada" : undefined;
   const adGroups = new Map<string, { name: string; campaignId: string }>();
   const ads = new Map<string, { name: string; campaignId: string; adGroupId: string }>();
   const rows = new Map<string, GoogleAdsBreakdownRow>();
@@ -215,6 +219,8 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     const date = r.segments?.date;
     if (!cId || !date) continue;
     campaignNames.set(cId, r.campaign?.name || `Campaña ${cId}`);
+    const status = toStatus(r.campaign?.status);
+    if (status) campaignStatus.set(cId, status);
     addPerf(rowEntry("campaign", cId, date), r);
   }
   for (const r of campaignConv) {
@@ -276,7 +282,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
   const breakdown: GoogleAdsBreakdown = {
     campaigns: [...campaignNames.entries()]
       .filter(([cId]) => active("campaign", cId))
-      .map(([cId, name]) => ({ id: cId, name }))
+      .map(([cId, name]) => ({ id: cId, name, status: campaignStatus.get(cId) }))
       .sort((a, b) => spendOf("campaign", b.id) - spendOf("campaign", a.id)),
     adGroups: [...adGroups.entries()]
       .filter(([gId]) => active("adGroup", gId))

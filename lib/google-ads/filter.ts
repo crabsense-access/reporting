@@ -18,7 +18,7 @@ export interface GoogleAdsBreakdownRow {
 }
 
 export interface GoogleAdsBreakdown {
-  campaigns: { id: string; name: string }[];
+  campaigns: { id: string; name: string; status?: "activa" | "pausada" | "eliminada" }[];
   adGroups: { id: string; name: string; campaignId: string }[];
   ads: { id: string; name: string; campaignId: string; adGroupId: string }[];
   rows: GoogleAdsBreakdownRow[];

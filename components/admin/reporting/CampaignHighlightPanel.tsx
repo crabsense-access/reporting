@@ -44,7 +44,10 @@ export function CampaignHighlightPanel({
   dotColorForCampaign,
   monthIsComplete,
   clientId,
+  badges = ROLE_BADGE,
 }: {
+  /** Etiquetas de cada tarjeta (ej. "Mejor costo por compra" en Google Ads). */
+  badges?: Record<"mejor" | "peor", string>;
   chart?: string;
   metrics: unknown;
   dotColorForCampaign?: (nombre: string) => string | undefined;
@@ -131,7 +134,7 @@ export function CampaignHighlightPanel({
                 className="whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                 style={{ color, backgroundColor: `${color}1a` }}
               >
-                {ROLE_BADGE[item.rol]}
+                {badges[item.rol]}
               </span>
             </div>
 

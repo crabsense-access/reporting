@@ -16,7 +16,10 @@ import { DailyMiniBarChart } from "@/components/admin/reporting/DailyMiniBarChar
 import { GoogleAdsFilterSelects } from "@/components/admin/reporting/GoogleAdsFilterSelects";
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
 import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
-import { formatCurrency, formatNumber } from "@/lib/format";
+import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHighlightPanel";
+import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
+import { cn } from "@/lib/utils";
+import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import {
   applyGoogleAdsFilter,
   describeGoogleAdsFilter,
@@ -493,6 +496,177 @@ export function GoogleAdsResultsByCampaignBlock({
       insightChart="google-ads-results-by-campaign"
       subtitle="Compras y costo por compra por campaña"
     />
+  );
+}
+
+// ─────────────────────────────── Análisis de campañas ───────────────────────────────
+
+/** Ancho fijo por columna (Inversión, % Inv., Compras, Costo por compra, ROAS) — mismo criterio que CampaignAnalysis.tsx. */
+const CAMPAIGN_GRID_COLUMNS = "92px 56px 60px 96px 56px";
+const NO_PURCHASES_COLOR = "#94a3b8"; // slate-400
+
+/**
+ * Mismo bloque "Análisis de campañas" que el reporte de Meta Ads (CampaignAnalysis.tsx), con datos
+ * reales de Google Ads: ranking de campañas por inversión (barra + tabla con Inversión, % Inv.,
+ * Compras, Costo por compra y ROAS), estado Activa/Pausada, y debajo el hallazgo de la campaña con
+ * menor y mayor costo por compra (elegidas acá por código, Claude sólo redacta). Cada campaña usa el
+ * mismo color que en "Resultados por campaña"; las que no tuvieron compras, gris.
+ */
+export function GoogleAdsCampaignAnalysisBlock({
+  summary,
+  clientId,
+}: {
+  summary: GoogleAdsSummaryResponse | null;
+  clientId: string;
+}) {
+  const data = useMemo(() => {
+    if (!summary) return null;
+    const totals = new Map<string, { spend: number; purchases: number; revenue: number }>();
+    for (const r of summary.breakdown.rows) {
+      if (r.level !== "campaign") continue;
+      const t = totals.get(r.id) ?? { spend: 0, purchases: 0, revenue: 0 };
+      t.spend += r.spend;
+      t.purchases += r.purchases;
+      t.revenue += r.revenue;
+      totals.set(r.id, t);
+    }
+    const campaigns = summary.breakdown.campaigns.map((c) => {
+      const t = totals.get(c.id) ?? { spend: 0, purchases: 0, revenue: 0 };
+      return {
+        ...c,
+        ...t,
+        cpa: t.purchases > 0 ? t.spend / t.purchases : null,
+        roas: t.spend > 0 && t.revenue > 0 ? t.revenue / t.spend : null,
+      };
+    });
+
+    // Colores: mismo índice que en "Resultados por campaña" (orden por compras, 7 + "Otras").
+    const byPurchases = campaigns.filter((c) => c.purchases > 0).sort((a, b) => b.purchases - a.purchases);
+    const needsOther = byPurchases.length > MAX_CAMPAIGN_SERIES + 1;
+    const colorById = new Map<string, string>(
+      byPurchases.map((c, i) => [c.id, objectiveColor(needsOther && i >= MAX_CAMPAIGN_SERIES ? MAX_CAMPAIGN_SERIES : i)])
+    );
+
+    const sorted = [...campaigns].sort((a, b) => b.spend - a.spend);
+    const withCpa = campaigns.filter((c): c is (typeof campaigns)[number] & { cpa: number } => c.cpa !== null);
+    const best = withCpa.length > 1 ? withCpa.reduce((b, c) => (c.cpa < b.cpa ? c : b)) : null;
+    const worst = withCpa.length > 1 ? withCpa.reduce((b, c) => (c.cpa > b.cpa ? c : b)) : null;
+    return { sorted, colorById, best: best && worst && best.id !== worst.id ? best : null, worst: best && worst && best.id !== worst.id ? worst : null };
+  }, [summary]);
+
+  if (!summary || !data) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="analisisCampanas" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const currency = summary.currency;
+  const totalSpend = data.sorted.reduce((sum, c) => sum + c.spend, 0);
+  const maxSpend = Math.max(...data.sorted.map((c) => c.spend), 1);
+  const colorOf = (id: string) => data.colorById.get(id) ?? NO_PURCHASES_COLOR;
+
+  const toInput = (c: NonNullable<typeof data.best>) => ({
+    nombre: c.name,
+    estado: c.status === "pausada" ? "Pausada" : c.status === "eliminada" ? "Eliminada" : "Activa",
+    compras: formatNumber(round2(c.purchases)),
+    inversion: formatCurrency(c.spend, currency),
+    costoPorCompra: formatCurrency(c.cpa!, currency, 2),
+    facturacion: formatCurrency(Math.round(c.revenue), currency),
+    roas: fmtRoas(c.roas),
+  });
+  const highlightMetrics = data.best && data.worst ? { mejor: toInput(data.best), peor: toInput(data.worst) } : null;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-col gap-0.5 pb-2">
+        <BlockTitle block="analisisCampanas" />
+        <span className="text-xs text-muted-foreground">Ranking del mes por campaña individual</span>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-4 pt-4">
+        {data.sorted.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No hubo campañas con inversión este mes.</p>
+        ) : (
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center gap-4">
+              <span className="min-w-0 flex-1" />
+              <div
+                className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                style={{ gridTemplateColumns: CAMPAIGN_GRID_COLUMNS }}
+              >
+                <span>Inversión</span>
+                <span>% Inv.</span>
+                <span>Compras</span>
+                <span>Costo por compra</span>
+                <span>ROAS</span>
+              </div>
+            </div>
+
+            {data.sorted.map((c) => {
+              const widthPct = Math.max(4, Math.round((c.spend / maxSpend) * 100));
+              const share = totalSpend > 0 ? c.spend / totalSpend : 0;
+              const active = c.status !== "pausada" && c.status !== "eliminada";
+              return (
+                <div key={c.id} className="flex items-center gap-4">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: colorOf(c.id) }} />
+                      <span className="truncate">{c.name}</span>
+                      {c.status && (
+                        <span
+                          className={cn(
+                            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                            active ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {c.status === "activa" ? "Activa" : c.status === "pausada" ? "Pausada" : "Eliminada"}
+                        </span>
+                      )}
+                    </span>
+                    <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${widthPct}%`, backgroundColor: colorOf(c.id), opacity: active ? 1 : 0.55 }}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: CAMPAIGN_GRID_COLUMNS }}>
+                    <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(c.spend, currency)}</span>
+                    <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(share)}</span>
+                    <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(round2(c.purchases))}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">
+                      {c.cpa !== null ? formatCurrency(c.cpa, currency, 2) : "s/d"}
+                    </span>
+                    <span className="whitespace-nowrap text-muted-foreground">{fmtRoas(c.roas)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {highlightMetrics && (
+          <CampaignHighlightPanel
+            chart="google-ads-campaign-highlights"
+            metrics={highlightMetrics}
+            dotColorForCampaign={(nombre) => {
+              const c = data.sorted.find((x) => x.name === nombre);
+              return c ? colorOf(c.id) : undefined;
+            }}
+            badges={{ mejor: "Menor costo por compra", peor: "Oportunidad de mejora" }}
+            monthIsComplete={!summary.isCurrentMonth}
+            clientId={clientId}
+          />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
