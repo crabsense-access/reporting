@@ -137,6 +137,14 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
     'identificó cuál es la campaña "mejor" (mejor CPL) y cuál la "peor" (peor CPL) del mes — ' +
     "redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-hourly":
+    'Estás mirando "Resultados por Horario" del reporte de Google Ads de un cliente ecommerce: ' +
+    "inversión y costo por compra por hora del día (huso horario de la cuenta), sumando el mes, más un " +
+    "resumen por franja horaria. En los datos, \"contactos\" son las compras y \"costoPorContacto\" el " +
+    "costo por compra; el alcance no lo informa Google Ads (no lo menciones). El campo \"campania\" indica " +
+    "si se filtró por una campaña. Identificá el hallazgo principal (en qué horas y franjas se concentran " +
+    "las compras, cuáles son más y menos eficientes) y redactalo para que un cliente no técnico lo " +
+    "entienda de un vistazo, hablando de compras y costo por compra (no de contactos ni leads).",
   "google-ads-regions":
     'Estás mirando "Ubicación geográfica" del reporte de Google Ads de un cliente ecommerce: ' +
     "inversión, impresiones, clics, compras y costo por compra del mes por provincia/región. En los " +
@@ -280,6 +288,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
       return REGIONS_FALLBACKS[key] ?? Object.values(REGIONS_FALLBACKS)[0];
     }
     case "hourly-performance":
+    case "google-ads-hourly":
       return HOURLY_PERFORMANCE_FALLBACK;
     case "weekday-performance":
       return WEEKDAY_PERFORMANCE_FALLBACK;

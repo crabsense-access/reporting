@@ -19,6 +19,7 @@ import {
   GoogleAdsAudienceBlock,
   GoogleAdsBillingBlock,
   GoogleAdsCampaignAnalysisBlock,
+  GoogleAdsHourlyBlock,
   GoogleAdsPlacementBlock,
   GoogleAdsRegionBlock,
   GoogleAdsResultsBlock,
@@ -95,6 +96,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsAudienceBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Ubicación geográfica" que Meta Ads, por provincia/región. */}
       <GoogleAdsRegionBlock summary={s} clientId={clientId} />
+      {/* Mismo bloque "Resultados por Horario" que Meta Ads. */}
+      <GoogleAdsHourlyBlock summary={s} clientId={clientId} />
     </>
   );
 }

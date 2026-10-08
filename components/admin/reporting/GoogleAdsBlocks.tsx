@@ -19,6 +19,7 @@ import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeT
 import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHighlightPanel";
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
+import { HourlyPerformanceChart } from "@/components/admin/reporting/HourlyPerformanceChart";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
@@ -837,6 +838,96 @@ export function GoogleAdsRegionBlock({ summary, clientId }: { summary: GoogleAds
       avgCostLabel="Costo por compra promedio"
       emptyText="No hay inversión ni compras por región este mes."
       insightChart="google-ads-regions"
+    />
+  );
+}
+
+// ─────────────────────────── Resultados por Horario ───────────────────────────
+
+/**
+ * Mismo bloque "Resultados por Horario" que el reporte de Meta Ads (HourlyPerformanceChart):
+ * inversión por hora del día (barras, en rojo las horas con costo por compra muy por encima del
+ * promedio) + costo por compra por hora (línea), tabla por franja horaria, filtros e insight de IA.
+ * Horas en el huso horario de la cuenta de Google Ads. Sin Alcance (Google no lo informa).
+ */
+export function GoogleAdsHourlyBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  const hourRows = useMemo(() => summary?.breakdown.hours ?? [], [summary]);
+
+  // Sin filtro: totales por hora a nivel campaña (incluye Performance Max).
+  const hourlyTotals = useMemo(() => {
+    const byHour = new Map<number, { spend: number; impressions: number; clicks: number; purchases: number }>();
+    for (const h of hourRows) {
+      if (h.level !== "campaign") continue;
+      const t = byHour.get(h.hour) ?? { spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+      t.spend += h.spend;
+      t.impressions += h.impressions;
+      t.clicks += h.clicks;
+      t.purchases += h.purchases;
+      byHour.set(h.hour, t);
+    }
+    return [...byHour.entries()].map(([hour, t]) => ({
+      hour,
+      spend: t.spend,
+      objectiveLeads: [t.purchases],
+      objectiveSpend: [t.spend],
+      reach: 0,
+      impressions: t.impressions,
+      clicks: t.clicks,
+      byAd: {},
+    }));
+  }, [hourRows]);
+
+  const resolveFilteredHour = useCallback(
+    (hour: number, sel: { campaignId: string | null; adsetId: string | null; adId: string | null }) => {
+      // Manda el nivel más específico elegido (mismo criterio que applyGoogleAdsFilter).
+      const level = sel.adId !== null ? "ad" : sel.adsetId !== null ? "adGroup" : "campaign";
+      const id = sel.adId ?? sel.adsetId ?? sel.campaignId;
+      const match = hourRows.filter((h) => h.level === level && h.id === id && h.hour === hour);
+      if (match.length === 0) return null;
+      const sum = (k: "spend" | "impressions" | "clicks" | "purchases") => match.reduce((acc, h) => acc + h[k], 0);
+      return {
+        spend: sum("spend"),
+        objectiveLeads: [sum("purchases")],
+        objectiveSpend: [sum("spend")],
+        reach: 0,
+        impressions: sum("impressions"),
+        clicks: sum("clicks"),
+      };
+    },
+    [hourRows]
+  );
+
+  if (!summary) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="horario" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <HourlyPerformanceChart
+      hourlyTotals={hourlyTotals}
+      currency={summary.currency}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+      objectiveOptions={[{ index: 0, label: "Compras" }]}
+      campaigns={summary.breakdown.campaigns}
+      adsets={summary.breakdown.adGroups}
+      ads={summary.breakdown.ads.map((a) => ({ id: a.id, name: a.name, campaignId: a.campaignId, adsetId: a.adGroupId }))}
+      resolveFilteredHour={resolveFilteredHour}
+      hideObjectiveSelect
+      showReach={false}
+      contactNoun="compra"
+      contactsLabel="Compras"
+      resultsLabel="Compras"
+      costLabel="Costo por compra"
+      insightChart="google-ads-hourly"
     />
   );
 }

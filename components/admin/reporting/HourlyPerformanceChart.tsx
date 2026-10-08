@@ -28,6 +28,11 @@
 // lib/reporting/adFilter.ts). Con Campaña y/o Anuncio elegidos, tanto las barras de Inversión como
 // la línea de Costo por Contacto (y el promedio/umbral rojo, que se recalcula sobre el subconjunto
 // filtrado) reflejan sólo esa Campaña/Anuncio.
+//
+// También lo usa el reporte de Google Ads (GoogleAdsHourlyBlock en GoogleAdsBlocks.tsx): sin combo
+// de tipo (hideObjectiveSelect, el resultado son las compras), sin Alcance (showReach, Google no lo
+// informa), con su propio filtro de Campaña / Grupo / Anuncio (resolveFilteredHour), sus textos
+// (contactNoun, contactsLabel, resultsLabel, costLabel) y su prompt de insight (insightChart).
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
@@ -140,7 +145,32 @@ export function HourlyPerformanceChart({
   campaigns,
   adsets = [],
   ads,
+  resolveFilteredHour,
+  hideObjectiveSelect = false,
+  showReach = true,
+  contactNoun = "contacto",
+  contactsLabel = "Contactos",
+  resultsLabel = "Resultados",
+  costLabel = "Costo por Resultado",
+  insightChart = "hourly-performance",
 }: {
+  /** Resuelve una hora para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
+   *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd). */
+  resolveFilteredHour?: (
+    hour: number,
+    selection: { campaignId: string | null; adsetId: string | null; adId: string | null }
+  ) => { spend: number; objectiveLeads: number[]; objectiveSpend: number[]; reach: number; impressions: number; clicks: number } | null;
+  /** Oculta el combo de Tipo de Resultado (un único tipo, ej. Compras en Google Ads). */
+  hideObjectiveSelect?: boolean;
+  /** Muestra la columna de Alcance de la tabla de franjas (Google Ads no lo informa). */
+  showReach?: boolean;
+  /** Textos: "costo por {contactNoun}", "{contactsLabel}" del tooltip y columnas de la tabla. */
+  contactNoun?: string;
+  contactsLabel?: string;
+  resultsLabel?: string;
+  costLabel?: string;
+  /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
+  insightChart?: string;
   /** Un elemento por hora (0-23), sumando el mes completo — ver lib/reporting/metaInvestmentData.ts. */
   hourlyTotals: HourlyTotals[];
   currency: string;
@@ -196,7 +226,13 @@ export function HourlyPerformanceChart({
       const entry = byHour.get(hour);
       // Mismo criterio que InvestmentTrendChart: con Campaña/Anuncio elegidos, la hora se resuelve
       // contra SU desglose por anuncio (entry.byAd) en vez del total de cuenta.
-      const scoped = hasFilter && entry ? resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length, adsetId) : null;
+      const custom = hasFilter && entry && resolveFilteredHour ? resolveFilteredHour(hour, { campaignId, adsetId, adId }) : null;
+      const scoped =
+        hasFilter && entry
+          ? resolveFilteredHour
+            ? custom
+            : resolveAdFilteredTotals(entry.byAd, campaignId, adId, entry.objectiveLeads.length, adsetId)
+          : null;
       const hasData = hasFilter ? scoped !== null : Boolean(entry);
       const spend = hasFilter ? (scoped?.spend ?? 0) : (entry?.spend ?? 0);
       const objectiveLeadsSource = hasFilter ? scoped?.objectiveLeads : entry?.objectiveLeads;
@@ -212,13 +248,14 @@ export function HourlyPerformanceChart({
       const cplSpend = objectiveIndex !== null ? (objectiveSpendSource?.[objectiveIndex] ?? 0) : spend;
       // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio —
       // mismo criterio que spend (ver comentario de cabecera).
-      const engagement = hasFilter && entry ? resolveHourlyEngagementTotals(entry.byAd, campaignId, adId, adsetId) : null;
+      const engagement =
+        hasFilter && entry ? (resolveFilteredHour ? custom : resolveHourlyEngagementTotals(entry.byAd, campaignId, adId, adsetId)) : null;
       const reach = hasFilter ? (engagement?.reach ?? 0) : (entry?.reach ?? 0);
       const impressions = hasFilter ? (engagement?.impressions ?? 0) : (entry?.impressions ?? 0);
       const clicks = hasFilter ? (engagement?.clicks ?? 0) : (entry?.clicks ?? 0);
       return { hour, spend, leads, cpl: hasData && leads > 0 ? cplSpend / leads : null, reach, impressions, clicks };
     });
-  }, [hourlyTotals, objectiveIndex, campaignId, adsetId, adId]);
+  }, [hourlyTotals, objectiveIndex, campaignId, adsetId, adId, resolveFilteredHour]);
 
   const totalSpend = hours.reduce((sum, h) => sum + h.spend, 0);
   const totalLeads = hours.reduce((sum, h) => sum + h.leads, 0);
@@ -332,6 +369,7 @@ export function HourlyPerformanceChart({
           <BlockTitle block="horario" />
 
           <div className="flex flex-col items-stretch gap-2">
+            {!hideObjectiveSelect && (
             <select
               aria-label="Tipo de Resultado"
               value={objectiveIndex === null ? "all" : String(objectiveIndex)}
@@ -345,6 +383,7 @@ export function HourlyPerformanceChart({
                 </option>
               ))}
             </select>
+            )}
 
             <select
               aria-label="Campaña"
@@ -400,8 +439,8 @@ export function HourlyPerformanceChart({
 
         <span className="text-xs text-muted-foreground">
           {threshold !== null
-            ? `Las barras en rojo señalan las horas cuyo costo por contacto (${tipoLabel.toLowerCase()}) supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio del período filtrado.`
-            : "Todavía no hay contactos este período para calcular el promedio."}
+            ? `Las barras en rojo señalan las horas cuyo costo por ${contactNoun}${hideObjectiveSelect ? "" : ` (${tipoLabel.toLowerCase()})`} supera los ${formatCurrency(threshold, currency, 2)}, es decir, más de un ${Math.round((RED_THRESHOLD_RATIO - 1) * 100)}% por encima del promedio del período filtrado.`
+            : `Todavía no hay ${contactsLabel.toLowerCase()} este período para calcular el promedio.`}
         </span>
       </CardHeader>
 
@@ -495,12 +534,12 @@ export function HourlyPerformanceChart({
                       </span>
                       <span className="flex items-center justify-between gap-3 text-muted-foreground">
                         <span className="flex items-center gap-1.5">
-                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColor }} /> Costo/contacto
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: lineColor }} /> Costo/{contactNoun}
                         </span>
                         <span className="font-medium text-foreground">{hovered.cpl !== null ? formatCurrency(hovered.cpl, currency, 2) : "0"}</span>
                       </span>
                       <span className="flex items-center justify-between gap-3 text-muted-foreground">
-                        <span>Contactos</span>
+                        <span>{contactsLabel}</span>
                         <span className="font-medium text-foreground">{formatNumber(hovered.leads)}</span>
                       </span>
                     </>
@@ -516,20 +555,20 @@ export function HourlyPerformanceChart({
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-1.5 pr-4 font-medium">Franja horaria</th>
-                    <th className="py-1.5 pr-4 font-medium">Alcance</th>
+                    {showReach && <th className="py-1.5 pr-4 font-medium">Alcance</th>}
                     <th className="py-1.5 pr-4 font-medium">Impresiones</th>
                     <th className="py-1.5 pr-4 font-medium">Clicks</th>
                     <th className="py-1.5 pr-4 font-medium">Inversión</th>
                     <th className="py-1.5 pr-4 font-medium">% Inv.</th>
-                    <th className="py-1.5 pr-4 font-medium">Resultados</th>
-                    <th className="py-1.5 font-medium">Costo por Resultado</th>
+                    <th className="py-1.5 pr-4 font-medium">{resultsLabel}</th>
+                    <th className="py-1.5 font-medium">{costLabel}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {bands.map((band) => (
                     <tr key={band.label} className="border-b border-border/60 last:border-0">
                       <td className="py-2 pr-4 font-medium text-foreground">{band.label}</td>
-                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.reach)}</td>
+                      {showReach && <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.reach)}</td>}
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.impressions)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.clicks)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatCurrency(band.spend, currency)}</td>
@@ -546,7 +585,7 @@ export function HourlyPerformanceChart({
 
         {insightMetrics && (
           <ChartInsightPanel
-            chart="hourly-performance"
+            chart={insightChart}
             metrics={insightMetrics}
             accentColor={lineColor}
             variant="card"

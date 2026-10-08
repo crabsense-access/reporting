@@ -51,6 +51,17 @@ export interface GoogleAdsRegionRow {
   purchases: number;
 }
 
+/** Totales del mes de una entidad (campaña / grupo / anuncio) en una hora del día (0-23, huso de la cuenta). */
+export interface GoogleAdsHourRow {
+  level: GoogleAdsBreakdownRow["level"];
+  id: string;
+  hour: number;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+}
+
 export interface GoogleAdsBreakdown {
   campaigns: { id: string; name: string; status?: "activa" | "pausada" | "eliminada" }[];
   adGroups: { id: string; name: string; campaignId: string }[];
@@ -62,6 +73,8 @@ export interface GoogleAdsBreakdown {
   demographics?: GoogleAdsDemographicRow[];
   /** Desglose del mes por provincia/región, para "Ubicación geográfica". */
   regions?: GoogleAdsRegionRow[];
+  /** Desglose del mes por hora del día, para "Resultados por Horario". */
+  hours?: GoogleAdsHourRow[];
 }
 
 export interface GoogleAdsFilter {

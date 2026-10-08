@@ -3,6 +3,7 @@ import type {
   GoogleAdsBreakdown,
   GoogleAdsBreakdownRow,
   GoogleAdsDemographicRow,
+  GoogleAdsHourRow,
   GoogleAdsNetworkRow,
   GoogleAdsRegionRow,
 } from "@/lib/google-ads/filter";
@@ -67,6 +68,7 @@ export function withGoogleAdsSummaryDefaults(data: Partial<GoogleAdsMonthlySumma
       networks: data.breakdown?.networks ?? [],
       demographics: data.breakdown?.demographics ?? [],
       regions: data.breakdown?.regions ?? [],
+      hours: data.breakdown?.hours ?? [],
     },
     breakdownFailed: data.breakdownFailed ?? false,
   };
@@ -147,6 +149,7 @@ interface Row {
     ad_network_type?: string | number;
     /** Resource name del geo target ("geoTargetConstants/20009"). */
     geo_target_region?: string;
+    hour?: number;
   };
   geo_target_constant?: { resource_name?: string; name?: string };
   campaign?: { id?: number | string; name?: string; status?: number | string };
@@ -215,10 +218,17 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     q(`SELECT campaign.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
     q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
     q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
+    // Hora del día (0-23, huso de la cuenta), en los 3 niveles del filtro.
+    q(`SELECT campaign.id, segments.hour, ${PERF} FROM campaign WHERE ${range}`),
+    q(`SELECT campaign.id, segments.hour, ${CONV} FROM campaign WHERE ${range}`),
+    q(`SELECT ad_group.id, segments.hour, ${PERF} FROM ad_group WHERE ${range}`),
+    q(`SELECT ad_group.id, segments.hour, ${CONV} FROM ad_group WHERE ${range}`),
+    q(`SELECT ad_group_ad.ad.id, segments.hour, ${PERF} FROM ad_group_ad WHERE ${range}`),
+    q(`SELECT ad_group_ad.ad.id, segments.hour, ${CONV} FROM ad_group_ad WHERE ${range}`),
   ]).catch((error) => {
     console.error("[google-ads] No se pudo traer el desglose por campaña/grupo/anuncio:", error?.errors ?? error);
     breakdownFailed = true;
-    return Array.from({ length: 20 }, () => [] as Row[]);
+    return Array.from({ length: 26 }, () => [] as Row[]);
   });
 
   const [
@@ -244,6 +254,12 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
       geoCampaignConv,
       geoAdGroupPerf,
       geoAdGroupConv,
+      hourCampaignPerf,
+      hourCampaignConv,
+      hourAdGroupPerf,
+      hourAdGroupConv,
+      hourAdPerf,
+      hourAdConv,
     ],
   ] = await Promise.all([
     Promise.all([
@@ -472,6 +488,30 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
   for (const r of geoAdGroupPerf) addRegion("adGroup", id(r.ad_group?.id), r, "perf");
   for (const r of geoAdGroupConv) addRegion("adGroup", id(r.ad_group?.id), r, "conv");
 
+  // ── Hora del día, mismos 3 niveles.
+  const hourRows = new Map<string, GoogleAdsHourRow>();
+  const addHour = (level: GoogleAdsHourRow["level"], entityId: string, r: Row, kind: "perf" | "conv") => {
+    const hour = typeof r.segments?.hour === "number" ? r.segments.hour : Number(r.segments?.hour);
+    if (!entityId || !Number.isInteger(hour) || hour < 0 || hour > 23) return;
+    if (kind === "conv" && !isPurchase(r)) return;
+    const key = `${level}|${entityId}|${hour}`;
+    const entry = hourRows.get(key) ?? { level, id: entityId, hour, spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+    if (kind === "perf") {
+      entry.spend += num(r.metrics?.cost_micros) / 1e6;
+      entry.impressions += num(r.metrics?.impressions);
+      entry.clicks += num(r.metrics?.clicks);
+    } else {
+      entry.purchases += num(r.metrics?.conversions);
+    }
+    hourRows.set(key, entry);
+  };
+  for (const r of hourCampaignPerf) addHour("campaign", id(r.campaign?.id), r, "perf");
+  for (const r of hourCampaignConv) addHour("campaign", id(r.campaign?.id), r, "conv");
+  for (const r of hourAdGroupPerf) addHour("adGroup", id(r.ad_group?.id), r, "perf");
+  for (const r of hourAdGroupConv) addHour("adGroup", id(r.ad_group?.id), r, "conv");
+  for (const r of hourAdPerf) addHour("ad", id(r.ad_group_ad?.ad?.id), r, "perf");
+  for (const r of hourAdConv) addHour("ad", id(r.ad_group_ad?.ad?.id), r, "conv");
+
   const breakdownRows = [...rows.values()];
   // Totales por entidad, para ordenar los combos por inversión y descartar las que no tuvieron
   // ni inversión ni compras en el período.
@@ -509,6 +549,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     networks: [...networkRows.values()].filter((n) => n.spend > 0 || n.purchases > 0),
     demographics: [...demoRows.values()].filter((d) => d.spend > 0 || d.purchases > 0 || d.impressions > 0),
     regions: [...regionRows.values()].filter((r) => r.spend > 0 || r.purchases > 0),
+    hours: [...hourRows.values()].filter((h) => h.spend > 0 || h.purchases > 0 || h.impressions > 0),
   };
 
   // ── Totales por campaña (insight) y campañas de WhatsApp (ROAS WhatsApp)
