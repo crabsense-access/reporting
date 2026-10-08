@@ -20,6 +20,7 @@ import {
   GoogleAdsBillingBlock,
   GoogleAdsCampaignAnalysisBlock,
   GoogleAdsPlacementBlock,
+  GoogleAdsRegionBlock,
   GoogleAdsResultsBlock,
   GoogleAdsResultsByCampaignBlock,
   GoogleAdsTrendBlock,
@@ -92,6 +93,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsPlacementBlock summary={s} clientId={clientId} />
       {/* "Quién responde a los anuncios": edad y género por separado (Google no los cruza). */}
       <GoogleAdsAudienceBlock summary={s} clientId={clientId} />
+      {/* Mismo bloque "Ubicación geográfica" que Meta Ads, por provincia/región. */}
+      <GoogleAdsRegionBlock summary={s} clientId={clientId} />
     </>
   );
 }

@@ -29,6 +29,11 @@
 // metaInvestmentData.ts) no tiene desglose por anuncio — con un filtro de Campaña o Anuncio
 // elegido, esa fila directamente no aparece (aceptado con Martín, mismo criterio que el resto de
 // la página para ese bucket).
+//
+// También lo usa el reporte de Google Ads (GoogleAdsRegionBlock en GoogleAdsBlocks.tsx): sin combo
+// de tipo (hideObjectiveSelect, el resultado son las compras), sin columna de Alcance (showReach,
+// Google no lo informa), con su propio filtro de Campaña / Grupo / Anuncio (resolveFilteredSegment),
+// sus textos y su prompt de insight (insightChart).
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -66,6 +71,7 @@ function tierFor(cpl: number, avgCpl: number): Tier {
 // Resultado) para que los valores queden alineados verticalmente entre todas las filas, sin
 // importar cuántas provincias haya ni el largo de cada número.
 const METRIC_GRID_COLUMNS = "64px 76px 56px 92px 56px 68px 96px";
+const METRIC_GRID_COLUMNS_NO_REACH = "76px 56px 92px 56px 68px 96px";
 
 interface RegionAdBreakdownEntry extends AdBreakdownEntry {
   /** Ver comentario de RegionSegmentTotals más abajo. */
@@ -127,7 +133,32 @@ export function RegionAnalysis({
   campaigns,
   adsets = [],
   ads,
+  resolveFilteredSegment,
+  hideObjectiveSelect = false,
+  showReach = true,
+  resultsLabel = "Resultados",
+  costLabel = "Costo por Resultado",
+  avgCostLabel = "CPL promedio",
+  emptyText = "Todavía no hay resultados este mes.",
+  insightChart = "regions",
 }: {
+  /** Resuelve una región para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
+   *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd). */
+  resolveFilteredSegment?: (
+    region: string,
+    selection: { campaignId: string | null; adsetId: string | null; adId: string | null }
+  ) => { objectiveLeads: number[]; objectiveSpend: number[]; reach: number; impressions: number; clicks: number } | null;
+  /** Oculta el combo de Tipo de Resultado (un único tipo, ej. Compras en Google Ads). */
+  hideObjectiveSelect?: boolean;
+  /** Muestra la columna de Alcance (Google Ads no lo informa). */
+  showReach?: boolean;
+  /** Textos de las columnas, del promedio del encabezado y del estado vacío. */
+  resultsLabel?: string;
+  costLabel?: string;
+  avgCostLabel?: string;
+  emptyText?: string;
+  /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
+  insightChart?: string;
   /** Un elemento por provincia/región con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: RegionSegmentTotals[];
   /**
@@ -196,7 +227,12 @@ export function RegionAnalysis({
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     return segments
       .map((s) => {
-        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount, adsetId) : null;
+        const custom = hasFilter && resolveFilteredSegment ? resolveFilteredSegment(s.region, { campaignId, adsetId, adId }) : null;
+        const scoped = hasFilter
+          ? resolveFilteredSegment
+            ? custom
+            : resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount, adsetId)
+          : null;
         const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
         const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
         // Con "Todos los Resultados" (objectiveIndex null) se suman TODOS los índices — mismo criterio
@@ -206,7 +242,11 @@ export function RegionAnalysis({
         const spend =
           objectiveIndex !== null ? (spendSource?.[objectiveIndex] ?? 0) : (spendSource ?? []).reduce((sum, v) => sum + v, 0);
         // Alcance/Impresiones/Clicks: no dependen del Tipo de Resultado, sólo de Campaña/Anuncio.
-        const engagement = hasFilter ? resolveRegionEngagementTotals(s.byAd, campaignId, adId, adsetId) : null;
+        const engagement = hasFilter
+          ? resolveFilteredSegment
+            ? custom
+            : resolveRegionEngagementTotals(s.byAd, campaignId, adId, adsetId)
+          : null;
         const reach = hasFilter ? (engagement?.reach ?? 0) : s.reach;
         const impressions = hasFilter ? (engagement?.impressions ?? 0) : s.impressions;
         const clicks = hasFilter ? (engagement?.clicks ?? 0) : s.clicks;
@@ -214,7 +254,7 @@ export function RegionAnalysis({
       })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, objectiveIndex, hasFilter, campaignId, adsetId, adId]);
+  }, [segments, objectiveIndex, hasFilter, campaignId, adsetId, adId, resolveFilteredSegment]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -264,11 +304,12 @@ export function RegionAnalysis({
           <BlockTitle block="regiones" />
           <span className="text-xs text-muted-foreground">
             Ranking del mes por provincia · Inversión total: {formatCurrency(totalSpend, currency)}
-            {totalLeads > 0 && <> · CPL promedio: {formatCurrency(avgCpl, currency, 2)}</>}
+            {totalLeads > 0 && <> · {avgCostLabel}: {formatCurrency(avgCpl, currency, 2)}</>}
           </span>
         </div>
 
         <div className="flex flex-col items-stretch gap-2">
+          {!hideObjectiveSelect && (
           <select
             aria-label="Tipo de Resultado"
             value={objectiveIndex === null ? "all" : String(objectiveIndex)}
@@ -282,6 +323,7 @@ export function RegionAnalysis({
               </option>
             ))}
           </select>
+          )}
 
           <select
             aria-label="Campaña"
@@ -337,22 +379,22 @@ export function RegionAnalysis({
 
       <CardContent className="flex flex-col gap-5 pt-4">
         {rows.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
+          <p className="text-xs text-muted-foreground">{emptyText}</p>
         ) : (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-4">
               <span className="min-w-0 flex-1" />
               <div
                 className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-                style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}
+                style={{ gridTemplateColumns: showReach ? METRIC_GRID_COLUMNS : METRIC_GRID_COLUMNS_NO_REACH }}
               >
-                <span>Alcance</span>
+                {showReach && <span>Alcance</span>}
                 <span>Impres.</span>
                 <span>Clicks</span>
                 <span>Inversión</span>
                 <span>% Inv.</span>
-                <span>Resultados</span>
-                <span>Costo por Resultado</span>
+                <span>{resultsLabel}</span>
+                <span>{costLabel}</span>
               </div>
             </div>
 
@@ -381,8 +423,11 @@ export function RegionAnalysis({
                       <div className="h-full rounded-full" style={{ width: `${widthPct}%`, backgroundColor: color }} />
                     </div>
                   </div>
-                  <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: METRIC_GRID_COLUMNS }}>
-                    <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.reach)}</span>
+                  <div
+                    className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums"
+                    style={{ gridTemplateColumns: showReach ? METRIC_GRID_COLUMNS : METRIC_GRID_COLUMNS_NO_REACH }}
+                  >
+                    {showReach && <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.reach)}</span>}
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.impressions)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.clicks)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
@@ -400,7 +445,7 @@ export function RegionAnalysis({
 
         {insightMetrics && (
           <ChartInsightPanel
-            chart="regions"
+            chart={insightChart}
             metrics={insightMetrics}
             accentColor={selectedColor}
             variant="card"

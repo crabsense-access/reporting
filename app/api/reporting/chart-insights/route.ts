@@ -137,6 +137,14 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
     'identificó cuál es la campaña "mejor" (mejor CPL) y cuál la "peor" (peor CPL) del mes — ' +
     "redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-regions":
+    'Estás mirando "Ubicación geográfica" del reporte de Google Ads de un cliente ecommerce: ' +
+    "inversión, impresiones, clics, compras y costo por compra del mes por provincia/región. En los " +
+    "datos, \"resultados\" son las compras y \"cpl\" el costo por compra; el alcance no lo informa " +
+    "Google Ads (no lo menciones). El campo \"campania\" indica si se filtró por una campaña. " +
+    "Identificá el hallazgo principal (qué provincias concentran la inversión y las compras, cuáles " +
+    "son más y menos eficientes) y redactalo para que un cliente no técnico lo entienda de un vistazo, " +
+    "hablando de compras y costo por compra (no de leads ni CPL).",
   "google-ads-audience":
     'Estás mirando "Quién responde a los anuncios" del reporte de Google Ads de un cliente ecommerce: ' +
     "compras, inversión, costo por compra e impresiones del mes por rango etario (\"porEdad\") y por " +
@@ -262,6 +270,7 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     case "placements":
     case "google-ads-placements":
       return PLACEMENTS_FALLBACK;
+    case "google-ads-regions":
     case "regions": {
       const tipoCampania =
         typeof metrics === "object" && metrics !== null && "tipoCampania" in metrics

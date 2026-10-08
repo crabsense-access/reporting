@@ -4,6 +4,7 @@ import type {
   GoogleAdsBreakdownRow,
   GoogleAdsDemographicRow,
   GoogleAdsNetworkRow,
+  GoogleAdsRegionRow,
 } from "@/lib/google-ads/filter";
 
 // Datos del mes del reporte de Google Ads (ver components/admin/reporting/GoogleAdsReport.tsx):
@@ -65,6 +66,7 @@ export function withGoogleAdsSummaryDefaults(data: Partial<GoogleAdsMonthlySumma
       rows: data.breakdown?.rows ?? [],
       networks: data.breakdown?.networks ?? [],
       demographics: data.breakdown?.demographics ?? [],
+      regions: data.breakdown?.regions ?? [],
     },
     breakdownFailed: data.breakdownFailed ?? false,
   };
@@ -139,7 +141,14 @@ function enumLabel(v: unknown, byNumber: Record<number, string>, labels: Record<
 interface Row {
   customer?: { currency_code?: string };
   ad_group_criterion?: { age_range?: { type?: number | string }; gender?: { type?: number | string } };
-  segments?: { date?: string; conversion_action_category?: string | number; ad_network_type?: string | number };
+  segments?: {
+    date?: string;
+    conversion_action_category?: string | number;
+    ad_network_type?: string | number;
+    /** Resource name del geo target ("geoTargetConstants/20009"). */
+    geo_target_region?: string;
+  };
+  geo_target_constant?: { resource_name?: string; name?: string };
   campaign?: { id?: number | string; name?: string; status?: number | string };
   ad_group?: { id?: number | string; name?: string };
   ad_group_ad?: {
@@ -201,10 +210,15 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${CONV} FROM age_range_view WHERE ${range}`),
     q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${PERF} FROM gender_view WHERE ${range}`),
     q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${CONV} FROM gender_view WHERE ${range}`),
+    // Geografía (provincia/región), por campaña (incluye Performance Max) y por grupo de anuncios.
+    q(`SELECT campaign.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
+    q(`SELECT campaign.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
+    q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
+    q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
   ]).catch((error) => {
     console.error("[google-ads] No se pudo traer el desglose por campaña/grupo/anuncio:", error?.errors ?? error);
     breakdownFailed = true;
-    return Array.from({ length: 16 }, () => [] as Row[]);
+    return Array.from({ length: 20 }, () => [] as Row[]);
   });
 
   const [
@@ -226,6 +240,10 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
       ageConv,
       genderPerf,
       genderConv,
+      geoCampaignPerf,
+      geoCampaignConv,
+      geoAdGroupPerf,
+      geoAdGroupConv,
     ],
   ] = await Promise.all([
     Promise.all([
@@ -405,6 +423,55 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
   for (const r of genderPerf) addDemo("genero", genderOf(r), r, "perf");
   for (const r of genderConv) addDemo("genero", genderOf(r), r, "conv");
 
+  // ── Geografía: nombres de las regiones (una consulta aparte a geo_target_constant; si falla, se
+  // muestra el id) y totales por campaña / grupo de anuncios.
+  const regionIds = new Set<string>();
+  for (const r of [...geoCampaignPerf, ...geoCampaignConv, ...geoAdGroupPerf, ...geoAdGroupConv]) {
+    if (r.segments?.geo_target_region) regionIds.add(r.segments.geo_target_region);
+  }
+  const regionNames = new Map<string, string>();
+  const ids = [...regionIds];
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200).map((rn) => `'${rn}'`).join(", ");
+    try {
+      const named = await q(
+        `SELECT geo_target_constant.resource_name, geo_target_constant.name FROM geo_target_constant WHERE geo_target_constant.resource_name IN (${chunk})`
+      );
+      for (const g of named) {
+        if (g.geo_target_constant?.resource_name && g.geo_target_constant.name) {
+          regionNames.set(g.geo_target_constant.resource_name, g.geo_target_constant.name);
+        }
+      }
+    } catch (error) {
+      console.error("[google-ads] No se pudieron traer los nombres de las regiones:", (error as { errors?: unknown })?.errors ?? error);
+    }
+  }
+  const regionName = (r: Row) => {
+    const rn = r.segments?.geo_target_region;
+    if (!rn) return "Sin región asignada";
+    return regionNames.get(rn) ?? `Región ${rn.split("/").pop()}`;
+  };
+  const regionRows = new Map<string, GoogleAdsRegionRow>();
+  const addRegion = (level: GoogleAdsRegionRow["level"], entityId: string, r: Row, kind: "perf" | "conv") => {
+    if (!entityId) return;
+    if (kind === "conv" && !isPurchase(r)) return;
+    const region = regionName(r);
+    const key = `${level}|${entityId}|${region}`;
+    const entry = regionRows.get(key) ?? { level, id: entityId, region, spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+    if (kind === "perf") {
+      entry.spend += num(r.metrics?.cost_micros) / 1e6;
+      entry.impressions += num(r.metrics?.impressions);
+      entry.clicks += num(r.metrics?.clicks);
+    } else {
+      entry.purchases += num(r.metrics?.conversions);
+    }
+    regionRows.set(key, entry);
+  };
+  for (const r of geoCampaignPerf) addRegion("campaign", id(r.campaign?.id), r, "perf");
+  for (const r of geoCampaignConv) addRegion("campaign", id(r.campaign?.id), r, "conv");
+  for (const r of geoAdGroupPerf) addRegion("adGroup", id(r.ad_group?.id), r, "perf");
+  for (const r of geoAdGroupConv) addRegion("adGroup", id(r.ad_group?.id), r, "conv");
+
   const breakdownRows = [...rows.values()];
   // Totales por entidad, para ordenar los combos por inversión y descartar las que no tuvieron
   // ni inversión ni compras en el período.
@@ -441,6 +508,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     rows: breakdownRows.filter((r) => active(r.level, r.id)),
     networks: [...networkRows.values()].filter((n) => n.spend > 0 || n.purchases > 0),
     demographics: [...demoRows.values()].filter((d) => d.spend > 0 || d.purchases > 0 || d.impressions > 0),
+    regions: [...regionRows.values()].filter((r) => r.spend > 0 || r.purchases > 0),
   };
 
   // ── Totales por campaña (insight) y campañas de WhatsApp (ROAS WhatsApp)

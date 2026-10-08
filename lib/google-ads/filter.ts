@@ -39,6 +39,18 @@ export interface GoogleAdsDemographicRow {
   purchases: number;
 }
 
+/** Totales del mes de una campaña o grupo de anuncios en una provincia/región (Google no la informa por anuncio). */
+export interface GoogleAdsRegionRow {
+  level: "campaign" | "adGroup";
+  id: string;
+  /** Nombre de la provincia/región (geo_target_constant.name), o "Sin región asignada". */
+  region: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  purchases: number;
+}
+
 export interface GoogleAdsBreakdown {
   campaigns: { id: string; name: string; status?: "activa" | "pausada" | "eliminada" }[];
   adGroups: { id: string; name: string; campaignId: string }[];
@@ -48,6 +60,8 @@ export interface GoogleAdsBreakdown {
   networks?: GoogleAdsNetworkRow[];
   /** Demografía del mes (edad y género por separado), para "Quién responde a los anuncios". */
   demographics?: GoogleAdsDemographicRow[];
+  /** Desglose del mes por provincia/región, para "Ubicación geográfica". */
+  regions?: GoogleAdsRegionRow[];
 }
 
 export interface GoogleAdsFilter {

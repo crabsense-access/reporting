@@ -18,6 +18,7 @@ import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTre
 import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
 import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHighlightPanel";
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
+import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
@@ -745,6 +746,97 @@ export function GoogleAdsPlacementBlock({ summary, clientId }: { summary: Google
       rankingLabel="red"
       emptyText="No hay inversión ni compras por red este período."
       insightChart="google-ads-placements"
+    />
+  );
+}
+
+// ─────────────────────────── Ubicación geográfica ───────────────────────────
+
+/**
+ * Mismo bloque "Ubicación geográfica" que el reporte de Meta Ads (RegionAnalysis): ranking de
+ * provincias/regiones por inversión, coloreado por eficiencia del costo por compra, con
+ * Impresiones, Clicks, Inversión, % Inv., Compras y Costo por compra, filtros e insight de IA. Sin
+ * Alcance (Google no lo informa). Google da la geografía por campaña y por grupo de anuncios, no por
+ * anuncio: con un anuncio elegido se usan los datos de su grupo.
+ */
+export function GoogleAdsRegionBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  const regions = useMemo(() => summary?.breakdown.regions ?? [], [summary]);
+  const ads = useMemo(() => summary?.breakdown.ads ?? [], [summary]);
+
+  // Sin filtro: totales por región a nivel campaña (incluye Performance Max).
+  const segments = useMemo(() => {
+    const byRegion = new Map<string, { spend: number; impressions: number; clicks: number; purchases: number }>();
+    for (const r of regions) {
+      if (r.level !== "campaign") continue;
+      const t = byRegion.get(r.region) ?? { spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+      t.spend += r.spend;
+      t.impressions += r.impressions;
+      t.clicks += r.clicks;
+      t.purchases += r.purchases;
+      byRegion.set(r.region, t);
+    }
+    return [...byRegion.entries()].map(([region, t]) => ({
+      region,
+      objectiveLeads: [t.purchases],
+      objectiveSpend: [t.spend],
+      reach: 0,
+      impressions: t.impressions,
+      clicks: t.clicks,
+      byAd: {},
+    }));
+  }, [regions]);
+
+  const resolveFilteredSegment = useCallback(
+    (region: string, sel: { campaignId: string | null; adsetId: string | null; adId: string | null }) => {
+      // Un anuncio elegido → su grupo de anuncios (la geografía no se informa por anuncio).
+      const adGroupId = sel.adId !== null ? (ads.find((a) => a.id === sel.adId)?.adGroupId ?? null) : sel.adsetId;
+      const level = adGroupId !== null ? "adGroup" : "campaign";
+      const id = adGroupId ?? sel.campaignId;
+      const match = regions.filter((r) => r.level === level && r.id === id && r.region === region);
+      if (match.length === 0) return null;
+      const sum = (k: "spend" | "impressions" | "clicks" | "purchases") => match.reduce((acc, r) => acc + r[k], 0);
+      return {
+        objectiveLeads: [sum("purchases")],
+        objectiveSpend: [sum("spend")],
+        reach: 0,
+        impressions: sum("impressions"),
+        clicks: sum("clicks"),
+      };
+    },
+    [regions, ads]
+  );
+
+  if (!summary) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="regiones" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <RegionAnalysis
+      segments={segments}
+      objectiveOptions={[{ index: 0, label: "Compras" }]}
+      currency={summary.currency}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+      campaigns={summary.breakdown.campaigns}
+      adsets={summary.breakdown.adGroups}
+      ads={summary.breakdown.ads.map((a) => ({ id: a.id, name: a.name, campaignId: a.campaignId, adsetId: a.adGroupId }))}
+      resolveFilteredSegment={resolveFilteredSegment}
+      hideObjectiveSelect
+      showReach={false}
+      resultsLabel="Compras"
+      costLabel="Costo por compra"
+      avgCostLabel="Costo por compra promedio"
+      emptyText="No hay inversión ni compras por región este mes."
+      insightChart="google-ads-regions"
     />
   );
 }
