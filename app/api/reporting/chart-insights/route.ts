@@ -43,13 +43,11 @@ import {
 
 const CHART_INSTRUCTIONS: Record<string, string> = {
   "google-ads-summary":
-    'Estás mirando el "Resumen global del período" del reporte de Google Ads de un cliente: ' +
-    "inversión, impresiones, clics, compras, CPA, facturación, ROAS, ticket promedio y tasa de " +
-    "conversión del mes según Google Ads, más las ventas por WhatsApp cargadas a mano por el cliente " +
-    "(ventas, facturación, ticket promedio y ROAS WhatsApp = facturación WhatsApp / inversión de las " +
-    "campañas de WhatsApp en Google Ads). Algunos valores pueden venir en null si no aplican. " +
-    "Identificá el hallazgo principal del mes (eficiencia de la inversión, retorno, peso de WhatsApp " +
-    "en las ventas) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
+    'Estás mirando el "Resumen ejecutivo" del reporte de Google Ads de un cliente: inversión, ' +
+    "impresiones, clics, compras, CPA, facturación, ROAS, ticket promedio y tasa de conversión del " +
+    "mes según Google Ads. Algunos valores pueden venir en null si no aplican. Identificá el hallazgo " +
+    "principal del mes (eficiencia de la inversión, retorno, conversión) y redactalo para que un " +
+    "cliente no técnico lo entienda de un vistazo.",
   "entity-performance":
     'Estás mirando la tabla "Performance por campaña / grupo de anuncios / anuncio" del bloque ' +
     "Facturación de un cliente ecommerce: alcance, impresiones, clics, resultados, costo por " +

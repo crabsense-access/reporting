@@ -32,8 +32,8 @@ export const REPORT_BLOCK_TITLES = {
   recomendaciones: { title: "Recomendaciones" },
   // ─── Google Ads ───
   googleAdsResultados: { title: "Resultados" },
-  /** Bloque de Ventas por WhatsApp (carga manual) + Resumen ejecutivo del reporte de Google Ads. */
-  googleAdsResumen: { title: "Ventas por WhatsApp" },
+  /** Resumen ejecutivo (insight de IA) del reporte de Google Ads. */
+  googleAdsResumen: { title: "Resumen ejecutivo" },
 } satisfies Record<string, BlockTitle>;
 
 export type ReportBlockKey = keyof typeof REPORT_BLOCK_TITLES;
