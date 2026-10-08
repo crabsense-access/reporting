@@ -184,16 +184,7 @@ export function GoogleAdsResultsBlock({ summary, clientId }: { summary: GoogleAd
 
 // ─────────────────────────────── Facturación ───────────────────────────────
 
-export function GoogleAdsBillingBlock({
-  summary,
-  clientId,
-  footer,
-}: {
-  summary: GoogleAdsSummaryResponse | null;
-  clientId: string;
-  /** Contenido extra al final del recuadro (el insight del resumen ejecutivo, ver GoogleAdsReport.tsx). */
-  footer?: React.ReactNode;
-}) {
+export function GoogleAdsBillingBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
   const [filter, setFilter] = useState<GoogleAdsFilter>(EMPTY_GOOGLE_ADS_FILTER);
   const data = useFilteredData(summary, filter);
   const currency = summary?.currency ?? "ARS";
@@ -316,7 +307,6 @@ export function GoogleAdsBillingBlock({
             )}
           </>
         )}
-        {footer && <div className="pt-3">{footer}</div>}
       </CardContent>
     </Card>
   );

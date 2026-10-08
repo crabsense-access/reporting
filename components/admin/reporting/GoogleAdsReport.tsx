@@ -2,28 +2,20 @@
 
 // Reporte de Google Ads: bloques Inversión (compartido con Meta Ads, ver InvestmentBlock.tsx),
 // Resultados y Facturación (con filtros por Campaña / Grupo de anuncios / Anuncio, ver
-// GoogleAdsBlocks.tsx) y un Resumen ejecutivo con insight de IA. Datos del mes desde
+// GoogleAdsBlocks.tsx), cada uno con su insight de IA. Datos del mes desde
 // /api/clients/[id]/google-ads-summary.
 //
 // "Ventas por WhatsApp" se sacó de este reporte a pedido de Martín: usaba el Google Sheet de carga
 // manual que se configura en la config de Meta Ads del Admin. Vuelve cuando haya un Sheet propio en
 // la config de Google Ads (WHATSAPP_CAMPAIGN_PATTERN / whatsappSpend siguen calculándose en
 // lib/google-ads/monthlySummary.ts para el ROAS WhatsApp de ese momento).
-//
-// Definiciones: CPA = inversión / compras · ROAS = facturación / inversión ·
-// Ticket = facturación / compras · Conversion rate = compras / clicks.
 
 import { useEffect, useState } from "react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
-import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import { GoogleAdsBillingBlock, GoogleAdsResultsBlock, type GoogleAdsSummaryResponse } from "@/components/admin/reporting/GoogleAdsBlocks";
-
-function ratio(a: number, b: number): number | null {
-  return b === 0 ? null : a / b;
-}
 
 export function GoogleAdsReport({ clientId, month }: { clientId: string; month: string }) {
   const [summary, setSummary] = useState<GoogleAdsSummaryResponse | null>(null);
@@ -65,22 +57,6 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
   // carga, se deduce comparando el mes elegido con el mes actual.
   const isCurrentMonth = s ? s.isCurrentMonth : month === new Date().toISOString().slice(0, 7);
 
-  const insightMetrics = s
-    ? {
-        mes: month,
-        inversion: s.spend,
-        impresiones: s.impressions,
-        clicks: s.clicks,
-        compras: s.purchases,
-        cpa: ratio(s.spend, s.purchases),
-        facturacion: s.revenue,
-        roas: ratio(s.revenue, s.spend),
-        ticketPromedio: ratio(s.revenue, s.purchases),
-        conversionRate: ratio(s.purchases, s.clicks),
-        moneda: currency,
-      }
-    : null;
-
   return (
     <>
       {/* Inversión: mismo bloque que el reporte de Meta Ads (ver InvestmentBlock.tsx). */}
@@ -96,24 +72,7 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       {/* Resultados y Facturación, cada uno con su filtro de Campaña / Grupo de anuncios / Anuncio
           (ver GoogleAdsBlocks.tsx). */}
       <GoogleAdsResultsBlock summary={s} clientId={clientId} />
-      {/* El insight del resumen ejecutivo va dentro del bloque Facturación, sin título propio. */}
-      <GoogleAdsBillingBlock
-        summary={s}
-        clientId={clientId}
-        footer={
-          s && !(s.spend === 0 && s.impressions === 0) && insightMetrics ? (
-            <ChartInsightPanel
-              chart="google-ads-summary"
-              metrics={insightMetrics}
-              accentColor="hsl(var(--primary))"
-              variant="card"
-              bordered={false}
-              monthIsComplete={!s.isCurrentMonth}
-              clientId={clientId}
-            />
-          ) : null
-        }
-      />
+      <GoogleAdsBillingBlock summary={s} clientId={clientId} />
     </>
   );
 }
