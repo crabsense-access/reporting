@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import {
+  GoogleAdsAudienceBlock,
   GoogleAdsBillingBlock,
   GoogleAdsCampaignAnalysisBlock,
   GoogleAdsPlacementBlock,
@@ -89,6 +90,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsCampaignAnalysisBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Ubicación de los anuncios" que Meta Ads: cada ubicación es una red de Google. */}
       <GoogleAdsPlacementBlock summary={s} clientId={clientId} />
+      {/* "Quién responde a los anuncios": edad y género por separado (Google no los cruza). */}
+      <GoogleAdsAudienceBlock summary={s} clientId={clientId} />
     </>
   );
 }

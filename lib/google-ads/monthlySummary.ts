@@ -1,5 +1,10 @@
 import { getGoogleAdsClient } from "@/lib/google-ads/client";
-import type { GoogleAdsBreakdown, GoogleAdsBreakdownRow, GoogleAdsNetworkRow } from "@/lib/google-ads/filter";
+import type {
+  GoogleAdsBreakdown,
+  GoogleAdsBreakdownRow,
+  GoogleAdsDemographicRow,
+  GoogleAdsNetworkRow,
+} from "@/lib/google-ads/filter";
 
 // Datos del mes del reporte de Google Ads (ver components/admin/reporting/GoogleAdsReport.tsx):
 // totales de la cuenta + compras/facturación + gasto de las campañas de WhatsApp (para el ROAS
@@ -59,6 +64,7 @@ export function withGoogleAdsSummaryDefaults(data: Partial<GoogleAdsMonthlySumma
       ads: data.breakdown?.ads ?? [],
       rows: data.breakdown?.rows ?? [],
       networks: data.breakdown?.networks ?? [],
+      demographics: data.breakdown?.demographics ?? [],
     },
     breakdownFailed: data.breakdownFailed ?? false,
   };
@@ -104,8 +110,35 @@ function networkLabel(v: unknown): string {
   return (key && NETWORK_LABELS[key]) || "Otras redes";
 }
 
+/** Rangos etarios y géneros de Google Ads (enum como número o texto según la librería). */
+const AGE_LABELS: Record<string, string> = {
+  AGE_RANGE_18_24: "18-24",
+  AGE_RANGE_25_34: "25-34",
+  AGE_RANGE_35_44: "35-44",
+  AGE_RANGE_45_54: "45-54",
+  AGE_RANGE_55_64: "55-64",
+  AGE_RANGE_65_UP: "65+",
+  AGE_RANGE_UNDETERMINED: "Sin determinar",
+};
+const AGE_BY_NUMBER: Record<number, string> = {
+  503001: "AGE_RANGE_18_24",
+  503002: "AGE_RANGE_25_34",
+  503003: "AGE_RANGE_35_44",
+  503004: "AGE_RANGE_45_54",
+  503005: "AGE_RANGE_55_64",
+  503006: "AGE_RANGE_65_UP",
+  503999: "AGE_RANGE_UNDETERMINED",
+};
+const GENDER_LABELS: Record<string, string> = { FEMALE: "Mujeres", MALE: "Hombres", UNDETERMINED: "Sin determinar" };
+const GENDER_BY_NUMBER: Record<number, string> = { 10: "MALE", 11: "FEMALE", 20: "UNDETERMINED" };
+function enumLabel(v: unknown, byNumber: Record<number, string>, labels: Record<string, string>): string | null {
+  const key = typeof v === "number" ? byNumber[v] : typeof v === "string" ? v : undefined;
+  return (key && labels[key]) || null;
+}
+
 interface Row {
   customer?: { currency_code?: string };
+  ad_group_criterion?: { age_range?: { type?: number | string }; gender?: { type?: number | string } };
   segments?: { date?: string; conversion_action_category?: string | number; ad_network_type?: string | number };
   campaign?: { id?: number | string; name?: string; status?: number | string };
   ad_group?: { id?: number | string; name?: string };
@@ -163,10 +196,15 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     q(`SELECT ad_group.id, segments.ad_network_type, ${CONV} FROM ad_group WHERE ${range}`),
     q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, metrics.cost_micros FROM ad_group_ad WHERE ${range}`),
     q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, ${CONV} FROM ad_group_ad WHERE ${range}`),
+    // Demografía (por grupo de anuncios: Google no la informa por anuncio, y Performance Max no la informa).
+    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${PERF} FROM age_range_view WHERE ${range}`),
+    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${CONV} FROM age_range_view WHERE ${range}`),
+    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${PERF} FROM gender_view WHERE ${range}`),
+    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${CONV} FROM gender_view WHERE ${range}`),
   ]).catch((error) => {
     console.error("[google-ads] No se pudo traer el desglose por campaña/grupo/anuncio:", error?.errors ?? error);
     breakdownFailed = true;
-    return Array.from({ length: 12 }, () => [] as Row[]);
+    return Array.from({ length: 16 }, () => [] as Row[]);
   });
 
   const [
@@ -184,6 +222,10 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
       adGroupNetConv,
       adNetPerf,
       adNetConv,
+      agePerf,
+      ageConv,
+      genderPerf,
+      genderConv,
     ],
   ] = await Promise.all([
     Promise.all([
@@ -332,6 +374,37 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
   for (const r of adNetPerf) addNetwork("ad", id(r.ad_group_ad?.ad?.id), r, "perf");
   for (const r of adNetConv) addNetwork("ad", id(r.ad_group_ad?.ad?.id), r, "conv");
 
+  // ── Demografía (edad y género por separado), por grupo de anuncios.
+  const demoRows = new Map<string, GoogleAdsDemographicRow>();
+  const addDemo = (dimension: GoogleAdsDemographicRow["dimension"], segment: string | null, r: Row, kind: "perf" | "conv") => {
+    const adGroupId = id(r.ad_group?.id);
+    if (!segment || !adGroupId) return;
+    if (kind === "conv" && !isPurchase(r)) return;
+    const key = `${dimension}|${segment}|${adGroupId}`;
+    const entry = demoRows.get(key) ?? {
+      dimension,
+      segment,
+      campaignId: id(r.campaign?.id),
+      adGroupId,
+      spend: 0,
+      impressions: 0,
+      purchases: 0,
+    };
+    if (kind === "perf") {
+      entry.spend += num(r.metrics?.cost_micros) / 1e6;
+      entry.impressions += num(r.metrics?.impressions);
+    } else {
+      entry.purchases += num(r.metrics?.conversions);
+    }
+    demoRows.set(key, entry);
+  };
+  const ageOf = (r: Row) => enumLabel(r.ad_group_criterion?.age_range?.type, AGE_BY_NUMBER, AGE_LABELS);
+  const genderOf = (r: Row) => enumLabel(r.ad_group_criterion?.gender?.type, GENDER_BY_NUMBER, GENDER_LABELS);
+  for (const r of agePerf) addDemo("edad", ageOf(r), r, "perf");
+  for (const r of ageConv) addDemo("edad", ageOf(r), r, "conv");
+  for (const r of genderPerf) addDemo("genero", genderOf(r), r, "perf");
+  for (const r of genderConv) addDemo("genero", genderOf(r), r, "conv");
+
   const breakdownRows = [...rows.values()];
   // Totales por entidad, para ordenar los combos por inversión y descartar las que no tuvieron
   // ni inversión ni compras en el período.
@@ -367,6 +440,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
       .sort((a, b) => spendOf("ad", b.id) - spendOf("ad", a.id)),
     rows: breakdownRows.filter((r) => active(r.level, r.id)),
     networks: [...networkRows.values()].filter((n) => n.spend > 0 || n.purchases > 0),
+    demographics: [...demoRows.values()].filter((d) => d.spend > 0 || d.purchases > 0 || d.impressions > 0),
   };
 
   // ── Totales por campaña (insight) y campañas de WhatsApp (ROAS WhatsApp)

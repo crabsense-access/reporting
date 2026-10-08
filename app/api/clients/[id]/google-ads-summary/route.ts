@@ -75,7 +75,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         {
           clientId,
           source: "google_ads",
-          query: "monthlySummary:v8",
+          query: "monthlySummary:v9",
           params: { customerId, from, to },
           // Mes en curso: 3 h fijas. Mes cerrado: sin ttlSeconds → heurística de withCache por `to`.
           ...(isCurrentMonth ? { ttlSeconds: THREE_HOURS_SECONDS } : {}),

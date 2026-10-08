@@ -27,6 +27,18 @@ export interface GoogleAdsNetworkRow {
   purchases: number;
 }
 
+/** Totales del mes de un grupo de anuncios en un segmento demográfico (Google lo informa por grupo, no por anuncio). */
+export interface GoogleAdsDemographicRow {
+  dimension: "edad" | "genero";
+  /** "18-24" … "65+", "Sin determinar" / "Mujeres", "Hombres", "Sin determinar". */
+  segment: string;
+  campaignId: string;
+  adGroupId: string;
+  spend: number;
+  impressions: number;
+  purchases: number;
+}
+
 export interface GoogleAdsBreakdown {
   campaigns: { id: string; name: string; status?: "activa" | "pausada" | "eliminada" }[];
   adGroups: { id: string; name: string; campaignId: string }[];
@@ -34,6 +46,8 @@ export interface GoogleAdsBreakdown {
   rows: GoogleAdsBreakdownRow[];
   /** Desglose del mes por red (Búsqueda, Display, YouTube…), para "Ubicación de los anuncios". */
   networks?: GoogleAdsNetworkRow[];
+  /** Demografía del mes (edad y género por separado), para "Quién responde a los anuncios". */
+  demographics?: GoogleAdsDemographicRow[];
 }
 
 export interface GoogleAdsFilter {

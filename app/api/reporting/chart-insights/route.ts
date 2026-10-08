@@ -137,6 +137,14 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
     'identificó cuál es la campaña "mejor" (mejor CPL) y cuál la "peor" (peor CPL) del mes — ' +
     "redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-audience":
+    'Estás mirando "Quién responde a los anuncios" del reporte de Google Ads de un cliente ecommerce: ' +
+    "compras, inversión, costo por compra e impresiones del mes por rango etario (\"porEdad\") y por " +
+    "género (\"porGenero\"), por separado — Google Ads no cruza edad con género, así que no hables de " +
+    "combinaciones como \"mujeres de 25-34\". No incluye Performance Max. El campo \"filtro\" indica si se " +
+    "filtró por una campaña, grupo o anuncio. Identificá el hallazgo principal (qué edades y qué género " +
+    "concentran las compras, cuáles son más y menos eficientes) y redactalo para que un cliente no técnico " +
+    "lo entienda de un vistazo.",
   "google-ads-placements":
     'Estás mirando "Ubicación de los anuncios" del reporte de Google Ads de un cliente ecommerce: ' +
     "inversión, compras y costo por compra del mes desglosados por RED de Google Ads (Búsqueda de " +

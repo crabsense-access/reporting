@@ -749,6 +749,195 @@ export function GoogleAdsPlacementBlock({ summary, clientId }: { summary: Google
   );
 }
 
+// ─────────────────────────── Quién responde a los anuncios ───────────────────────────
+
+const AGE_ORDER = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+", "Sin determinar"];
+const GENDER_ORDER = ["Mujeres", "Hombres", "Sin determinar"];
+// Mismos colores de género que AudienceAnalysis.tsx (Meta Ads); edad con el acento ámbar de los otros gráficos.
+const DEMO_COLOR: Record<string, string> = { Mujeres: "#db2777", Hombres: "#2563eb", "Sin determinar": "#94a3b8" };
+const AGE_COLOR = "#d97706";
+const DEMO_BAR_HEIGHT = 112; // px, mismo alto que el área de barras de AudienceAnalysis.tsx
+
+interface DemoTotals {
+  segment: string;
+  spend: number;
+  impressions: number;
+  purchases: number;
+}
+
+/**
+ * Mismo bloque "Quién responde a los anuncios" que el reporte de Meta Ads (AudienceAnalysis.tsx),
+ * con una diferencia obligada: la API de Google Ads no cruza edad × género, así que se muestran por
+ * separado (compras por rango etario y compras por género), cada columna con su recuadro de
+ * Compras / Costo por compra / Inversión / Impresiones, más el insight de IA. Google informa la
+ * demografía por grupo de anuncios (no por anuncio) y Performance Max no la informa: con un anuncio
+ * elegido se muestran los datos de su grupo de anuncios.
+ */
+export function GoogleAdsAudienceBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  const [filter, setFilter] = useState<GoogleAdsFilter>(EMPTY_GOOGLE_ADS_FILTER);
+  const currency = summary?.currency ?? "ARS";
+
+  const data = useMemo(() => {
+    if (!summary) return null;
+    const rows = summary.breakdown.demographics ?? [];
+    // Un anuncio elegido → su grupo de anuncios (la demografía no se informa por anuncio).
+    const adGroupForAd = filter.adId !== null ? summary.breakdown.ads.find((a) => a.id === filter.adId)?.adGroupId ?? null : null;
+    const adGroupId = adGroupForAd ?? filter.adGroupId;
+    const scoped = rows.filter(
+      (r) => (adGroupId === null || r.adGroupId === adGroupId) && (filter.campaignId === null || r.campaignId === filter.campaignId)
+    );
+    const aggregate = (dimension: "edad" | "genero", order: string[]) => {
+      const by = new Map<string, DemoTotals>();
+      for (const r of scoped) {
+        if (r.dimension !== dimension) continue;
+        const t = by.get(r.segment) ?? { segment: r.segment, spend: 0, impressions: 0, purchases: 0 };
+        t.spend += r.spend;
+        t.impressions += r.impressions;
+        t.purchases += r.purchases;
+        by.set(r.segment, t);
+      }
+      return [...by.values()].sort((a, b) => order.indexOf(a.segment) - order.indexOf(b.segment));
+    };
+    return { ages: aggregate("edad", AGE_ORDER), genders: aggregate("genero", GENDER_ORDER), usesAdGroupOfAd: adGroupForAd !== null };
+  }, [summary, filter]);
+
+  const insightMetrics = useMemo(() => {
+    if (!summary || !data || (data.ages.length === 0 && data.genders.length === 0)) return null;
+    const describe = (items: DemoTotals[]) => {
+      const total = items.reduce((sum, t) => sum + t.purchases, 0);
+      return items.map((t) => ({
+        segmento: t.segment,
+        compras: round2(t.purchases),
+        participacionCompras: total > 0 ? formatPercent(t.purchases / total) : "s/d",
+        inversion: formatCurrency(Math.round(t.spend), currency),
+        costoPorCompra: t.purchases > 0 ? formatCurrency(t.spend / t.purchases, currency, 2) : "s/d",
+        impresiones: t.impressions,
+      }));
+    };
+    return {
+      moneda: currency,
+      mesCompleto: !summary.isCurrentMonth,
+      filtro: describeGoogleAdsFilter(summary.breakdown, filter) ?? "Toda la cuenta",
+      porEdad: describe(data.ages),
+      porGenero: describe(data.genders),
+    };
+  }, [summary, data, filter, currency]);
+
+  const allSpend = data ? data.ages.reduce((sum, t) => sum + t.spend, 0) : 0;
+  const allPurchases = data ? data.ages.reduce((sum, t) => sum + t.purchases, 0) : 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex flex-row flex-wrap items-start justify-between gap-3">
+          <div>
+            <BlockTitle block="audiencia" subtitle="Compras por rango etario y por género" />
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+              {GENDER_ORDER.slice(0, 2).map((g) => (
+                <span key={g} className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: DEMO_COLOR[g] }} /> {g}
+                </span>
+              ))}
+              {allPurchases > 0 && <span>Costo por compra promedio: {formatCurrency(allSpend / allPurchases, currency, 2)}</span>}
+            </div>
+          </div>
+          <GoogleAdsFilterSelects breakdown={summary?.breakdown ?? null} value={filter} onChange={setFilter} />
+        </div>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-6">
+        {!data ? (
+          <div className="h-48 animate-pulse rounded-lg bg-muted" />
+        ) : data.ages.length === 0 && data.genders.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No hay datos demográficos para este período{isFilterActive(filter) ? " y este filtro" : ""}. Google Ads no informa
+            edad ni género de las campañas Performance Max.
+          </p>
+        ) : (
+          <>
+            {data.usesAdGroupOfAd && (
+              <p className="text-xs text-muted-foreground">
+                Google Ads informa la edad y el género por grupo de anuncios, no por anuncio: se muestran los datos del grupo de
+                este anuncio.
+              </p>
+            )}
+            <DemoColumns title="Por rango etario" items={data.ages} colorFor={() => AGE_COLOR} currency={currency} />
+            <DemoColumns title="Por género" items={data.genders} colorFor={(s) => DEMO_COLOR[s] ?? AGE_COLOR} currency={currency} />
+            <p className="text-[11px] text-muted-foreground">
+              Google Ads no cruza edad con género, por eso se muestran por separado. No incluye Performance Max, que no informa
+              datos demográficos.
+            </p>
+          </>
+        )}
+
+        {insightMetrics && (
+          <ChartInsightPanel
+            chart="google-ads-audience"
+            metrics={insightMetrics}
+            accentColor="hsl(var(--primary))"
+            variant="card"
+            monthIsComplete={!summary!.isCurrentMonth}
+            clientId={clientId}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Columnas de barras + recuadro de métricas debajo (mismo diseño que AudienceAnalysis.tsx). */
+function DemoColumns({
+  title,
+  items,
+  colorFor,
+  currency,
+}: {
+  title: string;
+  items: DemoTotals[];
+  colorFor: (segment: string) => string;
+  currency: string;
+}) {
+  if (items.length === 0) return null;
+  const max = Math.max(...items.map((t) => t.purchases), 1);
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-sm font-bold text-muted-foreground">{title}</span>
+      <div className="flex items-end justify-between gap-2 sm:gap-4">
+        {items.map((t) => {
+          const heightPct = t.purchases > 0 ? Math.max(6, Math.round((t.purchases / max) * 100)) : 0;
+          const cpa = t.purchases > 0 ? t.spend / t.purchases : null;
+          return (
+            <div key={t.segment} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex w-full items-end justify-center" style={{ height: DEMO_BAR_HEIGHT }}>
+                <div className="flex h-full w-full max-w-[44px] flex-col items-center justify-end gap-1">
+                  <span className="text-[10px] font-medium tabular-nums text-foreground">{formatNumber(round2(t.purchases))}</span>
+                  <div className="w-full rounded-t-sm" style={{ height: `${heightPct}%`, backgroundColor: colorFor(t.segment) }} />
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-foreground">{t.segment}</span>
+              <div className="flex w-full flex-col divide-y divide-border rounded-md border border-border bg-muted/40 px-2 py-1 text-center">
+                <DemoStat value={formatNumber(round2(t.purchases))} label="Compras" />
+                <DemoStat value={cpa !== null ? formatCurrency(cpa, currency, 2) : "0"} label="Costo por compra" />
+                <DemoStat value={formatCurrency(Math.round(t.spend), currency)} label="Inversión" />
+                <DemoStat value={formatNumber(t.impressions)} label="Impresiones" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DemoStat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 py-2">
+      <span className="whitespace-nowrap text-sm font-bold tabular-nums text-foreground">{value}</span>
+      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
 // ─────────────────────────────── Tarjetas ───────────────────────────────
 
 /** Valor destacado + evolución diaria. Sin recuadro (a pedido de Martín): va directo sobre la card del bloque. */
