@@ -17,6 +17,7 @@ import { GoogleAdsFilterSelects } from "@/components/admin/reporting/GoogleAdsFi
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
 import { LeadsByTypeTrendChart } from "@/components/admin/reporting/LeadsByTypeTrendChart";
 import { CampaignHighlightPanel } from "@/components/admin/reporting/CampaignHighlightPanel";
+import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
@@ -667,6 +668,84 @@ export function GoogleAdsCampaignAnalysisBlock({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─────────────────────────── Ubicación de los anuncios ───────────────────────────
+
+/**
+ * Mismo bloque "Ubicación de los anuncios" que el reporte de Meta Ads (PlacementAnalysis), donde
+ * cada ubicación es una RED de Google Ads (Búsqueda de Google, Socios de búsqueda, Display,
+ * YouTube, Performance Max…): ranking por inversión coloreado por eficiencia del costo por compra
+ * vs. el promedio, con filtros de Campaña / Grupo / Anuncio e insight de IA.
+ */
+export function GoogleAdsPlacementBlock({ summary, clientId }: { summary: GoogleAdsSummaryResponse | null; clientId: string }) {
+  const networks = useMemo(() => summary?.breakdown.networks ?? [], [summary]);
+
+  // Sin filtro: totales por red a nivel campaña (incluye Performance Max, que no tiene grupos ni anuncios).
+  const segments = useMemo(() => {
+    const byNetwork = new Map<string, { spend: number; purchases: number }>();
+    for (const n of networks) {
+      if (n.level !== "campaign") continue;
+      const t = byNetwork.get(n.network) ?? { spend: 0, purchases: 0 };
+      t.spend += n.spend;
+      t.purchases += n.purchases;
+      byNetwork.set(n.network, t);
+    }
+    return [...byNetwork.entries()].map(([placement, t]) => ({
+      placement,
+      objectiveLeads: [t.purchases],
+      objectiveSpend: [t.spend],
+      byAd: {},
+    }));
+  }, [networks]);
+
+  const resolveFilteredSegment = useCallback(
+    (placement: string, sel: { campaignId: string | null; adsetId: string | null; adId: string | null }) => {
+      // Manda el nivel más específico elegido (mismo criterio que applyGoogleAdsFilter).
+      const level = sel.adId !== null ? "ad" : sel.adsetId !== null ? "adGroup" : "campaign";
+      const id = sel.adId ?? sel.adsetId ?? sel.campaignId;
+      const match = networks.filter((n) => n.level === level && n.id === id && n.network === placement);
+      if (match.length === 0) return null;
+      const spend = match.reduce((sum, n) => sum + n.spend, 0);
+      const purchases = match.reduce((sum, n) => sum + n.purchases, 0);
+      return { objectiveLeads: [purchases], objectiveSpend: [spend] };
+    },
+    [networks]
+  );
+
+  if (!summary) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <BlockTitle block="ubicaciones" />
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 animate-pulse rounded-lg bg-muted" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <PlacementAnalysis
+      segments={segments}
+      objectiveOptions={[{ index: 0, label: "Compras" }]}
+      currency={summary.currency}
+      monthIsComplete={!summary.isCurrentMonth}
+      clientId={clientId}
+      campaigns={summary.breakdown.campaigns}
+      adsets={summary.breakdown.adGroups}
+      ads={summary.breakdown.ads.map((a) => ({ id: a.id, name: a.name, campaignId: a.campaignId, adsetId: a.adGroupId }))}
+      resolveFilteredSegment={resolveFilteredSegment}
+      hideObjectiveSelect
+      resultsLabel="Compras"
+      costLabel="Costo por compra"
+      avgCostLabel="Costo por compra promedio"
+      rankingLabel="red"
+      emptyText="No hay inversión ni compras por red este período."
+      insightChart="google-ads-placements"
+    />
   );
 }
 

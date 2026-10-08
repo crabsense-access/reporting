@@ -1,5 +1,5 @@
 import { getGoogleAdsClient } from "@/lib/google-ads/client";
-import type { GoogleAdsBreakdown, GoogleAdsBreakdownRow } from "@/lib/google-ads/filter";
+import type { GoogleAdsBreakdown, GoogleAdsBreakdownRow, GoogleAdsNetworkRow } from "@/lib/google-ads/filter";
 
 // Datos del mes del reporte de Google Ads (ver components/admin/reporting/GoogleAdsReport.tsx):
 // totales de la cuenta + compras/facturación + gasto de las campañas de WhatsApp (para el ROAS
@@ -58,6 +58,7 @@ export function withGoogleAdsSummaryDefaults(data: Partial<GoogleAdsMonthlySumma
       adGroups: data.breakdown?.adGroups ?? [],
       ads: data.breakdown?.ads ?? [],
       rows: data.breakdown?.rows ?? [],
+      networks: data.breakdown?.networks ?? [],
     },
     breakdownFailed: data.breakdownFailed ?? false,
   };
@@ -70,9 +71,42 @@ export function withGoogleAdsSummaryDefaults(data: Partial<GoogleAdsMonthlySumma
  */
 export const WHATSAPP_CAMPAIGN_PATTERN = /whats\s*app|\bwsp\b|\bwpp\b|\bwa\b|conversaci[oó]n/i;
 
+/**
+ * Nombre en español de cada red de Google Ads (segments.ad_network_type) — el equivalente a la
+ * "ubicación" de Meta Ads. La librería devuelve el enum como número o como texto; se aceptan ambos.
+ */
+const NETWORK_LABELS: Record<string, string> = {
+  SEARCH: "Búsqueda de Google",
+  SEARCH_PARTNERS: "Socios de búsqueda",
+  CONTENT: "Red de Display",
+  MIXED: "Varias redes (Performance Max)",
+  YOUTUBE: "YouTube",
+  GOOGLE_TV: "Google TV",
+  GOOGLE_OWNED_CHANNELS: "Canales de Google",
+  GMAIL: "Gmail",
+  DISCOVER: "Discover",
+  MAPS: "Google Maps",
+};
+const NETWORK_BY_NUMBER: Record<number, string> = {
+  2: "SEARCH",
+  3: "SEARCH_PARTNERS",
+  4: "CONTENT",
+  7: "MIXED",
+  8: "YOUTUBE",
+  9: "GOOGLE_TV",
+  10: "GOOGLE_OWNED_CHANNELS",
+  11: "GMAIL",
+  12: "DISCOVER",
+  13: "MAPS",
+};
+function networkLabel(v: unknown): string {
+  const key = typeof v === "number" ? NETWORK_BY_NUMBER[v] : typeof v === "string" ? v : undefined;
+  return (key && NETWORK_LABELS[key]) || "Otras redes";
+}
+
 interface Row {
   customer?: { currency_code?: string };
-  segments?: { date?: string; conversion_action_category?: string | number };
+  segments?: { date?: string; conversion_action_category?: string | number; ad_network_type?: string | number };
   campaign?: { id?: number | string; name?: string; status?: number | string };
   ad_group?: { id?: number | string; name?: string };
   ad_group_ad?: {
@@ -122,15 +156,35 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
         `ad_group_ad.ad.responsive_search_ad.headlines, ${PERF} FROM ad_group_ad WHERE ${range}`
     ),
     q(`SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id, ${CONV} FROM ad_group_ad WHERE ${range}`),
+    // Desglose por red (sin fecha) para "Ubicación de los anuncios", en los 3 niveles del filtro.
+    q(`SELECT campaign.id, segments.ad_network_type, metrics.cost_micros FROM campaign WHERE ${range}`),
+    q(`SELECT campaign.id, segments.ad_network_type, ${CONV} FROM campaign WHERE ${range}`),
+    q(`SELECT ad_group.id, segments.ad_network_type, metrics.cost_micros FROM ad_group WHERE ${range}`),
+    q(`SELECT ad_group.id, segments.ad_network_type, ${CONV} FROM ad_group WHERE ${range}`),
+    q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, metrics.cost_micros FROM ad_group_ad WHERE ${range}`),
+    q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, ${CONV} FROM ad_group_ad WHERE ${range}`),
   ]).catch((error) => {
     console.error("[google-ads] No se pudo traer el desglose por campaña/grupo/anuncio:", error?.errors ?? error);
     breakdownFailed = true;
-    return [[], [], [], [], [], []] as Row[][];
+    return Array.from({ length: 12 }, () => [] as Row[]);
   });
 
   const [
     [totals, conversions, currencyRows, dailyRows, dailyConversions],
-    [campaignPerf, campaignConv, adGroupPerf, adGroupConv, adPerf, adConv],
+    [
+      campaignPerf,
+      campaignConv,
+      adGroupPerf,
+      adGroupConv,
+      adPerf,
+      adConv,
+      campaignNetPerf,
+      campaignNetConv,
+      adGroupNetPerf,
+      adGroupNetConv,
+      adNetPerf,
+      adNetConv,
+    ],
   ] = await Promise.all([
     Promise.all([
       q(`SELECT ${PERF} FROM customer WHERE ${range}`),
@@ -259,6 +313,25 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
     addConv(rowEntry("ad", aId, date), r);
   }
 
+  // ── Desglose por red (sin fecha), mismos 3 niveles.
+  const networkRows = new Map<string, GoogleAdsNetworkRow>();
+  const addNetwork = (level: GoogleAdsNetworkRow["level"], entityId: string, r: Row, kind: "perf" | "conv") => {
+    if (!entityId) return;
+    if (kind === "conv" && !isPurchase(r)) return;
+    const network = networkLabel(r.segments?.ad_network_type);
+    const key = `${level}|${entityId}|${network}`;
+    const entry = networkRows.get(key) ?? { level, id: entityId, network, spend: 0, purchases: 0 };
+    if (kind === "perf") entry.spend += num(r.metrics?.cost_micros) / 1e6;
+    else entry.purchases += num(r.metrics?.conversions);
+    networkRows.set(key, entry);
+  };
+  for (const r of campaignNetPerf) addNetwork("campaign", id(r.campaign?.id), r, "perf");
+  for (const r of campaignNetConv) addNetwork("campaign", id(r.campaign?.id), r, "conv");
+  for (const r of adGroupNetPerf) addNetwork("adGroup", id(r.ad_group?.id), r, "perf");
+  for (const r of adGroupNetConv) addNetwork("adGroup", id(r.ad_group?.id), r, "conv");
+  for (const r of adNetPerf) addNetwork("ad", id(r.ad_group_ad?.ad?.id), r, "perf");
+  for (const r of adNetConv) addNetwork("ad", id(r.ad_group_ad?.ad?.id), r, "conv");
+
   const breakdownRows = [...rows.values()];
   // Totales por entidad, para ordenar los combos por inversión y descartar las que no tuvieron
   // ni inversión ni compras en el período.
@@ -293,6 +366,7 @@ export async function fetchGoogleAdsMonthlySummary(customerId: string, from: str
       .map(([aId, a]) => ({ id: aId, ...a }))
       .sort((a, b) => spendOf("ad", b.id) - spendOf("ad", a.id)),
     rows: breakdownRows.filter((r) => active(r.level, r.id)),
+    networks: [...networkRows.values()].filter((n) => n.spend > 0 || n.purchases > 0),
   };
 
   // ── Totales por campaña (insight) y campañas de WhatsApp (ROAS WhatsApp)

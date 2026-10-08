@@ -18,6 +18,7 @@ import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import {
   GoogleAdsBillingBlock,
   GoogleAdsCampaignAnalysisBlock,
+  GoogleAdsPlacementBlock,
   GoogleAdsResultsBlock,
   GoogleAdsResultsByCampaignBlock,
   GoogleAdsTrendBlock,
@@ -86,6 +87,8 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       <GoogleAdsResultsByCampaignBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Análisis de campañas" que Meta Ads, con datos reales por campaña. */}
       <GoogleAdsCampaignAnalysisBlock summary={s} clientId={clientId} />
+      {/* Mismo bloque "Ubicación de los anuncios" que Meta Ads: cada ubicación es una red de Google. */}
+      <GoogleAdsPlacementBlock summary={s} clientId={clientId} />
     </>
   );
 }

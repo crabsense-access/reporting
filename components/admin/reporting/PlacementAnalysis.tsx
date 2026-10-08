@@ -24,6 +24,12 @@
 // (exacto → "contiene", primero que matchea se queda con la fila) que el resto de la página. Antes
 // de esta migración usaba datos de prueba derivados del total mensual (mockInvestmentCalendar.ts,
 // función placementMonthlyTotals) — ahora sale directo de Meta, igual que el resto de los gráficos.
+//
+// También lo usa el reporte de Google Ads (GoogleAdsPlacementBlock en GoogleAdsBlocks.tsx), donde
+// cada "ubicación" es una RED (Búsqueda, Display, YouTube…) y el resultado son las compras: sin
+// combo de tipo (hideObjectiveSelect), con su propio filtro de Campaña / Grupo / Anuncio
+// (resolveFilteredSegment), sus textos (resultsLabel, costLabel, avgCostLabel, rankingLabel,
+// emptyText) y su prompt de insight (insightChart).
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -85,7 +91,31 @@ export function PlacementAnalysis({
   campaigns,
   adsets = [],
   ads,
+  resolveFilteredSegment,
+  hideObjectiveSelect = false,
+  resultsLabel = "Resultados",
+  costLabel = "Costo por Resultado",
+  avgCostLabel = "CPL promedio",
+  rankingLabel = "ubicación",
+  emptyText = "Todavía no hay leads este período.",
+  insightChart = "placements",
 }: {
+  /** Resuelve una ubicación para el filtro de Campaña / Grupo / Anuncio elegido (null = sin datos).
+   *  Si no se pasa, se usa el desglose por anuncio de Meta (byAd, resolveAdFilteredTotals). */
+  resolveFilteredSegment?: (
+    placement: string,
+    selection: { campaignId: string | null; adsetId: string | null; adId: string | null }
+  ) => { objectiveLeads: number[]; objectiveSpend: number[] } | null;
+  /** Oculta el combo de Tipo de Resultado (un único tipo, ej. Compras en Google Ads). */
+  hideObjectiveSelect?: boolean;
+  /** Textos de las columnas, del promedio del encabezado, del ranking y del estado vacío. */
+  resultsLabel?: string;
+  costLabel?: string;
+  avgCostLabel?: string;
+  rankingLabel?: string;
+  emptyText?: string;
+  /** Clave del prompt del insight (ver app/api/reporting/chart-insights/route.ts). */
+  insightChart?: string;
   /** Un elemento por ubicación de publicación con datos este mes — ver lib/reporting/metaInvestmentData.ts. */
   segments: PlacementSegmentTotals[];
   /**
@@ -152,7 +182,11 @@ export function PlacementAnalysis({
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     return segments
       .map((s) => {
-        const scoped = hasFilter ? resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount, adsetId) : null;
+        const scoped = hasFilter
+          ? resolveFilteredSegment
+            ? resolveFilteredSegment(s.placement, { campaignId, adsetId, adId })
+            : resolveAdFilteredTotals(s.byAd, campaignId, adId, objectivesCount, adsetId)
+          : null;
         const leadsSource = hasFilter ? scoped?.objectiveLeads : s.objectiveLeads;
         const spendSource = hasFilter ? scoped?.objectiveSpend : s.objectiveSpend;
         // Con "Todos los Resultados" (objectiveIndex null) se suman TODOS los índices — mismo criterio
@@ -165,7 +199,7 @@ export function PlacementAnalysis({
       })
       .filter((r) => r.spend > 0 || r.leads > 0)
       .sort((a, b) => b.spend - a.spend);
-  }, [segments, objectiveIndex, hasFilter, campaignId, adsetId, adId]);
+  }, [segments, objectiveIndex, hasFilter, campaignId, adsetId, adId, resolveFilteredSegment]);
 
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
@@ -206,12 +240,13 @@ export function PlacementAnalysis({
         <div>
           <BlockTitle block="ubicaciones" />
           <span className="text-xs text-muted-foreground">
-            Ranking del período por ubicación · Inversión total: {formatCurrency(totalSpend, currency)}
-            {totalLeads > 0 && <> · CPL promedio: {formatCurrency(avgCpl, currency, 2)}</>}
+            Ranking del período por {rankingLabel} · Inversión total: {formatCurrency(totalSpend, currency)}
+            {totalLeads > 0 && <> · {avgCostLabel}: {formatCurrency(avgCpl, currency, 2)}</>}
           </span>
         </div>
 
         <div className="flex flex-col items-stretch gap-2">
+          {!hideObjectiveSelect && (
           <select
             aria-label="Tipo de Resultado"
             value={objectiveIndex === null ? "all" : String(objectiveIndex)}
@@ -225,6 +260,7 @@ export function PlacementAnalysis({
               </option>
             ))}
           </select>
+          )}
 
           <select
             aria-label="Campaña"
@@ -281,7 +317,7 @@ export function PlacementAnalysis({
       <CardContent className="flex flex-col gap-5">
         {insightMetrics && (
           <ChartInsightPanel
-            chart="placements"
+            chart={insightChart}
             metrics={insightMetrics}
             accentColor={selectedColor}
             bordered={false}
@@ -293,7 +329,7 @@ export function PlacementAnalysis({
 
         <div className={cn("flex flex-col gap-3", insightMetrics && "border-t border-border pt-4")}>
           {rows.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Todavía no hay leads este período.</p>
+            <p className="text-xs text-muted-foreground">{emptyText}</p>
           ) : (
             <>
               <div className="flex items-center gap-4">
@@ -304,8 +340,8 @@ export function PlacementAnalysis({
                 >
                   <span>Inversión</span>
                   <span>% Inv.</span>
-                  <span>Resultados</span>
-                  <span>Costo por Resultado</span>
+                  <span>{resultsLabel}</span>
+                  <span>{costLabel}</span>
                 </div>
               </div>
 

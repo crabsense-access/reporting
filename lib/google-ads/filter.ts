@@ -17,11 +17,23 @@ export interface GoogleAdsBreakdownRow {
   revenue: number;
 }
 
+/** Totales del mes de una entidad (campaña / grupo / anuncio) en una red de Google Ads. */
+export interface GoogleAdsNetworkRow {
+  level: GoogleAdsBreakdownRow["level"];
+  id: string;
+  /** Nombre de la red en español (ver networkLabel en lib/google-ads/monthlySummary.ts). */
+  network: string;
+  spend: number;
+  purchases: number;
+}
+
 export interface GoogleAdsBreakdown {
   campaigns: { id: string; name: string; status?: "activa" | "pausada" | "eliminada" }[];
   adGroups: { id: string; name: string; campaignId: string }[];
   ads: { id: string; name: string; campaignId: string; adGroupId: string }[];
   rows: GoogleAdsBreakdownRow[];
+  /** Desglose del mes por red (Búsqueda, Display, YouTube…), para "Ubicación de los anuncios". */
+  networks?: GoogleAdsNetworkRow[];
 }
 
 export interface GoogleAdsFilter {
