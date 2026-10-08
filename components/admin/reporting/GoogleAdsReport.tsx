@@ -96,32 +96,24 @@ export function GoogleAdsReport({ clientId, month }: { clientId: string; month: 
       {/* Resultados y Facturación, cada uno con su filtro de Campaña / Grupo de anuncios / Anuncio
           (ver GoogleAdsBlocks.tsx). */}
       <GoogleAdsResultsBlock summary={s} clientId={clientId} />
-      <GoogleAdsBillingBlock summary={s} clientId={clientId} />
-
-      <Card>
-        <CardHeader className="pb-2">
-          <BlockTitle block="googleAdsResumen" />
-        </CardHeader>
-        <CardContent>
-          {s && s.spend === 0 && s.impressions === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No hubo inversión ni impresiones en Google Ads este mes, así que no hay resumen ejecutivo.
-            </p>
-          ) : insightMetrics ? (
+      {/* El insight del resumen ejecutivo va dentro del bloque Facturación, sin título propio. */}
+      <GoogleAdsBillingBlock
+        summary={s}
+        clientId={clientId}
+        footer={
+          s && !(s.spend === 0 && s.impressions === 0) && insightMetrics ? (
             <ChartInsightPanel
               chart="google-ads-summary"
               metrics={insightMetrics}
               accentColor="hsl(var(--primary))"
               variant="card"
               bordered={false}
-              monthIsComplete={!s!.isCurrentMonth}
+              monthIsComplete={!s.isCurrentMonth}
               clientId={clientId}
             />
-          ) : (
-            <div className="h-24 animate-pulse rounded-lg bg-muted" />
-          )}
-        </CardContent>
-      </Card>
+          ) : null
+        }
+      />
     </>
   );
 }
