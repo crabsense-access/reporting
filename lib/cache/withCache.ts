@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
 import { differenceInCalendarDays, parseISO } from "date-fns";
 
-export type CacheSource = "ga4" | "search_console" | "meta_ads";
+export type CacheSource = "ga4" | "search_console" | "meta_ads" | "google_ads";
 
 export interface CacheDescriptor {
   clientId: string;

@@ -94,6 +94,22 @@ export interface MetaAdsConfig {
    * page.tsx) — el form solo sabe si hay uno guardado (hasStoredToken).
    */
   system_user_token?: string;
+  /**
+   * Gráfico opcional a partir de un Google Sheet PÚBLICO ("Cualquier persona con el enlace" o
+   * publicado en la web). Si está seteado, el Calendario de inversión lo muestra como un bloque
+   * más al final del informe (ver components/admin/reporting/SheetChart.tsx y
+   * lib/reporting/googleSheetChart.ts). Ausente = no se muestra nada.
+   */
+  sheet_chart?: MetaAdsSheetChartConfig;
+}
+
+export interface MetaAdsSheetChartConfig {
+  /** Link del Google Sheet (se respeta la pestaña / gid del link). */
+  url: string;
+  /** Título principal del bloque en el informe (y en el menú lateral). Si falta, se usa "Datos adicionales". */
+  title?: string;
+  /** Subtítulo del bloque (opcional), debajo del título. */
+  subtitle?: string;
 }
 
 export interface Admin {

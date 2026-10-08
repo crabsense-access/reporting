@@ -42,6 +42,14 @@ import {
 // real del Calendario (ver fetchRealInvestmentCalendarDataCached en metaInvestmentData.ts).
 
 const CHART_INSTRUCTIONS: Record<string, string> = {
+  "google-ads-summary":
+    'Estás mirando el "Resumen global del período" del reporte de Google Ads de un cliente: ' +
+    "inversión, impresiones, clics, compras, CPA, facturación, ROAS, ticket promedio y tasa de " +
+    "conversión del mes según Google Ads, más las ventas por WhatsApp cargadas a mano por el cliente " +
+    "(ventas, facturación, ticket promedio y ROAS WhatsApp = facturación WhatsApp / inversión de las " +
+    "campañas de WhatsApp en Google Ads). Algunos valores pueden venir en null si no aplican. " +
+    "Identificá el hallazgo principal del mes (eficiencia de la inversión, retorno, peso de WhatsApp " +
+    "en las ventas) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
   "entity-performance":
     'Estás mirando la tabla "Performance por campaña / grupo de anuncios / anuncio" del bloque ' +
     "Facturación de un cliente ecommerce: alcance, impresiones, clics, resultados, costo por " +
@@ -50,6 +58,31 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "de ESA dimensión: campañas, grupos de anuncios o anuncios). Identificá el hallazgo principal " +
     "(qué entidad genera más facturación, cuál tiene el mejor y el peor ROAS, si hay alguna con mucha " +
     "inversión y poca facturación) y redactalo para que un cliente no técnico lo entienda de un vistazo.",
+  "google-ads-results":
+    'Estás mirando el bloque "Resultados" del reporte de Google Ads de un cliente ecommerce: ' +
+    "compras del mes y su evolución diaria, y la \"Performance de Resultados\" (tasa de conversión = " +
+    "compras / clics, impresiones, clics y CTR; el alcance no lo informa Google Ads). Tenés también " +
+    "la facturación, la inversión, el CPA y el ROAS del mes, y un desglose (\"desglose\") por la " +
+    "dimensión indicada en \"desglosePor\" (campañas, grupos de anuncios o anuncios), con inversión, " +
+    "impresiones, clics, compras, facturación, CPA, ROAS y tasa de conversión de cada uno. El campo " +
+    "\"filtro\" indica si el cliente filtró el bloque por una campaña, grupo de anuncios o anuncio " +
+    "(o \"Toda la cuenta\"): si hay filtro, el insight tiene que hablar de ESA selección. " +
+    "Identificá el hallazgo principal sobre las compras y la conversión: qué campañas traen las " +
+    "compras y la facturación (o qué grupos/anuncios, según el desglose), cuáles convierten mejor o " +
+    "peor, si hay alguno con inversión y sin " +
+    "compras, y cómo evolucionaron las compras en el mes. Redactalo para que un cliente no técnico " +
+    "lo entienda de un vistazo.",
+  "google-ads-billing":
+    'Estás mirando el bloque "Facturación" del reporte de Google Ads de un cliente ecommerce: ' +
+    "facturación (valor de las conversiones de compra reportadas por Google Ads), cantidad de " +
+    "compras, ticket promedio y ROAS (facturación / inversión en Google Ads) del mes, con su " +
+    "evolución diaria, y un desglose (\"desglose\") por la dimensión de \"desglosePor\" (campañas, " +
+    "grupos de anuncios o anuncios). El campo \"filtro\" indica si el cliente filtró el bloque por una " +
+    "campaña, grupo de anuncios o anuncio (o \"Toda la cuenta\"): si hay filtro, hablá de ESA " +
+    "selección. Identificá el hallazgo principal (días de mayor facturación, cambios en el " +
+    "ticket promedio, días con mejor o peor ROAS, relación entre inversión y facturación, qué " +
+    "campañas/grupos/anuncios generan la facturación y con qué ROAS) y " +
+    "redactalo para que un cliente no técnico lo entienda de un vistazo.",
   billing:
     'Estás mirando el bloque "Facturación" del calendario de inversión de un cliente ecommerce: ' +
     "facturación (valor de las compras reportadas por Meta Ads), cantidad de compras, ticket " +

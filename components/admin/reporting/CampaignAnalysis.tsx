@@ -18,7 +18,8 @@
 
 import { useMemo } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import {
@@ -103,7 +104,7 @@ export function CampaignAnalysis({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-0.5 pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">Análisis de campañas</CardTitle>
+        <BlockTitle block="analisisCampanas" />
         <span className="text-xs text-muted-foreground">Ranking del mes por campaña individual</span>
       </CardHeader>
 

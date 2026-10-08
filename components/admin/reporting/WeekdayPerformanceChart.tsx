@@ -27,7 +27,8 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
@@ -371,7 +372,7 @@ export function WeekdayPerformanceChart({
     <Card>
       <CardHeader className="flex flex-col gap-4 pb-2">
         <div className="flex flex-row flex-wrap items-start justify-between gap-3">
-          <CardTitle className="text-lg font-bold text-foreground">Qué día de la semana rinde mejor</CardTitle>
+          <BlockTitle block="diaSemana" />
 
           <div className="flex flex-col items-stretch gap-2">
             <select

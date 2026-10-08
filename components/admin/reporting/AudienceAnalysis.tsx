@@ -26,7 +26,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
@@ -314,7 +315,7 @@ export function AudienceAnalysis({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <CardTitle className="text-lg font-bold text-foreground">Quién responde a los anuncios</CardTitle>
+          <BlockTitle block="audiencia" />
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {GENDERS.map((gender) => (
               <span key={gender} className="flex items-center gap-1">

@@ -6,9 +6,9 @@ import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { ReportPage } from "@/components/admin/reporting/ReportPage";
 
-// Reporte de Meta Ads (Calendario de inversión) del cliente (vista admin). Cada plataforma tiene su página; el menú lateral
+// Reporte de Google Ads del cliente (vista admin). Cada plataforma tiene su página; el menú lateral
 // linkea entre las dos (ver components/admin/reporting/ReportPage.tsx).
-export default async function ClientInvestmentCalendarPage({
+export default async function ClientGoogleAdsReportPage({
   params,
   searchParams,
 }: {
@@ -26,7 +26,7 @@ export default async function ClientInvestmentCalendarPage({
     <ReportPage
       clientId={client.id}
       clientName={client.name}
-      platform="meta_ads"
+      platform="google_ads"
       hrefs={{
         meta_ads: `/admin/clients/${client.id}/reporting/calendario`,
         google_ads: `/admin/clients/${client.id}/reporting/google-ads`,

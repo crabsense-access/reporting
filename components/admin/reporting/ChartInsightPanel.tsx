@@ -154,16 +154,17 @@ export function ChartInsightPanel({
     return (
       <div className={cardOuterClass}>
         <div
-          className="flex flex-col gap-2 rounded-lg border-2 p-4"
+          className="flex flex-col gap-3 rounded-lg border-2 p-5"
           style={{ borderColor: accentColor, backgroundColor: `color-mix(in oklab, ${accentColor} 5%, transparent)` }}
         >
-          <span className="text-base font-bold text-foreground">{data.headline}</span>
+          {/* Textos más grandes a pedido de Martín (antes: titular text-base, chips y cuerpo text-xs). */}
+          <span className="text-lg font-bold text-foreground">{data.headline}</span>
           {data.highlights.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {data.highlights.map((highlight, index) => (
                 <span
                   key={index}
-                  className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs"
+                  className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm"
                   style={{ borderColor: accentColor, backgroundColor: `color-mix(in oklab, ${accentColor} 10%, transparent)` }}
                 >
                   <span className="text-muted-foreground">{highlight.label}:</span>
@@ -174,7 +175,7 @@ export function ChartInsightPanel({
               ))}
             </div>
           )}
-          <p className="text-xs leading-relaxed text-foreground">{data.body}</p>
+          <p className="text-sm leading-relaxed text-foreground">{data.body}</p>
         </div>
       </div>
     );

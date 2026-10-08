@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { saveMetaAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
+import { previewSheetChartAction, saveMetaAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
 import { normalizeMetaAdAccountId } from "@/lib/meta-ads/config";
 import type { MetaAdsConfig, MetaAdsObjective } from "@/lib/types";
 
@@ -64,6 +64,16 @@ export function MetaAdsConfigForm({
     }
     return [];
   });
+  // Gráfico opcional desde un Google Sheet público (sheet_chart en lib/types.ts). Apagado = no se
+  // guarda nada y el informe no muestra el bloque.
+  const [sheetEnabled, setSheetEnabled] = useState(Boolean(initialConfig?.sheet_chart?.url));
+  const [sheetUrl, setSheetUrl] = useState(initialConfig?.sheet_chart?.url ?? "");
+  const [sheetTitle, setSheetTitle] = useState(initialConfig?.sheet_chart?.title ?? "");
+  const [sheetSubtitle, setSheetSubtitle] = useState(initialConfig?.sheet_chart?.subtitle ?? "");
+  const [sheetPreview, setSheetPreview] = useState<
+    { ok: true; text: string } | { ok: false; text: string } | null
+  >(null);
+  const [isTestingSheet, startSheetTest] = useTransition();
   const [tokenInput, setTokenInput] = useState("");
   const [tokenStored, setTokenStored] = useState(hasStoredToken);
   const [clearToken, setClearToken] = useState(false);
@@ -81,6 +91,22 @@ export function MetaAdsConfigForm({
 
   function addMonthlyBudgetRow() {
     setMonthlyBudgets((prev) => [...prev, { month: currentMonthValue(), amount: "" }]);
+  }
+
+  function handleTestSheet() {
+    setSheetPreview(null);
+    startSheetTest(async () => {
+      const result = await previewSheetChartAction(sheetUrl);
+      if (result.error || !result.data) {
+        setSheetPreview({ ok: false, text: result.error ?? "No se pudo leer el Google Sheet." });
+        return;
+      }
+      const { rows, series, kind, xLabel } = result.data;
+      setSheetPreview({
+        ok: true,
+        text: `OK — ${rows} filas. Eje X: "${xLabel}". Series: ${series.join(", ")}. Gráfico de ${kind === "line" ? "líneas" : "barras"}.`,
+      });
+    });
   }
 
   function handleSave() {
@@ -108,6 +134,15 @@ export function MetaAdsConfigForm({
             objectives: cleanObjectives,
             ...(isEcommerce ? { is_ecommerce: true } : {}),
             ...(hasMonthlyBudgets ? { monthly_budgets: cleanMonthlyBudgets } : {}),
+            ...(sheetEnabled && sheetUrl.trim()
+              ? {
+                  sheet_chart: {
+                    url: sheetUrl.trim(),
+                    ...(sheetTitle.trim() ? { title: sheetTitle.trim() } : {}),
+                    ...(sheetSubtitle.trim() ? { subtitle: sheetSubtitle.trim() } : {}),
+                  },
+                }
+              : {}),
           }
         : null;
 
@@ -288,6 +323,76 @@ export function MetaAdsConfigForm({
                 Agregar mes
               </Button>
             </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="meta-ads-sheet-enabled">Gráfico desde Google Sheet (opcional)</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Suma al informe un gráfico con los datos de un Google Sheet compartido como
+                    &quot;Cualquier persona con el enlace&quot;. Fila 1 = encabezados, columna A = eje X
+                    (fechas o categorías), y cada columna numérica siguiente = una serie. Con fechas se
+                    dibuja en líneas; con categorías, en barras. Se actualiza solo (cada 5 minutos).
+                  </p>
+                </div>
+                <Switch id="meta-ads-sheet-enabled" checked={sheetEnabled} onCheckedChange={setSheetEnabled} />
+              </div>
+
+              {sheetEnabled && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="meta-ads-sheet-url">Link del Google Sheet</Label>
+                    <div className="flex items-start gap-2">
+                      <Input
+                        id="meta-ads-sheet-url"
+                        value={sheetUrl}
+                        onChange={(event) => {
+                          setSheetUrl(event.target.value);
+                          setSheetPreview(null);
+                        }}
+                        placeholder="https://docs.google.com/spreadsheets/d/.../edit#gid=0"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleTestSheet}
+                        disabled={isTestingSheet || sheetUrl.trim().length === 0}
+                      >
+                        {isTestingSheet ? "Probando…" : "Probar"}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Se usa la pestaña del link (el #gid=… de la URL); si no tiene, la primera.
+                    </p>
+                    {sheetPreview && (
+                      <p className={sheetPreview.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>
+                        {sheetPreview.text}
+                      </p>
+                    )}
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="meta-ads-sheet-title">Título del bloque</Label>
+                      <Input
+                        id="meta-ads-sheet-title"
+                        value={sheetTitle}
+                        onChange={(event) => setSheetTitle(event.target.value)}
+                        placeholder="Ej: Whatsapp"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="meta-ads-sheet-subtitle">Subtítulo (opcional)</Label>
+                      <Input
+                        id="meta-ads-sheet-subtitle"
+                        value={sheetSubtitle}
+                        onChange={(event) => setSheetSubtitle(event.target.value)}
+                        placeholder="Ej: Ventas por Whatsapp"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -299,7 +404,11 @@ export function MetaAdsConfigForm({
           <Button
             type="button"
             onClick={handleSave}
-            disabled={isPending || (enabled && adAccountId.trim().length === 0)}
+            disabled={
+              isPending ||
+              (enabled && adAccountId.trim().length === 0) ||
+              (enabled && sheetEnabled && sheetUrl.trim().length === 0)
+            }
           >
             {isPending ? "Guardando…" : "Guardar cambios"}
           </Button>

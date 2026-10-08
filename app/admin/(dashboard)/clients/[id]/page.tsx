@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion } from "@/components/ui/accordion";
 import { ClientNameForm } from "@/components/admin/ClientNameForm";
+import { ClientLogoForm } from "@/components/admin/ClientLogoForm";
+import { getClientLogoUrl } from "@/lib/reporting/clientLogo";
 import { GA4ConfigForm } from "@/components/admin/GA4ConfigForm";
 import { GoogleAdsConfigForm } from "@/components/admin/GoogleAdsConfigForm";
 import { MetaAdsConfigForm } from "@/components/admin/MetaAdsConfigForm";
@@ -63,6 +65,7 @@ export default async function ClientDetailPage({
     .eq("client_id", id)
     .order("created_at", { ascending: true });
 
+  const logoUrl = await getClientLogoUrl(id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -86,7 +89,10 @@ export default async function ClientDetailPage({
           <CardTitle>Datos generales</CardTitle>
         </CardHeader>
         <CardContent>
-          <ClientNameForm clientId={client.id} initialName={client.name} />
+          <div className="flex flex-col gap-6">
+            <ClientNameForm clientId={client.id} initialName={client.name} />
+            <ClientLogoForm clientId={client.id} initialLogoUrl={logoUrl} />
+          </div>
         </CardContent>
       </Card>
 

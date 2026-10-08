@@ -39,7 +39,8 @@ import { useEffect, useMemo, useState } from "react";
 import { format, parseISO, startOfMonth, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { LEAD_TYPE_COLOR, LEAD_TYPES, objectiveColor, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
@@ -50,9 +51,11 @@ import { VideoRetentionChart } from "@/components/admin/reporting/VideoRetention
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
 import { HourlyPerformanceChart } from "@/components/admin/reporting/HourlyPerformanceChart";
 import { WeekdayPerformanceChart } from "@/components/admin/reporting/WeekdayPerformanceChart";
+import { SheetChart } from "@/components/admin/reporting/SheetChart";
 import { RecommendationsPanel } from "@/components/admin/reporting/RecommendationsPanel";
 import { CampaignAnalysis } from "@/components/admin/reporting/CampaignAnalysis";
 import { PlacementAnalysis } from "@/components/admin/reporting/PlacementAnalysis";
+import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import { InvestmentTrendChart } from "@/components/admin/reporting/InvestmentTrendChart";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { EcommercePerformanceTable } from "@/components/admin/reporting/EcommercePerformanceTable";
@@ -246,8 +249,11 @@ export function InvestmentCalendar({
   initialMonth,
   showRecommendations = false,
   restrictToClientWindow = true,
+  onMonthChange,
 }: {
   clientId: string;
+  /** Avisa el mes elegido en el combo (yyyy-MM) — lo usa ReportBody para que el reporte de Google Ads muestre el mismo mes. */
+  onMonthChange?: (month: string) => void;
   /** Módulo "Recomendaciones" — sólo para admins (a pedido de Martín); la vista del cliente no lo muestra. */
   showRecommendations?: boolean;
   /** Sólo se pueden elegir meses desde FIRST_CLIENT_VISIBLE_MONTH (ver lib/reporting/reportWindow.ts); el resto queda grisado. Default true para todos. */
@@ -321,6 +327,10 @@ export function InvestmentCalendar({
   useEffect(() => {
     setSelectedObjectiveIndex(null);
   }, [selectedMonth]);
+
+  useEffect(() => {
+    onMonthChange?.(selectedMonth);
+  }, [onMonthChange, selectedMonth]);
 
   // Totales del mes por Objetivo, TODOS los que estén cargados (no sólo los primeros 3) — ver
   // comentario en lib/reporting/metaInvestmentData.ts. Alimenta el resumen (Leads/CPL totales,
@@ -688,15 +698,21 @@ export function InvestmentCalendar({
         </Card>
       ) : (
         <>
+          {/* Inversión: bloque aparte, compartido con el reporte de Google Ads (ver InvestmentBlock.tsx).
+              Sólo lo invertido, sin comparar contra el presupuesto asignado. */}
+          <InvestmentBlock
+            month={selectedMonth}
+            days={data?.days ?? []}
+            total={monthTotal}
+            currency={currency}
+            isCurrentMonth={isCurrentMonth}
+          />
+
           <Card>
             <CardHeader className="pb-2">
-              {/* A pedido de Martín: sólo lo invertido, sin comparar contra el presupuesto asignado. */}
-              <CardTitle className="text-base font-bold text-muted-foreground">
-                {isCurrentMonth ? "Inversión acumulada en lo que va del mes" : "Inversión total del mes"}
-              </CardTitle>
+              <BlockTitle block="resultados" />
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <span className="text-2xl font-semibold text-foreground">{formatCurrency(monthTotal, currency)}</span>
 
               {/* Una scorecard POR TIPO de Resultado (Objetivo) en vez de las 3 fijas de antes
                   (Leads/CPL/Resultados) — a pedido de Martín. Cada una lleva su valor, el Costo
@@ -710,8 +726,7 @@ export function InvestmentCalendar({
                   maneja el bloque "Performance de Resultados" de abajo. Espaciado superior más
                   grande que el resto de las secciones (pt-10 en vez de pt-3) a pedido de Martín,
                   para separarla más claramente de la barra de presupuesto de arriba. */}
-              <div className="flex flex-col gap-3 border-t border-border pt-10">
-                <span className="text-lg font-bold text-foreground">Resultados</span>
+              <div className="flex flex-col gap-3">
                 {visibleObjectiveTotals.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Todavía no hay resultados este mes.</p>
                 ) : (
@@ -843,6 +858,10 @@ export function InvestmentCalendar({
               month={selectedMonth}
             />
           )}
+
+          {/* Gráfico opcional desde un Google Sheet público (config de Meta Ads en el Admin), justo
+              después de "Facturación" a pedido de Martín. No renderiza nada si el cliente no tiene uno. */}
+          <SheetChart clientId={clientId} month={selectedMonth} currency={currency} />
 
           {data && typeLabels && (
             <>
@@ -1157,7 +1176,7 @@ function EcommerceBlock({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-lg font-bold text-foreground">Facturación</CardTitle>
+        <BlockTitle block="facturacion" />
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {!hasData ? (

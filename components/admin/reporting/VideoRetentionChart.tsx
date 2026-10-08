@@ -28,7 +28,8 @@
 
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { formatNumber, formatPercent } from "@/lib/format";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { cn } from "@/lib/utils";
@@ -302,7 +303,7 @@ export function VideoRetentionChart({
     <Card>
       <CardHeader className="flex flex-col gap-2 pb-2">
         <div className="flex flex-row flex-wrap items-start justify-between gap-3">
-          <CardTitle className="text-lg font-bold text-foreground">Cuánto se mira el contenido según la edad</CardTitle>
+          <BlockTitle block="retencionVideo" />
 
           <div className="flex flex-col items-stretch gap-2">
             <select

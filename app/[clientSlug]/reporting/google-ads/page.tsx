@@ -1,9 +1,9 @@
 import { resolveClientAccess } from "@/lib/auth/resolveClientAccess";
 import { ReportPage } from "@/components/admin/reporting/ReportPage";
 
-// Reporte de Meta Ads (Calendario de inversión) para los usuarios del cliente (client_users). Es a donde los manda /auth/callback después del login. Mismo contenido que la
+// Reporte de Google Ads para los usuarios del cliente (client_users). Mismo contenido que la
 // vista admin (app/admin/(dashboard)/clients/[id]/reporting/...), sin los links de administración.
-export default async function ClientReportPage({
+export default async function ClientGoogleAdsReportPage({
   params,
   searchParams,
 }: {
@@ -18,11 +18,11 @@ export default async function ClientReportPage({
     <ReportPage
       clientId={client.id}
       clientName={client.name}
-      platform="meta_ads"
+      platform="google_ads"
       hrefs={{ meta_ads: `/${clientSlug}/reporting`, google_ads: `/${clientSlug}/reporting/google-ads` }}
       month={month}
       showRecommendations={isAdminViewing}
-      title="Calendario de inversión"
+      title="Google Ads"
       emptyState={
         <p className="text-sm text-muted-foreground">
           Todavía no hay datos disponibles para este reporte. Tu agencia te va a avisar cuando esté listo.

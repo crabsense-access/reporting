@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
+import { fetchSheetChartData, SheetChartError } from "@/lib/reporting/googleSheetChart";
+import { removeClientLogo, uploadClientLogo } from "@/lib/reporting/clientLogo";
+import { isAdminEmail } from "@/lib/auth/roles";
 import type { Client, GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
 
 interface ActionResult<T = null> {
@@ -303,4 +306,69 @@ export async function saveMetaAdsConfigAction(
   revalidatePath(`/admin/clients/${clientId}`);
   revalidatePath("/admin/clients");
   return { data: null, error: error?.message ?? null };
+}
+
+/**
+ * "Probar Sheet" del acordeón de Meta Ads: baja el Google Sheet y devuelve un resumen de cómo se
+ * va a interpretar (sin guardar nada), para que el admin confirme antes de guardar.
+ */
+export async function previewSheetChartAction(
+  url: string
+): Promise<ActionResult<{ rows: number; series: string[]; kind: "line" | "bar"; xLabel: string } | null>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { data: null, error: "No autorizado." };
+
+  try {
+    const chart = await fetchSheetChartData(url);
+    return {
+      data: { rows: chart.labels.length, series: chart.series.map((s) => s.name), kind: chart.kind, xLabel: chart.xLabel },
+      error: null,
+    };
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof SheetChartError ? error.message : "No se pudo leer el Google Sheet.",
+    };
+  }
+}
+
+/** Sólo admins pueden cambiar el logo (el upload usa la service role key, que saltea RLS). */
+async function assertAdmin(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email || !(await isAdminEmail(supabase, user.email))) return "No autorizado.";
+  return null;
+}
+
+export async function uploadClientLogoAction(clientId: string, formData: FormData): Promise<ActionResult<string | null>> {
+  const authError = await assertAdmin();
+  if (authError) return { data: null, error: authError };
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0) return { data: null, error: "Elegí un archivo." };
+  try {
+    const url = await uploadClientLogo(clientId, file);
+    revalidatePath(`/admin/clients/${clientId}`, "layout");
+    revalidatePath("/", "layout");
+    return { data: url, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "No se pudo subir el logo." };
+  }
+}
+
+export async function removeClientLogoAction(clientId: string): Promise<ActionResult> {
+  const authError = await assertAdmin();
+  if (authError) return { data: null, error: authError };
+  try {
+    await removeClientLogo(clientId);
+    revalidatePath(`/admin/clients/${clientId}`, "layout");
+    revalidatePath("/", "layout");
+    return { data: null, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "No se pudo quitar el logo." };
+  }
 }

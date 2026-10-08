@@ -34,7 +34,8 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { ChartInsightByTypePanel } from "@/components/admin/reporting/ChartInsightByTypePanel";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber } from "@/lib/format";
@@ -390,7 +391,7 @@ export function LeadsByTypeTrendChart({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <CardTitle className="text-lg font-bold text-foreground">Resultados y costos por resultados por tipo de campaña</CardTitle>
+          <BlockTitle block="resultadosPorTipo" />
           <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
             {visibleIndexes.map((idx) => (
               <span key={idx} className="flex items-center gap-1">

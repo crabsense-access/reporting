@@ -11,7 +11,8 @@
 
 import { useEffect, useState } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 
 const ACCENT = "#4f46e5"; // indigo-600 — no se repite en ninguna otra sección, para que esta card se distinga como el cierre del Calendario.
 
@@ -85,10 +86,7 @@ export function RecommendationsPanel({
   return (
     <Card className="border-2" style={{ borderColor: ACCENT }}>
       <CardHeader className="flex flex-col gap-0.5 pb-3" style={{ backgroundColor: `${ACCENT}0d` }}>
-        <CardTitle className="text-xl font-bold text-foreground">Recomendaciones</CardTitle>
-        <span className="text-xs text-muted-foreground">
-          Las acciones de mayor impacto para mejorar la performance de las campañas y los leads, según los datos del mes.
-        </span>
+        <BlockTitle block="recomendaciones" className="text-xl" />
       </CardHeader>
 
       <CardContent className="pt-4">

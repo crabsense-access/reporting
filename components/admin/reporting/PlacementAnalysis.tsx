@@ -27,7 +27,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
@@ -203,7 +204,7 @@ export function PlacementAnalysis({
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <CardTitle className="text-lg font-bold text-foreground">Dónde se muestran los anuncios</CardTitle>
+          <BlockTitle block="ubicaciones" />
           <span className="text-xs text-muted-foreground">
             Ranking del período por ubicación · Inversión total: {formatCurrency(totalSpend, currency)}
             {totalLeads > 0 && <> · CPL promedio: {formatCurrency(avgCpl, currency, 2)}</>}
