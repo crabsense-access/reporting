@@ -36,7 +36,7 @@
 // proporciones mock internas hasta que se conecten en una próxima pasada.
 
 import { useEffect, useMemo, useState } from "react";
-import { format, parseISO, startOfMonth, subMonths } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { es } from "date-fns/locale";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -45,7 +45,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { LEAD_TYPE_COLOR, LEAD_TYPES, objectiveColor, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
 import { resolveResultLabel } from "@/lib/reporting/metaResultLabels";
-import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
+import { FIRST_CLIENT_VISIBLE_MONTH, isMonthFromStart, recentMonthOptions } from "@/lib/reporting/reportWindow";
 import { AudienceAnalysis } from "@/components/admin/reporting/AudienceAnalysis";
 import { VideoRetentionChart } from "@/components/admin/reporting/VideoRetentionChart";
 import { RegionAnalysis } from "@/components/admin/reporting/RegionAnalysis";
@@ -249,6 +249,7 @@ export function InvestmentCalendar({
   initialMonth,
   showRecommendations = false,
   restrictToClientWindow = true,
+  startMonth = FIRST_CLIENT_VISIBLE_MONTH,
   onMonthChange,
 }: {
   clientId: string;
@@ -256,29 +257,24 @@ export function InvestmentCalendar({
   onMonthChange?: (month: string) => void;
   /** Módulo "Recomendaciones" — sólo para admins (a pedido de Martín); la vista del cliente no lo muestra. */
   showRecommendations?: boolean;
-  /** Sólo se pueden elegir meses desde FIRST_CLIENT_VISIBLE_MONTH (ver lib/reporting/reportWindow.ts); el resto queda grisado. Default true para todos. */
+  /** Sólo se pueden elegir meses desde startMonth (ver lib/reporting/reportWindow.ts); el resto queda grisado. Default true para todos. */
   restrictToClientWindow?: boolean;
+  /** Mes (yyyy-MM) desde el cual se toman los datos de Meta Ads de este cliente (config start_month, elegido en el Admin). */
+  startMonth?: string;
   /** Mes a mostrar al abrir (yyyy-MM) — lo usa el listado "Ver informes mensuales" del Admin. Si no está entre los últimos 12 meses, se ignora. */
   initialMonth?: string;
 }) {
   const today = useMemo(() => new Date(), []);
 
-  // Últimos 12 meses (incluido el actual), más reciente primero — el combo de mes no deja elegir
-  // nada más nuevo que el mes en curso, así que no hace falta validar meses futuros del lado del
-  // cliente (la ruta igual se protege sola, ver resolveMonthStart).
-  const monthOptions = useMemo(() => {
-    const currentMonthStart = startOfMonth(today);
-    return Array.from({ length: 12 }, (_, i) => {
-      const date = subMonths(currentMonthStart, i);
-      const label = format(date, "MMMM yyyy", { locale: es });
-      return { value: format(date, "yyyy-MM"), label: label.charAt(0).toUpperCase() + label.slice(1), date };
-    });
-  }, [today]);
+  // Últimos 12 meses (incluido el actual), más reciente primero — o más, hasta el mes de inicio de
+  // Meta Ads si es más viejo (ver recentMonthOptions). El combo no deja elegir nada más nuevo que el
+  // mes en curso (la ruta igual se protege sola, ver resolveMonthStart).
+  const monthOptions = useMemo(() => recentMonthOptions(startMonth, today), [startMonth, today]);
 
   const [selectedMonth, setSelectedMonth] = useState(() =>
     initialMonth &&
     monthOptions.some((opt) => opt.value === initialMonth) &&
-    (!restrictToClientWindow || isMonthVisibleToClients(initialMonth))
+    (!restrictToClientWindow || isMonthFromStart(initialMonth, startMonth))
       ? initialMonth
       : monthOptions[0]!.value
   );
@@ -665,16 +661,16 @@ export function InvestmentCalendar({
           <select
             value={selectedMonth}
             onChange={(event) => setSelectedMonth(event.target.value)}
-            title={restrictToClientWindow ? "Por el momento sólo están disponibles los meses desde agosto 2026" : undefined}
-            className="h-9 w-fit rounded-md border border-input bg-background px-2.5 text-lg font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            title={restrictToClientWindow ? "Los meses anteriores al mes desde el cual se toman los datos de Meta Ads no están disponibles" : undefined}
+            className="h-9 w-fit rounded-md border border-input bg-background px-3 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             {monthOptions.map((opt) => (
-              // Sólo desde FIRST_CLIENT_VISIBLE_MONTH (agosto 2026), para todos; los meses
-              // anteriores se listan igual pero grisados.
+              // Sólo desde el mes de inicio de Meta Ads del cliente; los meses anteriores se
+              // listan igual pero grisados.
               <option
                 key={opt.value}
                 value={opt.value}
-                disabled={restrictToClientWindow && !isMonthVisibleToClients(opt.value)}
+                disabled={restrictToClientWindow && !isMonthFromStart(opt.value, startMonth)}
               >
                 {opt.label}
               </option>

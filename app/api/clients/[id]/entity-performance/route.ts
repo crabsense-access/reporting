@@ -4,7 +4,7 @@ import { endOfMonth, startOfMonth } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { canAccessClient } from "@/lib/auth/roles";
 import { fetchEntityPerformance, type PerformanceDimension } from "@/lib/reporting/metaInvestmentData";
-import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
+import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { MetaAdsAuthError, MetaAdsUnavailableError } from "@/lib/meta-ads/client";
 import type { MetaAdsConfig } from "@/lib/types";
 
@@ -46,7 +46,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!Number.isNaN(candidate.getTime()) && candidate <= currentMonthStart) monthStart = candidate;
   }
   const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
-  if (!isMonthVisibleToClients(monthKey)) {
+  if (!isMonthFromStart(monthKey, resolveStartMonth(metaAdsConfig))) {
     return NextResponse.json({ error: "Este mes todavía no está disponible." }, { status: 403 });
   }
   const lastDataDate = today < endOfMonth(monthStart) ? today : endOfMonth(monthStart);

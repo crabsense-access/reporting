@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SourceIcon } from "@/components/admin/SourceIcon";
+import { StartMonthSelect } from "@/components/admin/StartMonthSelect";
+import { resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { saveGoogleAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
-import { formatGoogleAdsCustomerId, normalizeGoogleAdsCustomerId } from "@/lib/google-ads/config";
+import { formatGoogleAdsCustomerId, isGoogleAdsEcommerce, normalizeGoogleAdsCustomerId } from "@/lib/google-ads/config";
 import type { GoogleAdsConfig } from "@/lib/types";
 
 interface GoogleAdsConfigFormProps {
@@ -32,6 +34,9 @@ export function GoogleAdsConfigForm({
   );
   const [primaryGoal, setPrimaryGoal] = useState(initialConfig?.primary_goal ?? "");
   const [secondaryGoal, setSecondaryGoal] = useState(initialConfig?.secondary_goal ?? "");
+  const [startMonth, setStartMonth] = useState(() => resolveStartMonth(initialConfig));
+  // Configs sin el campo (anteriores al switch) arrancan como ecommerce; una conexión nueva, apagado.
+  const [isEcommerce, setIsEcommerce] = useState(() => (initialConfig ? isGoogleAdsEcommerce(initialConfig) : false));
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -42,6 +47,8 @@ export function GoogleAdsConfigForm({
       enabled && normalizedCustomerId
         ? {
             customer_id: normalizedCustomerId,
+            start_month: startMonth,
+            is_ecommerce: isEcommerce,
             primary_goal: primaryGoal.trim(),
             secondary_goal: secondaryGoal.trim(),
           }
@@ -91,6 +98,18 @@ export function GoogleAdsConfigForm({
                 en Google Ads. La cuenta tiene que estar vinculada previamente a la MCC de la agencia
                 (4391931539).
               </p>
+            </div>
+
+            <StartMonthSelect id="ads-start-month" value={startMonth} onChange={setStartMonth} />
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="ads-ecommerce">Es un ecommerce</Label>
+                <p className="text-xs text-muted-foreground">
+                  Suma al informe el bloque Facturación con Facturación, Ticket promedio y ROAS (a partir de las compras que reporta Google Ads).
+                </p>
+              </div>
+              <Switch id="ads-ecommerce" checked={isEcommerce} onCheckedChange={setIsEcommerce} />
             </div>
 
             <div className="flex flex-col gap-2">

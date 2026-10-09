@@ -34,7 +34,18 @@ import {
 } from "@/lib/google-ads/filter";
 import type { GoogleAdsMonthlySummary } from "@/lib/google-ads/monthlySummary";
 
-export type GoogleAdsSummaryResponse = GoogleAdsMonthlySummary & { isCurrentMonth: boolean; from: string; to: string };
+export type GoogleAdsSummaryResponse = GoogleAdsMonthlySummary & {
+  isCurrentMonth: boolean;
+  from: string;
+  to: string;
+  /** Switch "Es un ecommerce" del Admin (ver isGoogleAdsEcommerce). Ausente = ecommerce. */
+  isEcommerce?: boolean;
+};
+
+/** El cliente es ecommerce en Google Ads: se muestran Facturación, Ticket promedio y ROAS. */
+export function summaryIsEcommerce(summary: GoogleAdsSummaryResponse | null): boolean {
+  return summary?.isEcommerce !== false;
+}
 
 const PURCHASES_COLOR = "#0284c7"; // sky-600, mismo tono que el valor de Compras
 // Mismos colores que el bloque "Facturación" de Meta Ads (ECOMMERCE_COLORS en InvestmentCalendar.tsx).
@@ -86,6 +97,7 @@ function BlockHeader({
 
 function campaignInsightRows(summary: GoogleAdsSummaryResponse, filter: GoogleAdsFilter, currency: string) {
   const { dimension, items } = entityTotalsForFilter(summary.breakdown, filter);
+  const ecommerce = summaryIsEcommerce(summary);
   return {
     dimension,
     items: items.slice(0, 15).map((c) => ({
@@ -94,9 +106,10 @@ function campaignInsightRows(summary: GoogleAdsSummaryResponse, filter: GoogleAd
       impresiones: c.impressions,
       clicks: c.clicks,
       compras: round2(c.purchases),
-      facturacion: formatCurrency(Math.round(c.revenue), currency),
       cpa: c.purchases > 0 ? formatCurrency(Math.round(c.spend / c.purchases), currency) : "s/d",
-      roas: fmtRoas(ratio(c.revenue, c.spend)),
+      ...(ecommerce
+        ? { facturacion: formatCurrency(Math.round(c.revenue), currency), roas: fmtRoas(ratio(c.revenue, c.spend)) }
+        : {}),
       tasaConversion: fmtPct(ratio(c.purchases, c.clicks)),
     })),
   };
@@ -128,10 +141,11 @@ export function GoogleAdsResultsBlock({ summary, clientId }: { summary: GoogleAd
       clicks: data.clicks,
       ctr: fmtPct(ratio(data.clicks, data.impressions)),
       alcance: "No informado por Google Ads",
-      facturacion: formatCurrency(Math.round(data.revenue), currency),
       inversion: formatCurrency(Math.round(data.spend), currency),
       cpa: data.purchases > 0 ? formatCurrency(Math.round(data.spend / data.purchases), currency) : "s/d",
-      roas: fmtRoas(ratio(data.revenue, data.spend)),
+      ...(summaryIsEcommerce(summary)
+        ? { facturacion: formatCurrency(Math.round(data.revenue), currency), roas: fmtRoas(ratio(data.revenue, data.spend)) }
+        : {}),
       diasConCompras: withPurchases.length,
       mejorDiaCompras: bestDay ? { fecha: dayLabel(bestDay.date), compras: round2(bestDay.purchases) } : null,
       comprasPorDia: data.series.map((d) => ({ fecha: d.date, compras: round2(d.purchases) })),
@@ -575,6 +589,9 @@ export function GoogleAdsCampaignAnalysisBlock({
   const totalSpend = data.sorted.reduce((sum, c) => sum + c.spend, 0);
   const maxSpend = Math.max(...data.sorted.map((c) => c.spend), 1);
   const colorOf = (id: string) => data.colorById.get(id) ?? NO_PURCHASES_COLOR;
+  // Sin "Es un ecommerce" en el Admin, la columna ROAS no se muestra.
+  const ecommerce = summaryIsEcommerce(summary);
+  const gridColumns = ecommerce ? CAMPAIGN_GRID_COLUMNS : CAMPAIGN_GRID_COLUMNS.split(" ").slice(0, 4).join(" ");
 
   const toInput = (c: NonNullable<typeof data.best>) => ({
     nombre: c.name,
@@ -582,8 +599,7 @@ export function GoogleAdsCampaignAnalysisBlock({
     compras: formatNumber(round2(c.purchases)),
     inversion: formatCurrency(c.spend, currency),
     costoPorCompra: formatCurrency(c.cpa!, currency, 2),
-    facturacion: formatCurrency(Math.round(c.revenue), currency),
-    roas: fmtRoas(c.roas),
+    ...(ecommerce ? { facturacion: formatCurrency(Math.round(c.revenue), currency), roas: fmtRoas(c.roas) } : {}),
   });
   const highlightMetrics = data.best && data.worst ? { mejor: toInput(data.best), peor: toInput(data.worst) } : null;
 
@@ -603,13 +619,13 @@ export function GoogleAdsCampaignAnalysisBlock({
               <span className="min-w-0 flex-1" />
               <div
                 className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-                style={{ gridTemplateColumns: CAMPAIGN_GRID_COLUMNS }}
+                style={{ gridTemplateColumns: gridColumns }}
               >
                 <span>Inversión</span>
                 <span>% Inv.</span>
                 <span>Compras</span>
                 <span>Costo por compra</span>
-                <span>ROAS</span>
+                {ecommerce && <span>ROAS</span>}
               </div>
             </div>
 
@@ -641,14 +657,14 @@ export function GoogleAdsCampaignAnalysisBlock({
                       />
                     </div>
                   </div>
-                  <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: CAMPAIGN_GRID_COLUMNS }}>
+                  <div className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums" style={{ gridTemplateColumns: gridColumns }}>
                     <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(c.spend, currency)}</span>
                     <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(share)}</span>
                     <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(round2(c.purchases))}</span>
                     <span className="whitespace-nowrap text-muted-foreground">
                       {c.cpa !== null ? formatCurrency(c.cpa, currency, 2) : "s/d"}
                     </span>
-                    <span className="whitespace-nowrap text-muted-foreground">{fmtRoas(c.roas)}</span>
+                    {ecommerce && <span className="whitespace-nowrap text-muted-foreground">{fmtRoas(c.roas)}</span>}
                   </div>
                 </div>
               );
@@ -1226,8 +1242,9 @@ export function GoogleAdsRecommendationsBlock({ summary, clientId }: { summary: 
         inversionTotal: money(summary.spend),
         compras: round2(summary.purchases),
         costoPorCompra: cpaOf(summary.spend, summary.purchases),
-        facturacion: money(summary.revenue),
-        roas: fmtRoas(ratio(summary.revenue, summary.spend)),
+        ...(summaryIsEcommerce(summary)
+          ? { facturacion: money(summary.revenue), roas: fmtRoas(ratio(summary.revenue, summary.spend)) }
+          : {}),
         tasaConversion: fmtPct(ratio(summary.purchases, summary.clicks)),
         impresiones: summary.impressions,
         clicks: summary.clicks,
@@ -1242,7 +1259,7 @@ export function GoogleAdsRecommendationsBlock({ summary, clientId }: { summary: 
             inversion: money(t.spend),
             compras: round2(t.purchases),
             costoPorCompra: cpaOf(t.spend, t.purchases),
-            roas: fmtRoas(ratio(revenueByCampaign.get(t.name) ?? 0, t.spend)),
+            ...(summaryIsEcommerce(summary) ? { roas: fmtRoas(ratio(revenueByCampaign.get(t.name) ?? 0, t.spend)) } : {}),
           })),
       },
       redes: extremes(networks),

@@ -39,6 +39,10 @@ export interface GSCConfig {
 
 export interface GoogleAdsConfig {
   customer_id: string;
+  /** Mes (yyyy-MM) desde el cual el informe toma los datos de Google Ads (ver lib/reporting/reportWindow.ts). */
+  start_month?: string;
+  /** El cliente es un ecommerce: muestra Facturación, Ticket promedio y ROAS (ver isGoogleAdsEcommerce). */
+  is_ecommerce?: boolean;
   /** Objetivo principal de este cliente en Google Ads, texto libre (arranca vacío). */
   primary_goal?: string;
   /** Objetivo secundario, opcional (texto libre, arranca vacío). */
@@ -63,6 +67,8 @@ export interface MetaAdsObjective {
 
 export interface MetaAdsConfig {
   ad_account_id: string;
+  /** Mes (yyyy-MM) desde el cual el informe toma los datos de Meta Ads (ver lib/reporting/reportWindow.ts). */
+  start_month?: string;
   /** El cliente es un ecommerce: el Calendario de inversión suma el bloque "Ecommerce" (Facturación, Ticket promedio y ROAS, ver EcommerceBlock en InvestmentCalendar.tsx). */
   is_ecommerce?: boolean;
   /** Objetivos configurados para este cliente en Meta Ads (arranca vacío — se cargan de a uno por vez, ver MetaAdsConfigForm). */

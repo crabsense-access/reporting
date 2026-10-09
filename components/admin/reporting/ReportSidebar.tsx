@@ -115,7 +115,7 @@ export function ReportSidebar({
   current,
   hrefs,
 }: {
-  /** Plataformas con reporte para este cliente; el resto se muestra como "Próximamente". */
+  /** Plataformas con reporte para este cliente; el resto no se muestra en el menú. */
   platforms: AdPlatform[];
   /** Plataforma de la página que se está viendo. */
   current: ReportPlatform;
@@ -174,6 +174,8 @@ export function ReportSidebar({
     <nav className="flex flex-col gap-7 text-sm" aria-label="Secciones del reporte">
       {PLATFORMS.map((platform) => {
         const enabled = platform.key === "summary" ? platforms.length > 0 : platforms.includes(platform.key);
+        // Sólo se muestran las plataformas que el cliente tiene configuradas (a pedido de Martín).
+        if (!enabled) return null;
         const items = sections[platform.key];
         return (
           <div key={platform.key} className="flex flex-col gap-2.5">
@@ -197,9 +199,7 @@ export function ReportSidebar({
                 {platform.label}
               </div>
             )}
-            {platform.key !== current && enabled ? null : !enabled ? (
-              <span className="pl-[34px] text-sm text-muted-foreground">Próximamente</span>
-            ) : items.length === 0 ? (
+            {platform.key !== current ? null : items.length === 0 ? (
               <span className="pl-[34px] text-sm text-muted-foreground">Cargando…</span>
             ) : (
               <ul className="flex flex-col border-l border-border">

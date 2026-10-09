@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, X } from "lucide-react";
 import { SiMeta } from "react-icons/si";
 
 import { AccordionItem, SourceStatusBadge } from "@/components/ui/accordion";
@@ -10,20 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { previewSheetChartAction, saveMetaAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
+import { StartMonthSelect } from "@/components/admin/StartMonthSelect";
+import { resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { normalizeMetaAdAccountId } from "@/lib/meta-ads/config";
 import type { MetaAdsConfig, MetaAdsObjective } from "@/lib/types";
-
-/** Una fila del editor de presupuesto por mes (ver monthlyBudgets) — amount queda como texto crudo del input hasta el guardado, igual que el resto de los inputs numéricos de este form. */
-interface MonthlyBudgetRow {
-  month: string; // yyyy-MM
-  amount: string;
-}
-
-/** Mes actual en formato "yyyy-MM" (mismo formato que usa el Calendario de inversión para las claves de monthly_budgets) — sin date-fns acá para no sumar una dependencia sólo por esto. */
-function currentMonthValue(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
 
 interface MetaAdsConfigFormProps {
   clientId: string;
@@ -44,26 +33,15 @@ export function MetaAdsConfigForm({
   const [enabled, setEnabled] = useState(Boolean(initialConfig?.ad_account_id));
   const [adAccountId, setAdAccountId] = useState(initialConfig?.ad_account_id ?? "");
   const [isEcommerce, setIsEcommerce] = useState(Boolean(initialConfig?.is_ecommerce));
+  const [startMonth, setStartMonth] = useState(() => resolveStartMonth(initialConfig));
   // La sección "Objetivos" se sacó del admin (a pedido de Martín), pero el Calendario de inversión
   // sigue armando resultados/leads a partir de estos eventos (ver lib/reporting/metaInvestmentData.ts),
   // así que al guardar se conservan tal cual estaban en vez de borrarlos.
   const objectives: MetaAdsObjective[] = initialConfig?.objectives ?? [];
-  // Presupuesto POR MES (antes era un único valor "vigente" que pisaba los meses pasados — ver
-  // monthly_budgets en lib/types.ts). Si el cliente todavía no tiene ninguna entrada por mes pero
-  // sí tiene el viejo monthly_budget cargado, se precarga como el presupuesto del mes actual para
-  // no perder ese dato: Martín sólo tiene que confirmarlo (o ajustarlo) al guardar.
-  const [monthlyBudgets, setMonthlyBudgets] = useState<MonthlyBudgetRow[]>(() => {
-    const stored = initialConfig?.monthly_budgets;
-    if (stored && Object.keys(stored).length > 0) {
-      return Object.entries(stored)
-        .sort(([a], [b]) => b.localeCompare(a))
-        .map(([month, amount]) => ({ month, amount: String(amount) }));
-    }
-    if (initialConfig?.monthly_budget !== undefined) {
-      return [{ month: currentMonthValue(), amount: String(initialConfig.monthly_budget) }];
-    }
-    return [];
-  });
+  // La sección "Presupuesto mensual" se sacó del admin (a pedido de Martín): al guardar se conservan
+  // los presupuestos ya cargados (monthly_budgets / monthly_budget legado) tal cual estaban.
+  const storedMonthlyBudgets = initialConfig?.monthly_budgets;
+  const storedLegacyBudget = initialConfig?.monthly_budget;
   // Gráfico opcional desde un Google Sheet público (sheet_chart en lib/types.ts). Apagado = no se
   // guarda nada y el informe no muestra el bloque.
   const [sheetEnabled, setSheetEnabled] = useState(Boolean(initialConfig?.sheet_chart?.url));
@@ -80,18 +58,6 @@ export function MetaAdsConfigForm({
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  function updateMonthlyBudgetRow(index: number, field: "month" | "amount", value: string) {
-    setMonthlyBudgets((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
-  }
-
-  function removeMonthlyBudgetRow(index: number) {
-    setMonthlyBudgets((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  function addMonthlyBudgetRow() {
-    setMonthlyBudgets((prev) => [...prev, { month: currentMonthValue(), amount: "" }]);
-  }
 
   function handleTestSheet() {
     setSheetPreview(null);
@@ -115,25 +81,16 @@ export function MetaAdsConfigForm({
       .map((objective) => ({ event: objective.event.trim(), label: objective.label.trim() }))
       .filter((objective) => objective.event.length > 0 || objective.label.length > 0);
 
-    // Sólo entran filas con mes Y monto válidos (>0) — una fila a medio cargar (mes sin monto, o
-    // viceversa) se descarta en silencio al guardar, igual que ya hacen los Objetivos vacíos.
-    const cleanMonthlyBudgets: Record<string, number> = {};
-    for (const row of monthlyBudgets) {
-      const month = row.month.trim();
-      const amount = Number(row.amount.trim());
-      if (month && Number.isFinite(amount) && amount > 0) {
-        cleanMonthlyBudgets[month] = amount;
-      }
-    }
-    const hasMonthlyBudgets = Object.keys(cleanMonthlyBudgets).length > 0;
 
     const config =
       enabled && normalizedAccountId
         ? {
             ad_account_id: normalizedAccountId,
+            start_month: startMonth,
             objectives: cleanObjectives,
             ...(isEcommerce ? { is_ecommerce: true } : {}),
-            ...(hasMonthlyBudgets ? { monthly_budgets: cleanMonthlyBudgets } : {}),
+            ...(storedMonthlyBudgets && Object.keys(storedMonthlyBudgets).length > 0 ? { monthly_budgets: storedMonthlyBudgets } : {}),
+            ...(storedLegacyBudget !== undefined ? { monthly_budget: storedLegacyBudget } : {}),
             ...(sheetEnabled && sheetUrl.trim()
               ? {
                   sheet_chart: {
@@ -209,6 +166,8 @@ export function MetaAdsConfigForm({
               </p>
             </div>
 
+            <StartMonthSelect id="meta-ads-start-month" value={startMonth} onChange={setStartMonth} />
+
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1">
                 <Label htmlFor="meta-ads-ecommerce">Es un ecommerce</Label>
@@ -267,61 +226,6 @@ export function MetaAdsConfigForm({
                   </button>
                 </div>
               )}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1">
-                <Label>Presupuesto mensual</Label>
-                <p className="text-xs text-muted-foreground">
-                  Presupuesto acordado con el cliente para esta cuenta (en la moneda de la cuenta de
-                  Meta Ads), cargado MES A MES: cada mes queda con su propio presupuesto, así que un
-                  cambio para el mes en curso no pisa la comparación &quot;gasto vs. presupuesto&quot;
-                  de los meses ya pasados en el Calendario de inversión.
-                </p>
-              </div>
-
-              {monthlyBudgets.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-                    <span className="flex-1">Mes</span>
-                    <span className="flex-1">Presupuesto</span>
-                    <span className="w-9 shrink-0" />
-                  </div>
-                  {monthlyBudgets.map((row, index) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <Input
-                        aria-label={`Mes del presupuesto ${index + 1}`}
-                        type="month"
-                        value={row.month}
-                        onChange={(event) => updateMonthlyBudgetRow(index, "month", event.target.value)}
-                      />
-                      <Input
-                        aria-label={`Monto del presupuesto ${index + 1}`}
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={row.amount}
-                        onChange={(event) => updateMonthlyBudgetRow(index, "amount", event.target.value)}
-                        placeholder="Ej: 6000"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeMonthlyBudgetRow(index)}
-                        aria-label="Quitar presupuesto"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <Button type="button" variant="outline" size="sm" className="self-start" onClick={addMonthlyBudgetRow}>
-                <Plus className="h-4 w-4" />
-                Agregar mes
-              </Button>
             </div>
 
             <div className="flex flex-col gap-3">

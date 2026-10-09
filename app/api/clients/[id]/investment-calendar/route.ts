@@ -3,7 +3,7 @@ import { endOfMonth, startOfMonth } from "date-fns";
 
 import { createClient } from "@/lib/supabase/server";
 import { canAccessClient } from "@/lib/auth/roles";
-import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
+import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { fetchRealInvestmentCalendarDataCached } from "@/lib/reporting/metaInvestmentData";
 import { MetaAdsAuthError, MetaAdsUnavailableError } from "@/lib/meta-ads/client";
 import type { MetaAdsConfig } from "@/lib/types";
@@ -47,9 +47,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const today = todayInBuenosAires();
   const monthParam = new URL(request.url).searchParams.get("month");
   const monthStart = resolveMonthStart(monthParam, today);
-  // Sólo meses desde FIRST_CLIENT_VISIBLE_MONTH, para todos (ver lib/reporting/reportWindow.ts).
+  // Sólo meses desde el mes de inicio de Meta Ads de este cliente (ver lib/reporting/reportWindow.ts).
   const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
-  if (!isMonthVisibleToClients(monthKey)) {
+  if (!isMonthFromStart(monthKey, resolveStartMonth(metaAdsConfig))) {
     return NextResponse.json({ error: "Este mes todavía no está disponible." }, { status: 403 });
   }
   // Nunca pedimos más allá de hoy: los días futuros todavía no tienen datos en Meta. Para un mes

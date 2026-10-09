@@ -4,7 +4,7 @@ import { endOfMonth, format, startOfMonth } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
 import { canAccessClient } from "@/lib/auth/roles";
 import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
-import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
+import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
 import {
   fetchGoogleAdsMonthlySummary,
   withGoogleAdsSummaryDefaults,
@@ -24,6 +24,7 @@ class IncompleteSummaryError extends Error {
   }
 }
 import type { GoogleAdsConfig } from "@/lib/types";
+import { isGoogleAdsEcommerce } from "@/lib/google-ads/config";
 
 // GET /api/clients/[id]/google-ads-summary?month=yyyy-MM
 //
@@ -61,7 +62,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const match = new URL(request.url).searchParams.get("month")?.match(/^(\d{4})-(\d{2})$/);
   const monthStart = match ? new Date(Number(match[1]), Number(match[2]) - 1, 1) : startOfMonth(today);
   const monthKey = format(monthStart, "yyyy-MM");
-  if (monthStart > today || !isMonthVisibleToClients(monthKey)) {
+  if (monthStart > today || !isMonthFromStart(monthKey, resolveStartMonth(source?.config as GoogleAdsConfig | undefined))) {
     return NextResponse.json({ error: "Este mes todavía no está disponible." }, { status: 403 });
   }
   const isCurrentMonth = monthKey === format(today, "yyyy-MM");
@@ -91,7 +92,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       if (incomplete?.name !== "IncompleteSummaryError" || !incomplete.summary) throw error;
       summary = incomplete.summary;
     }
-    return NextResponse.json({ ...withGoogleAdsSummaryDefaults(summary), from, to, isCurrentMonth });
+    // isEcommerce viene de la config del cliente (switch del Admin), no de Google Ads.
+    const isEcommerce = isGoogleAdsEcommerce(source?.config as GoogleAdsConfig | undefined);
+    return NextResponse.json({ ...withGoogleAdsSummaryDefaults(summary), from, to, isCurrentMonth, isEcommerce });
   } catch (error) {
     console.error("[google-ads-summary] Error:", error);
     // Error típico: la cuenta del cliente no está vinculada a la MCC de la agencia

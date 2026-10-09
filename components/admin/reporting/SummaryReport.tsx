@@ -31,10 +31,12 @@ type PlatformKey = "meta_ads" | "google_ads";
 
 interface MetaResponse {
   currency: string;
+  /** Switch "Es un ecommerce" de la config de Meta Ads en el Admin. */
+  isEcommerce?: boolean;
   objectiveLabels: string[];
   days: { date: string; spend: number; objectiveLeads: number[]; purchases?: number; purchaseValue?: number }[];
 }
-type GoogleResponse = GoogleAdsMonthlySummary & { isCurrentMonth: boolean };
+type GoogleResponse = GoogleAdsMonthlySummary & { isCurrentMonth: boolean; isEcommerce?: boolean };
 
 interface PlatformTotals {
   key: PlatformKey;
@@ -48,6 +50,8 @@ interface PlatformTotals {
   resultsDetail: { label: string; value: number }[];
   revenue: number;
   purchases: number;
+  /** Muestra Facturación y ROAS: Meta sólo si tiene "Es un ecommerce" en el Admin; Google siempre. */
+  ecommerce: boolean;
   daily: { date: string; spend: number }[];
 }
 
@@ -84,13 +88,16 @@ export function SummaryReport({
   clientId,
   month,
   platforms,
+  startMonths,
   hrefs,
 }: {
   clientId: string;
   /** yyyy-MM */
   month: string;
-  /** Plataformas configuradas para este cliente. */
+  /** Plataformas configuradas para este cliente que ya tienen datos en este mes (mes >= su mes de inicio). */
   platforms: PlatformKey[];
+  /** Mes (yyyy-MM) desde el cual se toman los datos de cada fuente configurada (para la Evolución mensual). */
+  startMonths: Partial<Record<PlatformKey, string>>;
   /** Página de cada plataforma, para el link "Ver reporte". */
   hrefs: Record<PlatformKey, string>;
 }) {
@@ -117,8 +124,10 @@ export function SummaryReport({
       results: byObjective.reduce((sum, o) => sum + o.value, 0),
       resultsLabel: "Resultados",
       resultsDetail: byObjective.filter((o) => o.value > 0),
-      revenue: d.days.reduce((sum, day) => sum + (day.purchaseValue ?? 0), 0),
-      purchases: d.days.reduce((sum, day) => sum + (day.purchases ?? 0), 0),
+      // Sin "Es un ecommerce" en el Admin no se toman facturación ni compras de Meta.
+      revenue: d.isEcommerce ? d.days.reduce((sum, day) => sum + (day.purchaseValue ?? 0), 0) : 0,
+      purchases: d.isEcommerce ? d.days.reduce((sum, day) => sum + (day.purchases ?? 0), 0) : 0,
+      ecommerce: d.isEcommerce === true,
       daily: d.days.map((day) => ({ date: day.date, spend: day.spend })),
     };
   }, [meta]);
@@ -136,8 +145,10 @@ export function SummaryReport({
       results: d.purchases,
       resultsLabel: "Compras",
       resultsDetail: [],
-      revenue: d.revenue,
+      // Sin "Es un ecommerce" en el Admin no se muestran facturación ni ROAS de Google.
+      revenue: d.isEcommerce !== false ? d.revenue : 0,
       purchases: d.purchases,
+      ecommerce: d.isEcommerce !== false,
       daily: d.daily.map((day) => ({ date: day.date, spend: day.spend })),
     };
   }, [google]);
@@ -175,9 +186,14 @@ export function SummaryReport({
         tipoDeResultado: t.resultsLabel,
         desgloseResultados: t.resultsDetail.map((r) => ({ tipo: r.label, cantidad: r.value })),
         costoPorResultado: t.results > 0 ? money(t.spend / t.results, t.currency) : "s/d",
-        compras: Math.round(t.purchases * 100) / 100,
-        facturacion: money(t.revenue, t.currency),
-        roas: t.spend > 0 && t.revenue > 0 ? `${roasFormat.format(t.revenue / t.spend)}x` : "s/d",
+        esEcommerce: t.ecommerce,
+        ...(t.ecommerce
+          ? {
+              compras: Math.round(t.purchases * 100) / 100,
+              facturacion: money(t.revenue, t.currency),
+              roas: t.spend > 0 && t.revenue > 0 ? `${roasFormat.format(t.revenue / t.spend)}x` : "s/d",
+            }
+          : {}),
       })),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,7 +262,7 @@ export function SummaryReport({
       </Card>
 
       {/* 3. Evolución mensual (gráfico de barras de dos ejes, métricas a elección). */}
-      <MonthlyEvolutionBlock clientId={clientId} month={month} platforms={platforms} />
+      <MonthlyEvolutionBlock clientId={clientId} month={month} startMonths={startMonths} />
     </>
   );
 }
@@ -290,8 +306,8 @@ function PlatformCard({
       <div className="grid grid-cols-2 gap-4 border-t border-border pt-4">
         <Metric label={t.resultsLabel} value={formatNumber(Math.round(t.results * 100) / 100)} />
         <Metric label={t.resultsLabel === "Compras" ? "Costo por compra" : "Costo por resultado"} value={costPerResult} />
-        <Metric label="Facturación" value={t.revenue > 0 ? money(t.revenue) : "s/d"} />
-        <Metric label="ROAS" value={roas} />
+        {t.ecommerce && <Metric label="Facturación" value={t.revenue > 0 ? money(t.revenue) : "s/d"} />}
+        {t.ecommerce && <Metric label="ROAS" value={roas} />}
       </div>
 
       {t.resultsDetail.length > 1 && (

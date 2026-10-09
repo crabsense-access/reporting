@@ -18,6 +18,7 @@ import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
 import {
   GoogleAdsAudienceBlock,
   GoogleAdsBillingBlock,
+  summaryIsEcommerce,
   GoogleAdsCampaignAnalysisBlock,
   GoogleAdsHourlyBlock,
   GoogleAdsPlacementBlock,
@@ -93,7 +94,8 @@ export function GoogleAdsReport({
       {/* Resultados y Facturación, cada uno con su filtro de Campaña / Grupo de anuncios / Anuncio
           (ver GoogleAdsBlocks.tsx). */}
       <GoogleAdsResultsBlock summary={s} clientId={clientId} />
-      <GoogleAdsBillingBlock summary={s} clientId={clientId} />
+      {/* Bloque "Facturación" — sólo clientes marcados como ecommerce en el Admin. */}
+      {summaryIsEcommerce(s) && <GoogleAdsBillingBlock summary={s} clientId={clientId} />}
       {/* Mismo bloque "Inversión y rendimiento por día" que Meta Ads (ver GoogleAdsTrendBlock). */}
       <GoogleAdsTrendBlock summary={s} clientId={clientId} />
       {/* Mismo bloque "Resultados por campaña" que Meta Ads, con una serie por campaña. */}

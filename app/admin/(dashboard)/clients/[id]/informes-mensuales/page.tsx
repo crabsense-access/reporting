@@ -12,7 +12,7 @@ import { fetchMetaGraphApi } from "@/lib/meta-ads/client";
 import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { formatCurrency } from "@/lib/format";
 import type { MetaAdsConfig } from "@/lib/types";
-import { isMonthVisibleToClients } from "@/lib/reporting/reportWindow";
+import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
 
 // Listado de informes mensuales de un cliente (reemplaza los botones "Informes", "Ver informes" y
 // "Generar informe" del detalle del cliente, a pedido de Martín). Cada mes es el Calendario de
@@ -88,6 +88,7 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
     .eq("source_type", "meta_ads")
     .maybeSingle();
   const config = metaAdsSource?.config as MetaAdsConfig | undefined;
+  const metaStartMonth = resolveStartMonth(config);
 
   let result: { months: MonthRow[]; currency: string } | null = null;
   let error: string | null = null;
@@ -147,10 +148,10 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
                     </div>
                   </>
                 );
-                // Meses anteriores a FIRST_CLIENT_VISIBLE_MONTH (agosto 2026): grisados y sin link.
+                // Meses anteriores al mes de inicio de Meta Ads del cliente: grisados y sin link.
                 return (
                   <li key={month.value}>
-                    {isMonthVisibleToClients(month.value) ? (
+                    {isMonthFromStart(month.value, metaStartMonth) ? (
                       <Link
                         href={`/admin/clients/${client.id}/reporting/resumen?month=${month.value}`}
                         className="flex items-center justify-between gap-4 rounded-md px-2 py-3 transition-colors hover:bg-secondary/60"
@@ -160,7 +161,7 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
                     ) : (
                       <div
                         aria-disabled="true"
-                        title="Por el momento sólo están disponibles los meses desde agosto 2026"
+                        title="Mes anterior al mes desde el cual se toman los datos de Meta Ads (se cambia en la configuración del cliente)"
                         className="flex cursor-not-allowed items-center justify-between gap-4 rounded-md px-2 py-3 opacity-40"
                       >
                         {content}

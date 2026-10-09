@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { getClientLogoUrl } from "@/lib/reporting/clientLogo";
 import { ReportBody } from "@/components/admin/reporting/ReportBody";
+import { resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { ReportWithSidebar, type ReportPlatform } from "@/components/admin/reporting/ReportSidebar";
 
 // Armado común de las páginas de reporte (Server Component): una página por hoja (Resumen general /
@@ -38,10 +39,16 @@ export async function ReportPage({
   const supabase = await createClient();
   const { data: sources } = await supabase
     .from("data_sources")
-    .select("source_type")
+    .select("source_type, config")
     .eq("client_id", clientId)
     .in("source_type", ["meta_ads", "google_ads"]);
   const platforms = (["meta_ads", "google_ads"] as const).filter((p) => sources?.some((s) => s.source_type === p));
+  // Mes desde el cual se toman los datos de cada fuente (elegido en el Admin). Sólo viaja el mes al
+  // cliente, nunca la config completa (tiene el token de Meta).
+  const startMonths = {
+    meta_ads: resolveStartMonth(sources?.find((s) => s.source_type === "meta_ads")?.config as { start_month?: string } | undefined),
+    google_ads: resolveStartMonth(sources?.find((s) => s.source_type === "google_ads")?.config as { start_month?: string } | undefined),
+  };
 
   // Si la plataforma pedida no está configurada (pero hay alguna), se va al Resumen general.
   if (platform !== "summary" && !platforms.includes(platform) && platforms.length > 0) {
@@ -82,6 +89,7 @@ export async function ReportPage({
         initialMonth={month}
         showRecommendations={showRecommendations}
         platforms={platforms}
+        startMonths={startMonths}
         hrefs={hrefs}
       />
     </ReportWithSidebar>

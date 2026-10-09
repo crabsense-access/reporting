@@ -63,14 +63,16 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "en Google, las compras), costo por resultado, facturación y ROAS. Ojo: los resultados de cada " +
     "plataforma no siempre son el mismo tipo de conversión, así que compará eficiencia con cuidado " +
     "(y decilo si no son comparables). Si las plataformas usan monedas distintas, no sumes ni " +
-    "compares montos directamente. Identificá el hallazgo principal del mes (qué plataforma aporta " +
+    "compares montos directamente. Si una plataforma tiene esEcommerce false, no hables de su " +
+    "facturación ni de su ROAS (no es un ecommerce). Identificá el hallazgo principal del mes (qué plataforma aporta " +
     "más resultados o facturación, cuál es más eficiente, cómo se reparte la inversión) y redactalo " +
     "para que un cliente no técnico lo entienda de un vistazo.",
   "general-monthly-evolution":
     'Estás mirando el bloque "Evolución mensual" del Resumen general de un cliente: Meta Ads y Google ' +
     "Ads SUMADOS, mes a mes (\"meses\", SÓLO meses completos), con inversión, resultados (todos los " +
     "tipos de Resultado de Meta + compras de Google), costo por resultado, impresiones, clics, " +
-    "facturación, ticket promedio, ROAS y resultados por tipo. Hacé foco en cómo cerró el último mes " +
+    "facturación, ticket promedio, ROAS y resultados por tipo (facturación, ticket y ROAS sólo de las " +
+    "fuentes ecommerce; si esEcommerce es false no vienen y no hay que mencionarlos). Hacé foco en cómo cerró el último mes " +
     "completo (\"ultimoMesCompleto\") contra el mes anterior — usá " +
     "\"variacionUltimoMesCompletoVsAnterior\" — y, si suma contexto, en la tendencia de los meses " +
     "anteriores. No hables del mes en curso. Todo en UN SOLO insight con el formato pedido; en " +
