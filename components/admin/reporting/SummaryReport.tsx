@@ -7,6 +7,8 @@
 //      sentido y se muestra la inversión de cada una en la comparativa.
 //   2. "Comparativa por plataforma": una tarjeta por plataforma lado a lado (inversión, % del total,
 //      resultados, costo por resultado, facturación, ROAS) + insight de IA que compara las dos.
+//   3. "Evolución mensual": barras de dos ejes con la métrica que elija el usuario en cada eje (ver
+//      MonthlyEvolutionBlock.tsx).
 //
 // Los datos salen de los mismos endpoints (y la misma caché) que los reportes de cada plataforma:
 // /api/clients/[id]/investment-calendar (Meta) y /api/clients/[id]/google-ads-summary (Google).
@@ -21,6 +23,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
 import { InvestmentBlock } from "@/components/admin/reporting/InvestmentBlock";
+import { MonthlyEvolutionBlock } from "@/components/admin/reporting/MonthlyEvolutionBlock";
 import { formatCurrency, formatNumber } from "@/lib/format";
 import type { GoogleAdsMonthlySummary } from "@/lib/google-ads/monthlySummary";
 
@@ -241,6 +244,9 @@ export function SummaryReport({
           )}
         </CardContent>
       </Card>
+
+      {/* 3. Evolución mensual (gráfico de barras de dos ejes, métricas a elección). */}
+      <MonthlyEvolutionBlock clientId={clientId} month={month} platforms={platforms} />
     </>
   );
 }

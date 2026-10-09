@@ -31,15 +31,15 @@ interface SectionLink {
 const PLATFORMS: { key: ReportPlatform; label: string; icon: ReactNode }[] = [
   // Primera del menú y pantalla de inicio del informe (a pedido de Martín).
   { key: "summary", label: "Resumen general", icon: <LayoutDashboard className="h-5 w-5 text-primary" /> },
-  { key: "meta_ads", label: "Meta Ads", icon: <SiMeta color="#0467DF" className="h-6 w-6" /> },
+  { key: "meta_ads", label: "Meta Ads", icon: <SiMeta color="#0467DF" className="h-5 w-5" /> },
   // Logo original a color (el mismo PNG que usa el Admin, ver SourceIcon) en vez del ícono de una
-  // sola tinta de react-icons; un poco más chico que h-6 porque el logo llena todo el cuadrado y el
+  // sola tinta de react-icons; un poco más chico que el de Meta porque el logo llena todo el cuadrado y el
   // de Meta no, así quedan del mismo tamaño visual.
   {
     key: "google_ads",
     label: "Google Ads",
     // eslint-disable-next-line @next/next/no-img-element
-    icon: <img src="/icons/google-ads.png" alt="" className="h-5 w-5 object-contain" />,
+    icon: <img src="/icons/google-ads.png" alt="" className="h-4 w-4 object-contain" />,
   },
 ];
 

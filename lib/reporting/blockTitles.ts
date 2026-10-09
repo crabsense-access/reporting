@@ -32,6 +32,7 @@ export const REPORT_BLOCK_TITLES = {
   recomendaciones: { title: "Recomendaciones" },
   // ─── Resumen general ───
   resumenComparativa: { title: "Comparativa por plataforma", subtitle: "Meta Ads y Google Ads, lado a lado" },
+  evolucionMensual: { title: "Evolución mensual", subtitle: "Meta Ads y Google Ads sumados, mes a mes" },
   // ─── Google Ads ───
   googleAdsResultados: { title: "Resultados" },
   /** Resumen ejecutivo (insight de IA) del reporte de Google Ads. */
