@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/auth/roles";
 
 // Trae un reporte puntual como JSON — el endpoint de generación (POST .../reports/generate)
 // solo manda el reportId por el stream NDJSON, no el contenido. Usado por Configuración v2 para
@@ -16,11 +17,7 @@ export async function GET(
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: admin } = user?.email
-    ? await supabase.from("admins").select("id").eq("email", user.email).maybeSingle()
-    : { data: null };
-
-  if (!admin) {
+  if (!user?.email || !(await isAdminEmail(supabase, user.email))) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 

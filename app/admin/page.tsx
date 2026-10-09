@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { clientReportPath, getClientForEmail, isAdminEmail } from "@/lib/auth/roles";
+import { clientLandingPath, isAdminEmail } from "@/lib/auth/roles";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 
@@ -31,8 +31,8 @@ export default async function AdminPage() {
 
   // Usuario del cliente que entró por /admin: directo a su reporte.
   if (!isAdmin) {
-    const clientForUser = await getClientForEmail(supabase, user.email);
-    if (clientForUser) redirect(clientReportPath(clientForUser.slug));
+    const landing = await clientLandingPath(supabase, user.email);
+    if (landing) redirect(landing);
   }
 
   if (!isAdmin) {

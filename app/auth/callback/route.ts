@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { clientReportPath, getClientForEmail, isAdminEmail } from "@/lib/auth/roles";
+import { clientLandingPath, isAdminEmail } from "@/lib/auth/roles";
 
 // Supabase redirige acá después del login con Google, con un `code` en la
 // query string y un `origin` ("admin" | "client") que indica desde qué
@@ -32,10 +32,11 @@ export async function GET(request: Request) {
         }
 
         // Usuario del cliente (habilitado desde el admin → "Usuarios autorizados"):
-        // directo a la URL de su reporte, sin importar desde qué puerta entró.
-        const client = await getClientForEmail(supabase, email);
-        if (client) {
-          return NextResponse.redirect(`${origin}${clientReportPath(client.slug)}`);
+        // directo a la URL de su reporte (o al selector si tiene varios
+        // clientes), sin importar desde qué puerta entró.
+        const landing = await clientLandingPath(supabase, email);
+        if (landing) {
+          return NextResponse.redirect(`${origin}${landing}`);
         }
 
         if (loginOrigin === "admin") {

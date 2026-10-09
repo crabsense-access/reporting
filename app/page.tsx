@@ -2,20 +2,14 @@ import { redirect } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { clientReportPath, getClientForEmail } from "@/lib/auth/roles";
+import { clientLandingPath, isAdminEmail } from "@/lib/auth/roles";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 
-// Gate temporal: mientras el sitio está en construcción, la primera pantalla
-// (la raíz "/") es un login con Google y sólo puede entrar este email. Antes
-// acá vivía la landing pública (ver components/landing/*, que sigue existiendo
-// sin usar por ahora). Este mismo patrón de 3 estados (sin sesión, sesión sin
-// permiso, ok) es el que ya usa app/admin/page.tsx.
-// TODO: sacar este gate cuando el sitio esté listo para más gente — en ese
-// momento esta página debería volver a mostrar la landing pública y dejar la
-// autorización real en manos de isAdminEmail / isClientUserOfClient, como en
-// el resto de la app.
-const TEMP_ALLOWED_EMAIL = "access@crabsense.com";
+// Puerta de entrada ("/"): login con Google. Después del login, los usuarios
+// del cliente van a su reporte (o al selector si tienen varios clientes), el
+// admin (ADMIN_EMAIL, lib/auth/roles.ts) va al panel y cualquier otra cuenta
+// ve "Acceso no habilitado".
 
 export default async function HomePage() {
   const supabase = await createClient();
@@ -35,26 +29,27 @@ export default async function HomePage() {
     );
   }
 
-  // Usuarios del cliente: directo a su reporte (no pasan por el gate temporal).
-  const clientForUser = await getClientForEmail(supabase, user.email);
-  if (clientForUser) {
-    redirect(clientReportPath(clientForUser.slug));
+  if (await isAdminEmail(supabase, user.email)) {
+    redirect("/admin/clients");
   }
 
-  if (user.email !== TEMP_ALLOWED_EMAIL) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-          <ShieldAlert className="h-6 w-6" />
-        </span>
-        <h1 className="text-2xl font-semibold text-foreground">Acceso no habilitado</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Tu cuenta ({user.email}) todavía no está habilitada. El sitio está en construcción.
-        </p>
-        <SignOutButton />
-      </div>
-    );
+  // Usuarios del cliente: directo a su reporte (o al selector si tienen varios).
+  const landing = await clientLandingPath(supabase, user.email);
+  if (landing) {
+    redirect(landing);
   }
 
-  redirect("/admin/clients");
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+        <ShieldAlert className="h-6 w-6" />
+      </span>
+      <h1 className="text-2xl font-semibold text-foreground">Acceso no habilitado</h1>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        Tu cuenta ({user.email}) no tiene acceso a ningún reporte. Pedile a tu agencia que la
+        habilite.
+      </p>
+      <SignOutButton />
+    </div>
+  );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Check, Copy, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { ClientReportUrl } from "@/components/admin/ClientReportUrl";
 import { addClientUserAction, removeClientUserAction } from "@/app/admin/(dashboard)/clients/actions";
 import type { ClientUser } from "@/lib/types";
 
@@ -28,22 +29,9 @@ export function ClientUsersManager({ clientId, clientSlug, users: initialUsers }
   const [newEmail, setNewEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [copied, setCopied] = useState(false);
-  const reportUrl =
-    typeof window !== "undefined" ? `${window.location.origin}/${clientSlug}/reporting` : `/${clientSlug}/reporting`;
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(reportUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Sin permiso de portapapeles: la URL igual queda visible para copiar a mano.
-    }
-  }
 
   function handleAdd() {
-    const email = newEmail.trim();
+    const email = newEmail.trim().toLowerCase();
     if (!email) return;
     setError(null);
     startTransition(async () => {
@@ -83,25 +71,7 @@ export function ClientUsersManager({ clientId, clientSlug, users: initialUsers }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-2">
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="min-w-0 flex-1 truncate text-sm text-foreground underline-offset-4 hover:underline"
-          >
-            {reportUrl}
-          </a>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={handleCopy}
-            aria-label="Copiar URL del reporte"
-          >
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-          </Button>
-        </div>
+        <ClientReportUrl clientSlug={clientSlug} />
 
         <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
           {users.length === 0 && (

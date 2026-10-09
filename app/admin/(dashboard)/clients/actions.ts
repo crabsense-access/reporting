@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
 import { fetchSheetChartData, SheetChartError } from "@/lib/reporting/googleSheetChart";
 import { removeClientLogo, uploadClientLogo } from "@/lib/reporting/clientLogo";
-import { isAdminEmail } from "@/lib/auth/roles";
+import { isAdminEmail, normalizeEmail } from "@/lib/auth/roles";
 import type { Client, GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
 
 interface ActionResult<T = null> {
@@ -104,7 +104,7 @@ export async function createClientAction(
     }
   }
 
-  const emails = input.userEmails.filter(Boolean);
+  const emails = [...new Set(input.userEmails.map(normalizeEmail).filter(Boolean))];
   if (emails.length > 0) {
     const { error: usersError } = await supabase
       .from("client_users")
@@ -164,9 +164,18 @@ export async function addClientUserAction(
   clientId: string,
   email: string
 ): Promise<ActionResult> {
+  const normalized = normalizeEmail(email);
+  if (!normalized.includes("@")) {
+    return { data: null, error: "Ingresá un email válido." };
+  }
   const supabase = await createClient();
-  const { error } = await supabase.from("client_users").insert({ client_id: clientId, email });
+  const { error } = await supabase
+    .from("client_users")
+    .insert({ client_id: clientId, email: normalized });
   revalidatePath(`/admin/clients/${clientId}`);
+  if (error?.code === "23505") {
+    return { data: null, error: "Ese email ya tiene acceso a este cliente." };
+  }
   return { data: null, error: error?.message ?? null };
 }
 

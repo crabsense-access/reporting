@@ -5,6 +5,7 @@ import { generateReport } from "@/lib/reports/generate";
 import type { ReportProgressEvent } from "@/lib/reports/generate";
 import type { PlatformObjective } from "@/lib/reports/buildPromptMessage";
 import { isReportPlatform, type ReportPlatform } from "@/lib/reports/platforms";
+import { isAdminEmail } from "@/lib/auth/roles";
 
 interface GenerateReportBody {
   rol?: unknown;
@@ -59,9 +60,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: admin } = user?.email
-    ? await supabase.from("admins").select("id").eq("email", user.email).maybeSingle()
-    : { data: null };
+  // reports.created_by apunta a admins.id: además de ser ADMIN_EMAIL, el
+  // admin necesita su fila en la tabla `admins`.
+  const { data: admin } =
+    user?.email && (await isAdminEmail(supabase, user.email))
+      ? await supabase.from("admins").select("id").eq("email", user.email).maybeSingle()
+      : { data: null };
 
   if (!admin) {
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });

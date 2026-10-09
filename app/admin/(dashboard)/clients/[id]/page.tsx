@@ -14,6 +14,8 @@ import { GoogleAdsConfigForm } from "@/components/admin/GoogleAdsConfigForm";
 import { MetaAdsConfigForm } from "@/components/admin/MetaAdsConfigForm";
 import { SearchConsoleConfigForm } from "@/components/admin/SearchConsoleConfigForm";
 import { ClientUsersManager } from "@/components/admin/ClientUsersManager";
+import { ClientReportUrl } from "@/components/admin/ClientReportUrl";
+import { Label } from "@/components/ui/label";
 import type { GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib/types";
 
 export default async function ClientDetailPage({
@@ -90,6 +92,13 @@ export default async function ClientDetailPage({
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
+              <Label>URL del reporte</Label>
+              <ClientReportUrl clientSlug={client.slug} />
+              <p className="text-xs text-muted-foreground">
+                Compartila con los usuarios autorizados: entran iniciando sesión con su cuenta de Google.
+              </p>
+            </div>
             <ClientNameForm clientId={client.id} initialName={client.name} />
             <ClientLogoForm clientId={client.id} initialLogoUrl={logoUrl} />
           </div>
