@@ -3,10 +3,10 @@ import { ShieldAlert } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { clientLandingPath, isAdminEmail } from "@/lib/auth/roles";
-import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { SignOutButton } from "@/components/SignOutButton";
 
-// Puerta de entrada ("/"): login con Google. Después del login, los usuarios
+// Puerta de entrada ("/"): sin sesión redirige directo al login de Google
+// (app/auth/login/route.ts). Después del login, los usuarios
 // del cliente van a su reporte (o al selector si tienen varios clientes), el
 // admin (ADMIN_EMAIL, lib/auth/roles.ts) va al panel y cualquier otra cuenta
 // ve "Acceso no habilitado".
@@ -17,16 +17,9 @@ export default async function HomePage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Sin sesión: directo a la pantalla de login de Google.
   if (!user?.email) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-2xl font-semibold text-foreground">Reporting</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Sitio en construcción. Iniciá sesión con tu cuenta de Google para continuar.
-        </p>
-        <GoogleSignInButton origin="client" />
-      </div>
-    );
+    redirect("/auth/login?origin=client");
   }
 
   if (await isAdminEmail(supabase, user.email)) {
