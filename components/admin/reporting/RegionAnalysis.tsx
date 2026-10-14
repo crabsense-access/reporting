@@ -35,7 +35,7 @@
 // Google no lo informa), con su propio filtro de Campaña / Grupo / Anuncio (resolveFilteredSegment),
 // sus textos y su prompt de insight (insightChart).
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { BlockTitle } from "@/components/admin/reporting/BlockTitle";
@@ -70,6 +70,9 @@ function tierFor(cpl: number, avgCpl: number): Tier {
 // Ancho fijo por columna (Alcance, Impresiones, Clicks, Inversión, % Inv., Resultados, Costo por
 // Resultado) para que los valores queden alineados verticalmente entre todas las filas, sin
 // importar cuántas provincias haya ni el largo de cada número.
+/** Filas visibles antes de que la tabla pase a tener scroll. */
+const VISIBLE_ROWS = 12;
+
 const METRIC_GRID_COLUMNS = "64px 76px 56px 92px 56px 68px 96px";
 const METRIC_GRID_COLUMNS_NO_REACH = "76px 56px 92px 56px 68px 96px";
 
@@ -267,6 +270,20 @@ export function RegionAnalysis({
       .sort((a, b) => b.spend - a.spend);
   }, [segments, objectiveIndex, hasFilter, campaignId, adsetId, adId, resolveFilteredSegment]);
 
+  // Scroll a partir de la fila 13: maxHeight = posición de la fila 13 dentro del contenedor.
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const [rowsMaxHeight, setRowsMaxHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = rowsRef.current;
+    if (!el || rows.length <= VISIBLE_ROWS) {
+      setRowsMaxHeight(null);
+      return;
+    }
+    const cutoff = el.children[VISIBLE_ROWS] as HTMLElement | undefined;
+    // offsetTop de la fila 13 (relativo al contenedor, que es position: relative) menos el gap.
+    setRowsMaxHeight(cutoff ? cutoff.offsetTop - 12 : null);
+  }, [rows]);
+
   const totalLeads = rows.reduce((sum, r) => sum + r.leads, 0);
   const totalSpend = rows.reduce((sum, r) => sum + r.spend, 0);
   const avgCpl = totalLeads > 0 ? totalSpend / totalLeads : 0;
@@ -426,6 +443,13 @@ export function RegionAnalysis({
               </div>
             </div>
 
+            {/* A pedido de Martín: se ven 12 provincias y el resto con scroll (el encabezado de
+                columnas queda fijo arriba). La altura se mide sobre las filas reales. */}
+            <div
+              ref={rowsRef}
+              className="relative flex flex-col gap-3 overflow-y-auto pr-1"
+              style={rowsMaxHeight !== null ? { maxHeight: rowsMaxHeight } : undefined}
+            >
             {rows.map((r) => {
               const cpl = r.leads > 0 ? r.spend / r.leads : null;
               const tier = cpl !== null ? tierFor(cpl, avgCpl) : "promedio";
@@ -473,6 +497,7 @@ export function RegionAnalysis({
                 </div>
               );
             })}
+            </div>
           </div>
         )}
 

@@ -182,53 +182,93 @@ const isPurchase = (r: Row) => {
 const PERF = "metrics.cost_micros, metrics.impressions, metrics.clicks";
 const CONV = "segments.conversion_action_category, metrics.conversions, metrics.conversions_value";
 
+type BreakdownResults = [Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[], Row[]];
+
+/** Corre las consultas del desglose de a `concurrency` por vez, con 1 reintento cada una; una consulta que falla devuelve [] sin afectar a las demás. */
+async function runBreakdownQueries(
+  queries: (() => Promise<Row[]>)[],
+  concurrency = 6
+): Promise<{ results: Row[][]; failures: { index: number; error: unknown }[] }> {
+  const results: Row[][] = Array.from({ length: queries.length }, () => []);
+  const failures: { index: number; error: unknown }[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < queries.length) {
+      const index = next++;
+      try {
+        results[index] = await queries[index]!();
+      } catch {
+        try {
+          results[index] = await queries[index]!();
+        } catch (error) {
+          const e = error as { errors?: unknown };
+          failures.push({ index, error: e?.errors ?? error });
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, queries.length) }, worker));
+  return { results, failures };
+}
+
 export async function fetchGoogleAdsMonthlySummary(customerId: string, from: string, to: string): Promise<GoogleAdsMonthlySummary> {
   const customer = getGoogleAdsClient(customerId);
   const range = `segments.date BETWEEN '${from}' AND '${to}'`;
   const q = (gaql: string) => customer.query(gaql) as Promise<Row[]>;
 
-  // Desglose para los filtros: si alguna de estas consultas falla, el reporte sigue funcionando
-  // con los totales de la cuenta y los combos quedan vacíos (se loguea el error y se marca
-  // breakdownFailed para que el route no cachee ese resultado incompleto).
+  // Desglose para los filtros y los bloques por campaña/red/edad/región/hora. Cada consulta es
+  // independiente: si una falla (ej. una combinación de campos que Google no acepta para un tipo
+  // de campaña, o un límite de cuota puntual), sólo queda vacío lo que depende de ESA consulta —
+  // antes, una sola consulta fallida vaciaba TODOS los bloques del desglose aunque la cuenta
+  // tuviera compras (los totales salen de `customer` y sí se veían). Se reintenta una vez, se
+  // corren de a pocas en paralelo para no saturar la API, y si alguna falló igual se marca
+  // breakdownFailed para que el route no cachee el resultado incompleto.
   let breakdownFailed = false;
-  const breakdownQueries = Promise.all([
-    q(`SELECT segments.date, campaign.id, campaign.name, campaign.status, ${PERF} FROM campaign WHERE ${range}`),
-    q(`SELECT segments.date, campaign.id, campaign.name, ${CONV} FROM campaign WHERE ${range}`),
-    q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${PERF} FROM ad_group WHERE ${range}`),
-    q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${CONV} FROM ad_group WHERE ${range}`),
-    q(
+  const breakdownQueries = runBreakdownQueries([
+    () => q(`SELECT segments.date, campaign.id, campaign.name, campaign.status, ${PERF} FROM campaign WHERE ${range}`),
+    () => q(`SELECT segments.date, campaign.id, campaign.name, ${CONV} FROM campaign WHERE ${range}`),
+    () => q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${PERF} FROM ad_group WHERE ${range}`),
+    () => q(`SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ${CONV} FROM ad_group WHERE ${range}`),
+    () => q(
       `SELECT segments.date, campaign.id, ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.name, ` +
         `ad_group_ad.ad.responsive_search_ad.headlines, ${PERF} FROM ad_group_ad WHERE ${range}`
     ),
-    q(`SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id, ${CONV} FROM ad_group_ad WHERE ${range}`),
+    () => q(`SELECT segments.date, campaign.id, ad_group.id, ad_group_ad.ad.id, ${CONV} FROM ad_group_ad WHERE ${range}`),
     // Desglose por red (sin fecha) para "Ubicación de los anuncios", en los 3 niveles del filtro.
-    q(`SELECT campaign.id, segments.ad_network_type, metrics.cost_micros FROM campaign WHERE ${range}`),
-    q(`SELECT campaign.id, segments.ad_network_type, ${CONV} FROM campaign WHERE ${range}`),
-    q(`SELECT ad_group.id, segments.ad_network_type, metrics.cost_micros FROM ad_group WHERE ${range}`),
-    q(`SELECT ad_group.id, segments.ad_network_type, ${CONV} FROM ad_group WHERE ${range}`),
-    q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, metrics.cost_micros FROM ad_group_ad WHERE ${range}`),
-    q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, ${CONV} FROM ad_group_ad WHERE ${range}`),
+    () => q(`SELECT campaign.id, segments.ad_network_type, metrics.cost_micros FROM campaign WHERE ${range}`),
+    () => q(`SELECT campaign.id, segments.ad_network_type, ${CONV} FROM campaign WHERE ${range}`),
+    () => q(`SELECT ad_group.id, segments.ad_network_type, metrics.cost_micros FROM ad_group WHERE ${range}`),
+    () => q(`SELECT ad_group.id, segments.ad_network_type, ${CONV} FROM ad_group WHERE ${range}`),
+    () => q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, metrics.cost_micros FROM ad_group_ad WHERE ${range}`),
+    () => q(`SELECT ad_group_ad.ad.id, segments.ad_network_type, ${CONV} FROM ad_group_ad WHERE ${range}`),
     // Demografía (por grupo de anuncios: Google no la informa por anuncio, y Performance Max no la informa).
-    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${PERF} FROM age_range_view WHERE ${range}`),
-    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${CONV} FROM age_range_view WHERE ${range}`),
-    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${PERF} FROM gender_view WHERE ${range}`),
-    q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${CONV} FROM gender_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${PERF} FROM age_range_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, ad_group_criterion.age_range.type, ${CONV} FROM age_range_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${PERF} FROM gender_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, ad_group_criterion.gender.type, ${CONV} FROM gender_view WHERE ${range}`),
     // Geografía (provincia/región), por campaña (incluye Performance Max) y por grupo de anuncios.
-    q(`SELECT campaign.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
-    q(`SELECT campaign.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
-    q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
-    q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${PERF} FROM geographic_view WHERE ${range}`),
+    () => q(`SELECT campaign.id, ad_group.id, segments.geo_target_region, ${CONV} FROM geographic_view WHERE ${range}`),
     // Hora del día (0-23, huso de la cuenta), en los 3 niveles del filtro.
-    q(`SELECT campaign.id, segments.hour, ${PERF} FROM campaign WHERE ${range}`),
-    q(`SELECT campaign.id, segments.hour, ${CONV} FROM campaign WHERE ${range}`),
-    q(`SELECT ad_group.id, segments.hour, ${PERF} FROM ad_group WHERE ${range}`),
-    q(`SELECT ad_group.id, segments.hour, ${CONV} FROM ad_group WHERE ${range}`),
-    q(`SELECT ad_group_ad.ad.id, segments.hour, ${PERF} FROM ad_group_ad WHERE ${range}`),
-    q(`SELECT ad_group_ad.ad.id, segments.hour, ${CONV} FROM ad_group_ad WHERE ${range}`),
-  ]).catch((error) => {
-    console.error("[google-ads] No se pudo traer el desglose por campaña/grupo/anuncio:", error?.errors ?? error);
-    breakdownFailed = true;
-    return Array.from({ length: 26 }, () => [] as Row[]);
+    () => q(`SELECT campaign.id, segments.hour, ${PERF} FROM campaign WHERE ${range}`),
+    () => q(`SELECT campaign.id, segments.hour, ${CONV} FROM campaign WHERE ${range}`),
+    () => q(`SELECT ad_group.id, segments.hour, ${PERF} FROM ad_group WHERE ${range}`),
+    () => q(`SELECT ad_group.id, segments.hour, ${CONV} FROM ad_group WHERE ${range}`),
+    () => q(`SELECT ad_group_ad.ad.id, segments.hour, ${PERF} FROM ad_group_ad WHERE ${range}`),
+    () => q(`SELECT ad_group_ad.ad.id, segments.hour, ${CONV} FROM ad_group_ad WHERE ${range}`),
+  ]).then(({ results, failures }) => {
+    if (failures.length > 0) {
+      breakdownFailed = true;
+      console.error(
+        `[google-ads] Fallaron ${failures.length} de ${results.length} consultas del desglose (los bloques que dependen de ellas quedan vacíos; el resto sigue funcionando):`,
+        failures
+      );
+    }
+    // 26 consultas, en el mismo orden que la desestructuración de abajo (results siempre tiene un
+    // array por consulta: [] si falló).
+    return results as BreakdownResults;
   });
 
   const [
