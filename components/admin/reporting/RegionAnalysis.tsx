@@ -309,7 +309,7 @@ export function RegionAnalysis({
           provincia: r.region,
           inversion: formatCurrency(r.spend, currency),
           participacionInversion: formatPercent(totalSpend > 0 ? r.spend / totalSpend : 0),
-          alcance: formatNumber(r.reach),
+          ...(showReach ? { alcance: formatNumber(r.reach) } : {}),
           impresiones: formatNumber(r.impressions),
           clicks: formatNumber(r.clicks),
         })),
@@ -333,7 +333,7 @@ export function RegionAnalysis({
         resultados: formatNumber(r.leads),
         participacionInversion: formatPercent(totalSpend > 0 ? r.spend / totalSpend : 0),
         cpl: r.leads > 0 ? formatCurrency(r.spend / r.leads, currency, 2) : "s/d",
-        alcance: formatNumber(r.reach),
+        ...(showReach ? { alcance: formatNumber(r.reach) } : {}),
         impresiones: formatNumber(r.impressions),
         clicks: formatNumber(r.clicks),
       })),
@@ -346,7 +346,7 @@ export function RegionAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName, showResults]);
+  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName, showResults, showReach]);
 
   return (
     <Card>

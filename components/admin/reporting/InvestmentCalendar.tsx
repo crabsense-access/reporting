@@ -943,6 +943,7 @@ export function InvestmentCalendar({
 
           {data && (
             <RegionAnalysis
+              showReach={false}
               segments={data.regionSegments}
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
               currency={currency}
