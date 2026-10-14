@@ -140,7 +140,6 @@ export function GoogleAdsResultsBlock({ summary, clientId }: { summary: GoogleAd
       impresiones: data.impressions,
       clicks: data.clicks,
       ctr: fmtPct(ratio(data.clicks, data.impressions)),
-      alcance: "No informado por Google Ads",
       inversion: formatCurrency(Math.round(data.spend), currency),
       cpa: data.purchases > 0 ? formatCurrency(Math.round(data.spend / data.purchases), currency) : "s/d",
       ...(summaryIsEcommerce(summary)
@@ -181,7 +180,11 @@ export function GoogleAdsResultsBlock({ summary, clientId }: { summary: GoogleAd
                 <PerformanceCard label="% Conversión" value={data && fmtPct(convRate)} note="Compras / clicks" />
                 <PerformanceCard label="Impresiones" value={data && formatNumber(data.impressions)} />
                 <PerformanceCard label="Clicks" value={data && formatNumber(data.clicks)} />
-                <PerformanceCard label="Alcance" value={data && "N/D"} note="Google Ads no informa alcance para todas las campañas" />
+                <PerformanceCard
+                  label="Costo por compra"
+                  value={data && (data.purchases > 0 ? formatCurrency(data.spend / data.purchases, currency, 2) : "s/d")}
+                  note="Inversión / compras"
+                />
               </div>
             </div>
 
