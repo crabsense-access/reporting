@@ -29,7 +29,8 @@
 // siendo el día real — no el mes elegido —, así que ese resaltado simplemente no aparece cuando
 // se está mirando un mes que no es el actual.
 //
-// CampaignAnalysis, PlacementAnalysis y AudienceAnalysis TODAVÍA usan datos
+// CampaignAnalysis ya usa datos reales (campaignRanking + days[].byAd).
+// PlacementAnalysis y AudienceAnalysis TODAVÍA usan datos
 // de prueba (ver lib/reporting/mockInvestmentCalendar.ts): sólo reciben los
 // totales del mes ya calculados acá (monthLeadsByType/monthSpendByType/
 // monthLeads/monthTotal, ya reales), y siguen repartiéndolos con sus
@@ -209,6 +210,8 @@ interface InvestmentCalendarResponse {
   monthlyReach: number;
   /** Campañas con gasto este mes, ordenadas por gasto descendente — combo de Campaña de los gráficos con filtro. */
   campaigns: { id: string; name: string }[];
+  /** Todas las campañas con gasto este mes (aunque no hayan tenido Resultados) + su estado actual en Meta — ranking de CampaignAnalysis. */
+  campaignRanking?: { id: string; name: string; status: "activa" | "pausada" | "archivada" | null }[];
   adsets?: { id: string; name: string; campaignId: string }[];
   /** Anuncios con gasto este mes, cada uno con el id de su campaña — combo de Anuncio, en cascada con el de Campaña. */
   ads: { id: string; name: string; campaignId: string; adsetId?: string }[];
@@ -887,8 +890,10 @@ export function InvestmentCalendar({
           )}
 
           <CampaignAnalysis
-            monthLeadsByType={monthLeadsByType}
-            monthSpendByType={monthSpendByType}
+            campaigns={data?.campaignRanking ?? []}
+            days={data?.days ?? []}
+            currency={currency}
+            loading={!data}
             monthIsComplete={!isCurrentMonth}
             clientId={clientId}
           />
@@ -942,6 +947,9 @@ export function InvestmentCalendar({
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
+              showResults={false}
+              insightChart="regions-meta"
+              emptyText="Todavía no hay inversión este mes."
             />
           )}
 
@@ -955,6 +963,8 @@ export function InvestmentCalendar({
               ads={data.ads}
               monthIsComplete={!isCurrentMonth}
               clientId={clientId}
+              // Alcance por hora no es sumable (la misma persona se cuenta en varias horas): sin columna.
+              showReach={false}
             />
           )}
 

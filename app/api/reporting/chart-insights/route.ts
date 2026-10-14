@@ -146,10 +146,12 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "mes — redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo, " +
     "hablando de compras y costo por compra (no de leads ni CPL).",
   "campaign-highlights":
-    'Estás mirando el ranking de campañas individuales del calendario de inversión de un cliente ' +
-    "de marketing digital (leads, CPL e inversión por campaña, dentro de cada tipo). Ya se " +
-    'identificó cuál es la campaña "mejor" (mejor CPL) y cuál la "peor" (peor CPL) del mes — ' +
-    "redactá el hallazgo de cada una para que un cliente no técnico lo entienda de un vistazo.",
+    'Estás mirando el ranking de campañas reales de Meta Ads de un cliente (inversión, resultados ' +
+    "y costo por resultado por campaña, con el nombre tal cual está en Meta y su estado actual). " +
+    'Ya se identificó cuál es la campaña "mejor" (menor costo por resultado) y cuál la "peor" ' +
+    "(mayor costo por resultado) del mes — redactá el hallazgo de cada una para que un cliente no " +
+    "técnico lo entienda de un vistazo. Hablá de resultados y costo por resultado; no supongas qué " +
+    "tipo de campaña es ni a qué audiencia apunta a partir del nombre si los datos no lo dicen.",
   "google-ads-hourly":
     'Estás mirando "Resultados por Horario" del reporte de Google Ads de un cliente ecommerce: ' +
     "inversión y costo por compra por hora del día (huso horario de la cuenta), sumando el mes, más un " +
@@ -203,6 +205,14 @@ const CHART_INSTRUCTIONS: Record<string, string> = {
     "principal combinando volumen (qué segmento de género+edad trae más leads, y el split general " +
     'entre géneros en "splitGenero") y eficiencia (comparando el segmento más eficiente con el ' +
     "menos eficiente en CPL) — redactalo para que un cliente no técnico lo entienda de un vistazo.",
+  "regions-meta":
+    'Estás mirando "Ubicación geográfica" del reporte de Meta Ads de un cliente: inversión, ' +
+    "alcance, impresiones y clics del mes por provincia/región de Argentina. Meta NO informa " +
+    "resultados (leads, conversiones) por provincia, así que no hables de leads, resultados, CPL ni " +
+    "eficiencia por costo. El campo \"campania\" indica si se filtró por una campaña. Identificá el " +
+    "hallazgo principal sobre la distribución de la inversión y el alcance (qué provincias concentran " +
+    "el presupuesto, ver \"mayorInversion\", y cómo se compara su participación en alcance y clics) " +
+    "y redactalo para que un cliente no técnico lo entienda de un vistazo.",
   regions:
     'Estás mirando "De dónde son los leads" del calendario de inversión de un cliente de marketing ' +
     "digital: inversión, leads y CPL del mes desglosados por provincia/región de Argentina, para el " +
@@ -289,6 +299,52 @@ const RECOMMENDATION_CHARTS = new Set(["recommendations", "google-ads-recommenda
 // ANTHROPIC_PAUSED=true, en vez de pedirle un resumen nuevo a Claude. "audience" y "regions" son
 // casos especiales porque su resultado depende del tipo de conversión elegido en el toggle del
 // front (ver el switch más abajo), así que se resuelven aparte contra metrics.tipoCampania.
+/** Fallback sin Claude para "campaign-highlights": textos neutros con los datos reales recibidos. */
+function campaignHighlightsFromMetrics(metrics: unknown) {
+  if (typeof metrics !== "object" || metrics === null) return null;
+  const { mejor, peor } = metrics as Record<string, Record<string, string> | undefined>;
+  if (!mejor?.nombre || !peor?.nombre) return null;
+  const highlights = (c: Record<string, string>) =>
+    [
+      { label: "Costo por resultado", value: c.costoPorResultado },
+      { label: "Resultados", value: c.resultados },
+      { label: "Inversión", value: c.inversion },
+    ].filter((h) => typeof h.value === "string" && h.value);
+  return [
+    {
+      rol: "mejor" as const,
+      nombre: mejor.nombre,
+      headline: "Menor costo por resultado del mes",
+      body: "Es la campaña más eficiente del período: consiguió resultados al costo más bajo del ranking.",
+      highlights: highlights(mejor),
+    },
+    {
+      rol: "peor" as const,
+      nombre: peor.nombre,
+      headline: "Mayor costo por resultado del mes",
+      body: "Es la campaña con el costo por resultado más alto del ranking; conviene revisar su segmentación y creatividades.",
+      highlights: highlights(peor),
+    },
+  ];
+}
+
+/** Fallback sin Claude para "regions-meta" (sin resultados por provincia): texto neutro con los datos reales. */
+function regionsSpendFallback(metrics: unknown) {
+  const m = (typeof metrics === "object" && metrics !== null ? metrics : {}) as {
+    inversionTotal?: string;
+    mayorInversion?: { provincia: string; participacion: string } | null;
+  };
+  const top = m.mayorInversion;
+  return {
+    headline: top ? `${top.provincia} concentra la inversión del mes` : "Distribución de la inversión por provincia",
+    body: "Meta no informa resultados por provincia, así que este ranking muestra cómo se repartió la inversión y el alcance entre regiones.",
+    highlights: [
+      ...(top ? [{ label: "Mayor inversión", value: `${top.provincia} (${top.participacion})` }] : []),
+      ...(m.inversionTotal ? [{ label: "Inversión total", value: m.inversionTotal }] : []),
+    ],
+  };
+}
+
 function getPausedFallback(chart: string, metrics: unknown): unknown {
   switch (chart) {
     case "investment-trend":
@@ -297,11 +353,16 @@ function getPausedFallback(chart: string, metrics: unknown): unknown {
     case "google-ads-results-by-campaign":
       return { items: LEADS_BY_TYPE_FALLBACK };
     case "campaign-highlights":
+      // Con las campañas reales, el fallback fijo mostraría campañas inventadas: se arma uno
+      // neutro con los nombres y cifras que llegaron en metrics.
+      return { items: campaignHighlightsFromMetrics(metrics) ?? CAMPAIGN_HIGHLIGHTS_FALLBACK };
     case "google-ads-campaign-highlights":
       return { items: CAMPAIGN_HIGHLIGHTS_FALLBACK };
     case "placements":
     case "google-ads-placements":
       return PLACEMENTS_FALLBACK;
+    case "regions-meta":
+      return regionsSpendFallback(metrics);
     case "google-ads-regions":
     case "regions": {
       const tipoCampania =

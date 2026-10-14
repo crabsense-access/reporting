@@ -273,8 +273,10 @@ export function HourlyPerformanceChart({
   const yLeftAt = (value: number) => PAD.top + INNER_H - (value / maxSpend) * INNER_H;
   const yRightAt = (value: number) => PAD.top + INNER_H - (value / maxCpl) * INNER_H;
 
+  // Las horas sin contactos (costo nulo) se dibujan en 0 para que la línea sea continua, sin cortes
+  // (a pedido de Martín). El dato sigue siendo null para la tabla y el insight ("s/d").
   const linePoints = hours
-    .map((h, i) => (h.cpl !== null ? { x: xAt(i), y: yRightAt(h.cpl), index: i, value: h.cpl } : null))
+    .map((h, i) => ({ x: xAt(i), y: yRightAt(h.cpl ?? 0), index: i, value: h.cpl ?? 0 }))
     .filter((p): p is { x: number; y: number; index: number; value: number } => p !== null);
 
   const linePath = linePoints.reduce((acc, p, i) => {
@@ -510,8 +512,8 @@ export function HourlyPerformanceChart({
                 {hoverX !== null && (
                   <line x1={hoverX} x2={hoverX} y1={PAD.top} y2={PAD.top + INNER_H} stroke="currentColor" className="text-border" strokeWidth={1} />
                 )}
-                {hovered && hoverX !== null && hovered.cpl !== null && (
-                  <circle cx={hoverX} cy={yRightAt(hovered.cpl)} r={4} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
+                {hovered && hoverX !== null && (
+                  <circle cx={hoverX} cy={yRightAt(hovered.cpl ?? 0)} r={4} fill="#ffffff" stroke={lineColor} strokeWidth={2} />
                 )}
               </svg>
 

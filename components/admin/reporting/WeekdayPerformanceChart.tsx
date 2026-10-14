@@ -15,7 +15,10 @@
 // que en HourlyPerformanceChart (nunca hardcodeado).
 //
 // Debajo del gráfico, un resumen en 2 franjas fijas (Lunes a viernes / Sábado y domingo) con
-// Alcance/Impresiones/Clicks/Inversión/% Inv./Resultados/Costo por Resultado — y el insight de
+// Impresiones/Clicks/Inversión/% Inv./Resultados/Costo por Resultado. SIN Alcance: Meta sólo da el
+// alcance deduplicado por día, y sumar días (o anuncios) cuenta varias veces a la misma persona —
+// la franja "Lunes a viernes" llegaba a superar el alcance real de todo el mes. Para días no
+// consecutivos no hay forma de pedirle a Meta un alcance deduplicado, así que se quita — y el insight de
 // Claude a partir de esos mismos números. Alcance/Impresiones/Clicks no dependen del Tipo de
 // Resultado elegido (una impresión no "es" de un tipo puntual), sólo de Campaña/Anuncio — mismo
 // criterio que HourlyPerformanceChart.tsx/RegionAnalysis.tsx.
@@ -559,7 +562,6 @@ export function WeekdayPerformanceChart({
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="py-1.5 pr-4 font-medium">Franja</th>
-                    <th className="py-1.5 pr-4 font-medium">Alcance</th>
                     <th className="py-1.5 pr-4 font-medium">Impresiones</th>
                     <th className="py-1.5 pr-4 font-medium">Clicks</th>
                     <th className="py-1.5 pr-4 font-medium">Inversión</th>
@@ -572,7 +574,6 @@ export function WeekdayPerformanceChart({
                   {bands.map((band) => (
                     <tr key={band.label} className="border-b border-border/60 last:border-0">
                       <td className="py-2 pr-4 font-medium text-foreground">{band.label}</td>
-                      <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.reach)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.impressions)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatNumber(band.totalClicks)}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{formatCurrency(band.spend, currency)}</td>

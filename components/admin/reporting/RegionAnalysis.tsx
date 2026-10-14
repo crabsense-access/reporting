@@ -136,6 +136,7 @@ export function RegionAnalysis({
   resolveFilteredSegment,
   hideObjectiveSelect = false,
   showReach = true,
+  showResults = true,
   resultsLabel = "Resultados",
   costLabel = "Costo por Resultado",
   avgCostLabel = "CPL promedio",
@@ -152,6 +153,13 @@ export function RegionAnalysis({
   hideObjectiveSelect?: boolean;
   /** Muestra la columna de Alcance (Google Ads no lo informa). */
   showReach?: boolean;
+  /**
+   * Muestra Resultados y Costo por Resultado (columnas, CPL promedio del encabezado, etiqueta de
+   * eficiencia y combo de Tipo de Resultado). Meta Ads no informa resultados por provincia (el
+   * breakdown "region" deja las conversiones sin asignar), así que el reporte de Meta lo apaga y la
+   * tabla queda sólo con alcance, impresiones, clicks e inversión. Google Ads sí lo muestra.
+   */
+  showResults?: boolean;
   /** Textos de las columnas, del promedio del encabezado y del estado vacío. */
   resultsLabel?: string;
   costLabel?: string;
@@ -223,6 +231,9 @@ export function RegionAnalysis({
 
   const hasFilter = campaignId !== null || adsetId !== null || adId !== null;
 
+  const baseGrid = showReach ? METRIC_GRID_COLUMNS : METRIC_GRID_COLUMNS_NO_REACH;
+  const gridColumns = showResults ? baseGrid : baseGrid.split(" ").slice(0, -2).join(" ");
+
   const rows = useMemo(() => {
     const objectivesCount = segments[0]?.objectiveLeads.length ?? 0;
     return segments
@@ -267,6 +278,23 @@ export function RegionAnalysis({
 
   const insightMetrics = useMemo(() => {
     if (rows.length === 0) return null;
+    if (!showResults) {
+      return {
+        campania: selectedCampaignName ?? "Todas las campañas",
+        inversionTotal: formatCurrency(totalSpend, currency),
+        provincias: rows.map((r) => ({
+          provincia: r.region,
+          inversion: formatCurrency(r.spend, currency),
+          participacionInversion: formatPercent(totalSpend > 0 ? r.spend / totalSpend : 0),
+          alcance: formatNumber(r.reach),
+          impresiones: formatNumber(r.impressions),
+          clicks: formatNumber(r.clicks),
+        })),
+        mayorInversion: top
+          ? { provincia: top.region, participacion: formatPercent(totalSpend > 0 ? top.spend / totalSpend : 0) }
+          : null,
+      };
+    }
     const withCpl = rows.filter((r) => r.leads > 0).map((r) => ({ ...r, cpl: r.spend / r.leads }));
     const masEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => a.cpl - b.cpl)[0]! : null;
     const menosEficiente = withCpl.length > 0 ? [...withCpl].sort((a, b) => b.cpl - a.cpl)[0]! : null;
@@ -295,21 +323,21 @@ export function RegionAnalysis({
         : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName]);
+  }, [rows, objectiveOptions, objectiveIndex, avgCpl, totalSpend, top, currency, selectedCampaignName, showResults]);
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
         <div>
-          <BlockTitle block="regiones" />
+          <BlockTitle block="regiones" subtitle={showResults ? undefined : "Dónde se invirtió el presupuesto"} />
           <span className="text-xs text-muted-foreground">
             Ranking del mes por provincia · Inversión total: {formatCurrency(totalSpend, currency)}
-            {totalLeads > 0 && <> · {avgCostLabel}: {formatCurrency(avgCpl, currency, 2)}</>}
+            {showResults && totalLeads > 0 && <> · {avgCostLabel}: {formatCurrency(avgCpl, currency, 2)}</>}
           </span>
         </div>
 
         <div className="flex flex-col items-stretch gap-2">
-          {!hideObjectiveSelect && (
+          {!hideObjectiveSelect && showResults && (
           <select
             aria-label="Tipo de Resultado"
             value={objectiveIndex === null ? "all" : String(objectiveIndex)}
@@ -386,22 +414,23 @@ export function RegionAnalysis({
               <span className="min-w-0 flex-1" />
               <div
                 className="grid shrink-0 gap-x-4 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-                style={{ gridTemplateColumns: showReach ? METRIC_GRID_COLUMNS : METRIC_GRID_COLUMNS_NO_REACH }}
+                style={{ gridTemplateColumns: gridColumns }}
               >
                 {showReach && <span>Alcance</span>}
                 <span>Impres.</span>
                 <span>Clicks</span>
                 <span>Inversión</span>
                 <span>% Inv.</span>
-                <span>{resultsLabel}</span>
-                <span>{costLabel}</span>
+                {showResults && <span>{resultsLabel}</span>}
+                {showResults && <span>{costLabel}</span>}
               </div>
             </div>
 
             {rows.map((r) => {
               const cpl = r.leads > 0 ? r.spend / r.leads : null;
               const tier = cpl !== null ? tierFor(cpl, avgCpl) : "promedio";
-              const color = TIER_COLOR[tier];
+              // Sin resultados no hay eficiencia que marcar: color neutro y sin etiqueta.
+              const color = showResults ? TIER_COLOR[tier] : selectedColor;
               const spendShare = totalSpend > 0 ? r.spend / totalSpend : 0;
               const widthPct = Math.max(4, Math.round((r.spend / maxSpend) * 100));
               return (
@@ -410,12 +439,14 @@ export function RegionAnalysis({
                     <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                       <span className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
                       <span className="truncate">{r.region}</span>
-                      <span
-                        className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                        style={{ color, backgroundColor: `${color}1a` }}
-                      >
-                        {TIER_LABEL[tier]}
-                      </span>
+                      {showResults && (
+                        <span
+                          className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ color, backgroundColor: `${color}1a` }}
+                        >
+                          {TIER_LABEL[tier]}
+                        </span>
+                      )}
                     </span>
                     {/* La barra termina donde empieza la tabla: su ancho de referencia (w-full)
                         es el de esta columna de provincia, no el de la fila entera. */}
@@ -425,17 +456,19 @@ export function RegionAnalysis({
                   </div>
                   <div
                     className="grid shrink-0 gap-x-4 text-right text-xs tabular-nums"
-                    style={{ gridTemplateColumns: showReach ? METRIC_GRID_COLUMNS : METRIC_GRID_COLUMNS_NO_REACH }}
+                    style={{ gridTemplateColumns: gridColumns }}
                   >
                     {showReach && <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.reach)}</span>}
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.impressions)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatNumber(r.clicks)}</span>
                     <span className="whitespace-nowrap text-muted-foreground">{formatCurrency(r.spend, currency)}</span>
                     <span className="whitespace-nowrap font-semibold text-foreground">{formatPercent(spendShare)}</span>
-                    <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(r.leads)}</span>
-                    <span className="whitespace-nowrap text-muted-foreground">
-                      {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
-                    </span>
+                    {showResults && <span className="whitespace-nowrap font-semibold text-foreground">{formatNumber(r.leads)}</span>}
+                    {showResults && (
+                      <span className="whitespace-nowrap text-muted-foreground">
+                        {cpl !== null ? formatCurrency(cpl, currency, 2) : "s/d"}
+                      </span>
+                    )}
                   </div>
                 </div>
               );

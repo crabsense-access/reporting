@@ -110,65 +110,6 @@ export function mockDailySpendByType(date: Date): Record<LeadType, number> {
 export const MOCK_MONTHLY_BUDGET = 6000;
 export const MOCK_CURRENCY = "USD";
 
-// Análisis de campañas (ver components/admin/reporting/CampaignAnalysis.tsx): cada tipo de
-// campaña se abre en 2 campañas individuales con nombre propio. Por ahora se simula repartiendo
-// el total mensual de leads/inversión de cada tipo entre sus campañas con una proporción fija —
-// leadShare y spendShare son DISTINTOS a propósito (una campaña puede traer más leads pero no ser
-// la más barata) para que el ranking y el CPL varíen de forma realista entre campañas de un mismo
-// tipo. Al conectar Meta Ads real, esto se reemplaza por el desglose real por campaña (mismo id
-// que el de la Marketing API) y el resto del componente no cambia.
-export type CampaignState = "activa" | "pausada";
-
-export interface Campaign {
-  id: string;
-  name: string;
-  type: LeadType;
-  /** Share del total mensual de LEADS del tipo que le corresponde a esta campaña (suma 1 por tipo). */
-  leadShare: number;
-  /** Share del total mensual de INVERSIÓN del tipo que le corresponde a esta campaña (suma 1 por tipo). */
-  spendShare: number;
-  state: CampaignState;
-}
-
-export const CAMPAIGNS: Campaign[] = [
-  { id: "chat-prospeccion", name: "Chat · Prospección Búsqueda", type: "chat", leadShare: 0.62, spendShare: 0.54, state: "activa" },
-  { id: "chat-remarketing", name: "Chat · Remarketing", type: "chat", leadShare: 0.38, spendShare: 0.46, state: "pausada" },
-  { id: "landing-marca", name: "Landing · Búsqueda Marca", type: "formLanding", leadShare: 0.57, spendShare: 0.46, state: "activa" },
-  { id: "landing-generica", name: "Landing · Búsqueda Genérica", type: "formLanding", leadShare: 0.43, spendShare: 0.54, state: "pausada" },
-  { id: "meta-feed", name: "Meta · Conversión Feed", type: "formMeta", leadShare: 0.53, spendShare: 0.47, state: "pausada" },
-  { id: "meta-stories", name: "Meta · Stories Retargeting", type: "formMeta", leadShare: 0.47, spendShare: 0.53, state: "pausada" },
-];
-
-export interface CampaignTotals {
-  id: string;
-  name: string;
-  type: LeadType;
-  state: CampaignState;
-  leads: number;
-  spend: number;
-  cpl: number | null;
-}
-
-/** Deriva los totales mensuales por campaña a partir de los totales ya calculados por tipo (mismos números que se ven en el resto de la página — nunca se recalculan desde cero). */
-export function campaignMonthlyTotals(
-  monthLeadsByType: Record<LeadType, number>,
-  monthSpendByType: Record<LeadType, number>
-): CampaignTotals[] {
-  return CAMPAIGNS.map((campaign) => {
-    const leads = Math.round(monthLeadsByType[campaign.type] * campaign.leadShare);
-    const spend = Math.round(monthSpendByType[campaign.type] * campaign.spendShare);
-    return {
-      id: campaign.id,
-      name: campaign.name,
-      type: campaign.type,
-      state: campaign.state,
-      leads,
-      spend,
-      cpl: leads > 0 ? spend / leads : null,
-    };
-  });
-}
-
 // Análisis de "dónde se muestran los anuncios" (ver components/admin/reporting/
 // PlacementAnalysis.tsx): desglose del mismo total mensual (monthLeads/monthTotal, sin distinguir
 // tipo ni campaña) por ubicación de publicación — Feed, Stories, Reels, video in-stream y Audience

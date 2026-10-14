@@ -222,6 +222,16 @@ export interface DailyRealTotals {
   byAd: Record<string, DailyAdBreakdownEntry>;
 }
 
+/** Estado ACTUAL de la campaña en Meta (effective_status), simplificado para el ranking de CampaignAnalysis.tsx. */
+export type MetaCampaignStatus = "activa" | "pausada" | "archivada";
+
+export interface CampaignRankingEntry {
+  id: string;
+  name: string;
+  /** null si Meta no devolvió el estado (ej. campaña eliminada, o falló el pedido de estados). */
+  status: MetaCampaignStatus | null;
+}
+
 export interface RealInvestmentCalendarData {
   currency: string;
   /** Presupuesto DEL MES consultado (ver resolveMonthlyBudget) — null si ese mes no tiene ni una entrada propia en monthly_budgets ni un monthly_budget legado cargado. */
@@ -243,6 +253,15 @@ export interface RealInvestmentCalendarData {
   monthlyReach: number;
   /** Campañas con al menos 1 fila de gasto este mes, ordenadas por gasto descendente — para el combo de Campaña de los gráficos con filtro (ver DailyRealTotals.byAd). */
   campaigns: { id: string; name: string }[];
+  /**
+   * TODAS las campañas con gasto en el rango (sin el filtro de "al menos 1 Resultado" que
+   * withResultsOnlyEntities le aplica a `campaigns`), con su estado actual en Meta — para el
+   * ranking de "Análisis de campañas" (CampaignAnalysis.tsx), que tiene que mostrar también las
+   * campañas que gastaron sin generar Resultados. Gasto y Resultados por campaña NO van acá: el
+   * componente los suma desde days[].byAd (mismos números que el resto de la página).
+   * Opcional por entradas viejas de cache (ver withSegmentDefaults).
+   */
+  campaignRanking?: CampaignRankingEntry[];
   /** Grupos de anuncios con gasto este mes, ordenados por gasto descendente, cada uno con el id de SU campaña — combo de Grupo de anuncios (en cascada entre Campaña y Anuncio). */
   adsets: { id: string; name: string; campaignId: string }[];
   /** Anuncios con al menos 1 fila de gasto este mes, ordenados por gasto descendente, cada uno con el id de SU campaña — para el combo de Anuncio, que se acota en cascada a los anuncios de la Campaña elegida (ver DailyRealTotals.byAd). */
@@ -1030,6 +1049,45 @@ function resolveMonthlyBudget(metaConfig: MetaAdsConfig, monthStart: Date): numb
   return typeof metaConfig.monthly_budget === "number" ? metaConfig.monthly_budget : null;
 }
 
+// effective_status de campaña (Marketing API) → estado simplificado del ranking.
+const CAMPAIGN_STATUS_MAP: Record<string, MetaCampaignStatus> = {
+  ACTIVE: "activa",
+  IN_PROCESS: "activa",
+  WITH_ISSUES: "activa",
+  PAUSED: "pausada",
+  ARCHIVED: "archivada",
+  DELETED: "archivada",
+};
+
+/**
+ * Estado actual (effective_status) de las campañas de la cuenta, para las etiquetas Activa/Pausada
+ * del ranking de CampaignAnalysis.tsx. Si el pedido falla, devuelve un Map vacío en vez de romper
+ * todo el Calendario: el ranking sigue funcionando, sólo sin la etiqueta de estado.
+ */
+async function fetchCampaignStatuses(metaConfig: MetaAdsConfig): Promise<Map<string, MetaCampaignStatus>> {
+  const statuses = new Map<string, MetaCampaignStatus>();
+  try {
+    const response = await fetchMetaGraphApi<{ data?: { id: string; effective_status?: string }[] }>(
+      `${metaConfig.ad_account_id}/campaigns`,
+      {
+        fields: "id,effective_status",
+        // Por defecto Meta sólo lista activas/pausadas — se piden también las archivadas, que
+        // pueden haber gastado en un mes ya cerrado.
+        effective_status: JSON.stringify(["ACTIVE", "PAUSED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES"]),
+        limit: "1000",
+      },
+      metaConfig.system_user_token
+    );
+    for (const row of response.data ?? []) {
+      const status = row.effective_status ? CAMPAIGN_STATUS_MAP[row.effective_status] : undefined;
+      if (status) statuses.set(row.id, status);
+    }
+  } catch (error) {
+    console.error("[metaInvestmentData] No se pudo obtener el estado de las campañas:", error);
+  }
+  return statuses;
+}
+
 export async function fetchRealInvestmentCalendarData(
   metaConfig: MetaAdsConfig,
   monthStart: Date,
@@ -1055,7 +1113,7 @@ export async function fetchRealInvestmentCalendarData(
   const since = format(monthStart, "yyyy-MM-dd");
   const until = format(lastDataDate, "yyyy-MM-dd");
 
-  const [insights, accountInfo, audienceSegments, regionSegments, hourlyTotals, videoRetentionByAge, placementSegments, monthlyReach] =
+  const [insights, accountInfo, audienceSegments, regionSegments, hourlyTotals, videoRetentionByAge, placementSegments, monthlyReach, campaignStatuses] =
     await Promise.all([
       fetchMetaGraphApi<MetaCampaignInsightsResponse>(
         `${accountId}/insights`,
@@ -1079,6 +1137,7 @@ export async function fetchRealInvestmentCalendarData(
       fetchVideoRetentionByAge(metaConfig, since, until),
       fetchPlacementSegments(metaConfig, objectives, objectiveEvents, since, until),
       fetchMonthlyReach(metaConfig, since, until),
+      fetchCampaignStatuses(metaConfig),
     ]);
 
   const byDate = new Map<string, DailyRealTotals>();
@@ -1242,6 +1301,12 @@ export async function fetchRealInvestmentCalendarData(
   const campaigns = Array.from(campaignNames.entries())
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => (campaignSpendTotals.get(b.id) ?? 0) - (campaignSpendTotals.get(a.id) ?? 0));
+  // Ranking de "Análisis de campañas": misma lista, todavía SIN el filtro de "al menos 1 Resultado"
+  // (ver withResultsOnlyEntities), más el estado actual de cada una en Meta.
+  const campaignRanking: CampaignRankingEntry[] = campaigns.map((c) => ({
+    ...c,
+    status: campaignStatuses.get(c.id) ?? null,
+  }));
   const ads = Array.from(adNames.entries())
     .map(([id, name]) => ({ id, name, campaignId: adCampaignIds.get(id) ?? "", adsetId: adAdsetIds.get(id) }))
     .sort((a, b) => (adSpendTotals.get(b.id) ?? 0) - (adSpendTotals.get(a.id) ?? 0));
@@ -1293,6 +1358,7 @@ export async function fetchRealInvestmentCalendarData(
     objectiveActionTypes,
     monthlyReach,
     campaigns,
+    campaignRanking,
     adsets,
     ads,
     detectedActionTypes,
@@ -1691,6 +1757,7 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
     objectiveActionTypes: data.objectiveActionTypes ?? [],
     monthlyReach: data.monthlyReach ?? 0,
     campaigns: data.campaigns ?? [],
+    campaignRanking: data.campaignRanking ?? [],
     adsets: data.adsets ?? [],
     ads: data.ads ?? [],
     placementSegments: data.placementSegments ?? [],
@@ -1738,6 +1805,12 @@ function mergeObjectiveActionTypes(
 // mergeCampaigns/mergeAds: ver mergeNamedEntities más arriba (junto a mergeByAd) — ambas listas
 // comparten el mismo criterio de unión (orden de `stable` + lo nuevo de `fresh` al final).
 
+/** Igual que mergeNamedEntities, pero el estado de cada campaña se toma del tramo "fresco" (hoy) cuando lo tiene — es el más reciente. */
+function mergeCampaignRanking(stable: CampaignRankingEntry[], fresh: CampaignRankingEntry[]): CampaignRankingEntry[] {
+  const freshStatus = new Map(fresh.map((c) => [c.id, c.status]));
+  return mergeNamedEntities(stable, fresh).map((c) => ({ ...c, status: freshStatus.get(c.id) ?? c.status }));
+}
+
 function mergeRealInvestmentCalendarData(
   stableRaw: RealInvestmentCalendarData,
   freshRaw: RealInvestmentCalendarData
@@ -1760,6 +1833,7 @@ function mergeRealInvestmentCalendarData(
     // día en vez de acumularse día a día como pasaría sumando el alcance diario de todo el mes.
     monthlyReach: stable.monthlyReach + fresh.monthlyReach,
     campaigns: mergeNamedEntities(stable.campaigns, fresh.campaigns),
+    campaignRanking: mergeCampaignRanking(stable.campaignRanking ?? [], fresh.campaignRanking ?? []),
     adsets: mergeNamedEntities(stable.adsets ?? [], fresh.adsets ?? []),
     ads: mergeNamedEntities(stable.ads, fresh.ads),
   };
@@ -1836,6 +1910,10 @@ function mergeRealInvestmentCalendarData(
  * v16 no los tiene, así que la tabla de WeekdayPerformanceChart.tsx (que se arma a partir de
  * `days`, no de un fetch propio) mostraría Alcance/Impresiones/Clicks en 0/undefined hasta que
  * venza el TTL si no se bumpea acá.
+ *
+ * v22→v23: se agrega campaignRanking (todas las campañas con gasto + su estado en Meta), para que
+ * "Análisis de campañas" (CampaignAnalysis.tsx) deje de usar campañas de prueba — una entrada
+ * vieja no lo tiene y el ranking aparecería vacío hasta que venza el TTL si no se bumpea acá.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   savedMetaConfig: MetaAdsConfig,
@@ -1855,7 +1933,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v22",
+        query: "investmentCalendar:v23",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1871,7 +1949,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v22",
+        query: "investmentCalendar:v23",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1885,7 +1963,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v22",
+        query: "investmentCalendar:v23",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1897,7 +1975,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v22",
+        query: "investmentCalendar:v23",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
