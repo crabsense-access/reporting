@@ -349,6 +349,12 @@ export interface AudienceSegmentTotals {
    *  RegionSegmentTotals.reach/impressions. */
   reach: number;
   impressions: number;
+  /** Alcance DEDUPLICADO por Meta de este segmento para cada campaña / grupo de anuncios (ver
+   *  fetchDedupedReach) — para el filtro de Campaña/Grupo. Sumar el reach de byAd cuenta varias
+   *  veces a quien vio más de un anuncio. Opcional: si esa consulta falla queda sin definir y se
+   *  cae al reach sumado de byAd. */
+  reachByCampaign?: Record<string, number>;
+  reachByAdset?: Record<string, number>;
   /** Desglose de ESTE segmento por anuncio (clave = ad_id), mismo criterio que DailyRealTotals.byAd — para los combos de Campaña/Anuncio de AudienceAnalysis.tsx. */
   byAd: Record<string, AudienceAdBreakdownEntry>;
 }
@@ -380,6 +386,9 @@ export interface RegionSegmentTotals {
   reach: number;
   impressions: number;
   clicks: number;
+  /** Alcance deduplicado por campaña / grupo de anuncios — ver AudienceSegmentTotals.reachByCampaign. */
+  reachByCampaign?: Record<string, number>;
+  reachByAdset?: Record<string, number>;
   /**
    * Desglose de ESTE segmento por anuncio (clave = ad_id), mismo criterio que
    * DailyRealTotals.byAd — para los combos de Campaña/Anuncio de RegionAnalysis.tsx. Limitación
@@ -473,6 +482,85 @@ interface MetaRegionInsightsResponse {
   paging?: { next?: string };
 }
 
+interface DedupedReach {
+  total: Map<string, number>;
+  byCampaign: Map<string, Record<string, number>>;
+  byAdset: Map<string, Record<string, number>>;
+}
+
+/**
+ * Alcance DEDUPLICADO por Meta para un breakdown (region, age+gender...), a nivel cuenta, campaña
+ * y grupo de anuncios. El alcance no es sumable: si se suman las filas a nivel anuncio, una persona
+ * que vio 3 anuncios cuenta 3 veces (Buenos Aires llegó a superar el alcance de TODA la cuenta).
+ * Por eso, además de la consulta a nivel anuncio (que sigue armando byAd para leads/gasto/
+ * impresiones/clics, que sí son sumables), se le pide a Meta el reach ya deduplicado en cada nivel
+ * de filtro. Con un Anuncio puntual elegido se usa el reach de byAd, que ya es de un solo anuncio.
+ * Si alguna consulta falla devuelve null y el llamador conserva el reach sumado (mejor un número
+ * inflado que la tabla vacía).
+ */
+async function fetchDedupedReach(
+  metaConfig: MetaAdsConfig,
+  breakdowns: string,
+  keyOf: (row: Record<string, string | undefined>) => string | null,
+  since: string,
+  until: string
+): Promise<DedupedReach | null> {
+  type Row = Record<string, string | undefined>;
+  const query = (level: "account" | "campaign" | "adset", extraField: string) =>
+    fetchMetaGraphApi<{ data: Row[] }>(
+      `${metaConfig.ad_account_id}/insights`,
+      {
+        level,
+        breakdowns,
+        time_range: JSON.stringify({ since, until }),
+        fields: extraField ? `${extraField},reach` : "reach",
+        limit: "5000",
+      },
+      metaConfig.system_user_token
+    );
+  try {
+    const [account, campaign, adset] = await Promise.all([
+      query("account", ""),
+      query("campaign", "campaign_id"),
+      query("adset", "adset_id"),
+    ]);
+    const result: DedupedReach = { total: new Map(), byCampaign: new Map(), byAdset: new Map() };
+    for (const row of account.data ?? []) {
+      const key = keyOf(row);
+      if (key) result.total.set(key, (result.total.get(key) ?? 0) + Number(row.reach ?? 0));
+    }
+    const fill = (rows: Row[], idField: "campaign_id" | "adset_id", target: Map<string, Record<string, number>>) => {
+      for (const row of rows) {
+        const key = keyOf(row);
+        const id = row[idField];
+        if (!key || !id) continue;
+        const map = target.get(key) ?? {};
+        map[id] = (map[id] ?? 0) + Number(row.reach ?? 0);
+        target.set(key, map);
+      }
+    };
+    fill(campaign.data ?? [], "campaign_id", result.byCampaign);
+    fill(adset.data ?? [], "adset_id", result.byAdset);
+    return result;
+  } catch (error) {
+    console.error(`[metaInvestmentData] No se pudo pedir el alcance deduplicado (${breakdowns}):`, error);
+    return null;
+  }
+}
+
+/** Reemplaza el reach sumado por anuncio de cada segmento por el deduplicado de Meta (ver fetchDedupedReach). */
+function applyDedupedReach<T extends { reach: number; reachByCampaign?: Record<string, number>; reachByAdset?: Record<string, number> }>(
+  segments: Map<string, T>,
+  deduped: DedupedReach | null
+): void {
+  if (!deduped) return;
+  for (const [key, entry] of segments) {
+    entry.reach = deduped.total.get(key) ?? 0;
+    entry.reachByCampaign = deduped.byCampaign.get(key) ?? {};
+    entry.reachByAdset = deduped.byAdset.get(key) ?? {};
+  }
+}
+
 /**
  * Desglose por edad+género del mes completo [since, until], a nivel CAMPAÑA (mismo nivel que el
  * desglose diario) para poder aplicar el mismo criterio de matching por Objetivo — ver
@@ -487,6 +575,12 @@ async function fetchAudienceSegments(
   until: string
 ): Promise<AudienceSegmentTotals[]> {
   const accountId = metaConfig.ad_account_id;
+  const audienceKey = (row: { gender?: string; age?: string }) => {
+    const gender = row.gender ? META_GENDER_TO_LABEL[row.gender] : undefined;
+    if (!gender || !row.age || row.age.toLowerCase() === "unknown") return null;
+    return `${gender}|${row.age}`;
+  };
+  const dedupedReachPromise = fetchDedupedReach(metaConfig, "age,gender", audienceKey, since, until);
   const insights = await fetchMetaGraphApi<MetaAudienceInsightsResponse>(
     `${accountId}/insights`,
     {
@@ -569,6 +663,7 @@ async function fetchAudienceSegments(
     }
   }
 
+  applyDedupedReach(bySegment, await dedupedReachPromise);
   return Array.from(bySegment.values());
 }
 
@@ -585,6 +680,7 @@ async function fetchRegionSegments(
   until: string
 ): Promise<RegionSegmentTotals[]> {
   const accountId = metaConfig.ad_account_id;
+  const dedupedReachPromise = fetchDedupedReach(metaConfig, "region", (row) => row.region ?? null, since, until);
   const insights = await fetchMetaGraphApi<MetaRegionInsightsResponse>(
     `${accountId}/insights`,
     {
@@ -662,6 +758,7 @@ async function fetchRegionSegments(
     }
   }
 
+  applyDedupedReach(byRegion, await dedupedReachPromise);
   return Array.from(byRegion.values());
 }
 
@@ -1914,6 +2011,10 @@ function mergeRealInvestmentCalendarData(
  * v22→v23: se agrega campaignRanking (todas las campañas con gasto + su estado en Meta), para que
  * "Análisis de campañas" (CampaignAnalysis.tsx) deje de usar campañas de prueba — una entrada
  * vieja no lo tiene y el ranking aparecería vacío hasta que venza el TTL si no se bumpea acá.
+ *
+ * v23→v24: el alcance de RegionSegmentTotals/AudienceSegmentTotals pasa a ser el deduplicado por
+ * Meta (ver fetchDedupedReach) en vez de la suma por anuncio, y se agregan reachByCampaign/
+ * reachByAdset — una entrada vieja seguiría mostrando el alcance inflado.
  */
 export async function fetchRealInvestmentCalendarDataCached(
   savedMetaConfig: MetaAdsConfig,
@@ -1933,7 +2034,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v23",
+        query: "investmentCalendar:v24",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -1949,7 +2050,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v23",
+        query: "investmentCalendar:v24",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1963,7 +2064,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v23",
+        query: "investmentCalendar:v24",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -1975,7 +2076,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v23",
+        query: "investmentCalendar:v24",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -2053,6 +2154,8 @@ interface PerformanceAdRow {
   ad_name?: string;
   spend?: string;
   impressions?: string;
+  /** Campo "clicks" de Meta (TODOS los clics) — mismo criterio que el resto del reporte. */
+  clicks?: string;
   actions?: { action_type: string; value: string }[];
   action_values?: { action_type: string; value: string }[];
 }
@@ -2084,7 +2187,7 @@ export async function fetchEntityPerformance(
     {
       clientId,
       source: "meta_ads",
-      query: "entityPerformance:v1",
+      query: "entityPerformance:v2",
       params: { accountId: metaConfig.ad_account_id, dimension, objectivesKey, from: since, to: until },
       ...(monthIsComplete ? {} : { ttlSeconds: THREE_HOURS_SECONDS }),
     },
@@ -2095,7 +2198,7 @@ export async function fetchEntityPerformance(
           {
             level: "ad",
             time_range: JSON.stringify({ since, until }),
-            fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,actions,action_values",
+            fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,actions,action_values",
             limit: "5000",
           },
           metaConfig.system_user_token
@@ -2126,8 +2229,9 @@ export async function fetchEntityPerformance(
         const actions = row.actions ?? [];
         entity.spend += Number(row.spend ?? 0);
         entity.impressions += Number(row.impressions ?? 0);
-        // Mismo "Clicks" que el bloque Performance de Resultados: clics en el enlace.
-        entity.clicks += findActionValue(actions, "link_click");
+        // "Clicks" = campo clicks de Meta (TODOS los clics), mismo criterio que Performance de
+        // Resultados, Ubicación geográfica, Franja horaria y Evolución mensual.
+        entity.clicks += Number(row.clicks ?? 0);
         const matched = findMatchedObjective(actions, objectiveEvents, row.adset_id, objectives);
         if (matched) entity.results += matched.value;
         const purchaseTotals = findPurchaseTotals(actions, row.action_values ?? []);

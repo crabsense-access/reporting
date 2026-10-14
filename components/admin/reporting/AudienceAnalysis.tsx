@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
-import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, resolveDedupedReach, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 type Gender = "mujeres" | "hombres";
 
@@ -88,6 +88,9 @@ interface AudienceSegmentTotals {
    * Campaña/Anuncio (ver byAd) — ver lib/reporting/metaInvestmentData.ts. */
   reach: number;
   impressions: number;
+  /** Alcance deduplicado por Meta por campaña / grupo (ver resolveDedupedReach). */
+  reachByCampaign?: Record<string, number>;
+  reachByAdset?: Record<string, number>;
   /** Desglose de este segmento por anuncio (clave = ad_id) — ver metaInvestmentData.ts. */
   byAd: Record<string, AudienceAdBreakdownEntry>;
 }
@@ -202,7 +205,7 @@ export function AudienceAnalysis({
           ageRange: s.ageRange,
           objectiveLeads: scoped.objectiveLeads,
           objectiveSpend: scoped.objectiveSpend,
-          reach: engagement?.reach ?? 0,
+          reach: resolveDedupedReach(s, campaignId, adsetId, adId) ?? engagement?.reach ?? 0,
           impressions: engagement?.impressions ?? 0,
           byAd: s.byAd,
         });

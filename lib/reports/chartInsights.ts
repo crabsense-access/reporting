@@ -26,7 +26,11 @@ export interface ChartInsight {
 function extractJsonText(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return fenced && fenced[1] ? fenced[1].trim() : trimmed;
+  if (fenced && fenced[1]) return fenced[1].trim();
+  // Texto suelto antes/después del JSON: se queda con lo que va de la primera "{" a la última "}".
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  return start > 0 && end > start ? trimmed.slice(start, end + 1) : trimmed;
 }
 
 function parseChartInsight(text: string): ChartInsight {
@@ -35,8 +39,16 @@ function parseChartInsight(text: string): ChartInsight {
   if (typeof raw !== "object" || raw === null) {
     throw new Error("Claude no devolvió un objeto JSON.");
   }
-  const { headline, body, highlights } = raw as Record<string, unknown>;
+  // A veces Claude envuelve el objeto en una clave extra (ej. {"resumen": {headline, body, ...}}):
+  // si el nivel de arriba no tiene las claves pero tiene UN solo objeto adentro, se usa ése.
+  let obj = raw as Record<string, unknown>;
+  if (!("headline" in obj)) {
+    const nested = Object.values(obj).filter((v) => typeof v === "object" && v !== null && !Array.isArray(v));
+    if (nested.length === 1) obj = nested[0] as Record<string, unknown>;
+  }
+  const { headline, body, highlights } = obj;
   if (typeof headline !== "string" || typeof body !== "string" || !Array.isArray(highlights)) {
+    console.error("[chartInsights] JSON inesperado de Claude:", text.slice(0, 1000));
     throw new Error("El JSON de Claude no tiene el formato esperado (headline/body/highlights).");
   }
 

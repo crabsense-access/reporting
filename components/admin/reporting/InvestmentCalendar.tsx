@@ -401,7 +401,7 @@ export function InvestmentCalendar({
       return {
         label: null as string | null,
         interactions: days.reduce((sum, d) => sum + d.interactions, 0),
-        clicks: days.reduce((sum, d) => sum + d.clicks, 0),
+        clicks: days.reduce((sum, d) => sum + (d.totalClicks ?? 0), 0),
         costPerResult: monthLeads > 0 ? monthTotal / monthLeads : 0,
         hasCostPerResult: monthLeads > 0,
       };
@@ -410,7 +410,10 @@ export function InvestmentCalendar({
     return {
       label: selected?.label ?? null,
       interactions: days.reduce((sum, d) => sum + (d.objectiveInteractions[selectedObjectiveIndex] ?? 0), 0),
-      clicks: days.reduce((sum, d) => sum + (d.objectiveClicks[selectedObjectiveIndex] ?? 0), 0),
+      // Clicks = TODOS los clics de la cuenta (campo "clicks" de Meta, mismo número que Ubicación
+      // geográfica/Franja horaria). Meta no atribuye ese campo a un tipo de Resultado, así que —
+      // igual que Alcance — no varía por tipo.
+      clicks: days.reduce((sum, d) => sum + (d.totalClicks ?? 0), 0),
       costPerResult: selected?.cpl ?? 0,
       hasCostPerResult: (selected?.leads ?? 0) > 0,
     };
@@ -800,8 +803,9 @@ export function InvestmentCalendar({
                     <span className="text-2xl font-semibold text-foreground">{formatNumber(performanceMetrics.interactions)}</span>
                   </div>
                   <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
-                    <span className="text-sm font-bold text-muted-foreground">Clicks {performanceMetrics.label ?? "totales"}</span>
+                    <span className="text-sm font-bold text-muted-foreground">Clicks totales</span>
                     <span className="text-2xl font-semibold text-foreground">{formatNumber(performanceMetrics.clicks)}</span>
+                    <span className="text-xs text-muted-foreground">Todos los clics de la cuenta (no varía por tipo)</span>
                   </div>
                   <div className="flex flex-col gap-0.5 rounded-lg border border-border p-3">
                     <span className="text-sm font-bold text-muted-foreground">Costo por Resultado {performanceMetrics.label ?? "total"}</span>

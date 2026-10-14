@@ -82,3 +82,22 @@ export function visibleAdsForSelection<T extends { campaignId: string; adsetId?:
 ): T[] {
   return ads.filter((ad) => matchesCampaignAndAdset(ad, campaignId, adsetId));
 }
+
+/**
+ * Alcance de un segmento (provincia, edad+género) para el filtro elegido, usando el alcance que
+ * Meta ya deduplicó por campaña / grupo de anuncios (ver fetchDedupedReach en
+ * lib/reporting/metaInvestmentData.ts). Devuelve null cuando no aplica — Anuncio puntual elegido
+ * (su reach en byAd ya es de un solo anuncio) o segmento sin esos mapas (consulta fallida, Google
+ * Ads) — y el llamador usa el reach de byAd.
+ */
+export function resolveDedupedReach(
+  segment: { reachByCampaign?: Record<string, number>; reachByAdset?: Record<string, number> },
+  campaignId: string | null,
+  adsetId: string | null,
+  adId: string | null
+): number | null {
+  if (adId !== null) return null;
+  if (adsetId !== null) return segment.reachByAdset ? (segment.reachByAdset[adsetId] ?? 0) : null;
+  if (campaignId !== null) return segment.reachByCampaign ? (segment.reachByCampaign[campaignId] ?? 0) : null;
+  return null;
+}

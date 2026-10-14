@@ -43,7 +43,7 @@ import { cn } from "@/lib/utils";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/format";
 import { objectiveColor } from "@/lib/reporting/mockInvestmentCalendar";
 import { ChartInsightPanel } from "@/components/admin/reporting/ChartInsightPanel";
-import { resolveAdFilteredTotals, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
+import { resolveAdFilteredTotals, resolveDedupedReach, visibleAdsForSelection, visibleAdsetsForCampaign, matchesCampaignAndAdset, type AdBreakdownEntry } from "@/lib/reporting/adFilter";
 
 type Tier = "eficiente" | "promedio" | "ineficiente";
 
@@ -92,6 +92,9 @@ interface RegionSegmentTotals {
   reach: number;
   impressions: number;
   clicks: number;
+  /** Alcance deduplicado por Meta por campaña / grupo (ver resolveDedupedReach). */
+  reachByCampaign?: Record<string, number>;
+  reachByAdset?: Record<string, number>;
   /** Desglose de esta región por anuncio (clave = ad_id) — vacío en el bucket "Sin provincia
    * asignada" (ver metaInvestmentData.ts). */
   byAd: Record<string, RegionAdBreakdownEntry>;
@@ -261,7 +264,10 @@ export function RegionAnalysis({
             ? custom
             : resolveRegionEngagementTotals(s.byAd, campaignId, adId, adsetId)
           : null;
-        const reach = hasFilter ? (engagement?.reach ?? 0) : s.reach;
+        // Alcance: el deduplicado por Meta para la Campaña/Grupo elegido (sumar anuncios cuenta
+        // varias veces a la misma persona); con un Anuncio puntual, el de byAd.
+        const dedupedReach = hasFilter && !resolveFilteredSegment ? resolveDedupedReach(s, campaignId, adsetId, adId) : null;
+        const reach = hasFilter ? (dedupedReach ?? engagement?.reach ?? 0) : s.reach;
         const impressions = hasFilter ? (engagement?.impressions ?? 0) : s.impressions;
         const clicks = hasFilter ? (engagement?.clicks ?? 0) : s.clicks;
         return { region: s.region, leads, spend, reach, impressions, clicks };
