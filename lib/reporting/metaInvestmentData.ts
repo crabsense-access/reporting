@@ -60,7 +60,7 @@ import { endOfMonth, format, isBefore, subDays } from "date-fns";
 import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { fetchMetaGraphApi } from "@/lib/meta-ads/client";
 import { LEAD_TYPES, type LeadType } from "@/lib/reporting/mockInvestmentCalendar";
-import { placementLabel } from "@/lib/reporting/metaResultLabels";
+import { INSTAGRAM_PROFILE_VISIT_ACTION_TYPE, placementLabel } from "@/lib/reporting/metaResultLabels";
 import { fetchResultObjectives } from "@/lib/reporting/metaResultObjectives";
 import type { MetaAdsConfig } from "@/lib/types";
 
@@ -88,6 +88,23 @@ function looseMatchesEvent(actionType: string, eventName: string): boolean {
   const e = eventName.trim().toLowerCase();
   if (!a || !e) return false;
   return a.includes(e) || e.includes(a);
+}
+
+/**
+ * Array "actions" de la fila + las visitas al perfil de Instagram como una acción más. Meta NO las
+ * manda dentro de "actions": vienen en el campo aparte instagram_profile_visits (es el número de la
+ * columna Resultados de Ads Manager en campañas de Tráfico al perfil). Se suman con un action_type
+ * propio (INSTAGRAM_PROFILE_VISIT_ACTION_TYPE) para que el resto del archivo las trate igual que
+ * cualquier otro Resultado. Meta no devuelve ese campo con los desgloses "region" ni
+ * "hourly_stats_aggregated_by_advertiser_time_zone": ahí estas campañas quedan con 0 Resultados.
+ */
+function actionsWithProfileVisits(row: {
+  actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
+}): { action_type: string; value: string }[] {
+  const actions = row.actions ?? [];
+  if (Number(row.instagram_profile_visits ?? 0) <= 0) return actions;
+  return [...actions, { action_type: INSTAGRAM_PROFILE_VISIT_ACTION_TYPE, value: row.instagram_profile_visits! }];
 }
 
 /**
@@ -416,6 +433,7 @@ interface MetaCampaignDayRow {
   date_start?: string;
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   /** Valor monetario de cada acción (ej. compras) — para la Facturación del bloque Ecommerce. */
   action_values?: { action_type: string; value: string }[];
   campaign_id?: string;
@@ -442,6 +460,7 @@ interface MetaCampaignInsightsResponse {
 interface MetaAudienceRow {
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   age?: string;
   gender?: string;
   campaign_id?: string;
@@ -463,6 +482,7 @@ interface MetaAudienceInsightsResponse {
 interface MetaRegionRow {
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   region?: string;
   campaign_id?: string;
   adset_id?: string;
@@ -593,7 +613,7 @@ async function fetchAudienceSegments(
       level: "ad",
       breakdowns: "age,gender",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,adset_id,ad_id,reach,impressions",
+      fields: "spend,actions,instagram_profile_visits,campaign_id,adset_id,ad_id,reach,impressions",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -627,7 +647,7 @@ async function fetchAudienceSegments(
     const spend = Number(row.spend ?? 0);
     const reach = Number(row.reach ?? 0);
     const impressions = Number(row.impressions ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
+    const matched = findMatchedObjective(actionsWithProfileVisits(row), objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -720,7 +740,7 @@ async function fetchRegionSegments(
     const reach = Number(row.reach ?? 0);
     const impressions = Number(row.impressions ?? 0);
     const clicks = Number(row.clicks ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
+    const matched = findMatchedObjective(actionsWithProfileVisits(row), objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -765,6 +785,7 @@ async function fetchRegionSegments(
 interface MetaHourlyRow {
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   hourly_stats_aggregated_by_advertiser_time_zone?: string;
   campaign_id?: string;
   adset_id?: string;
@@ -844,7 +865,7 @@ async function fetchHourlyTotals(
     entry.impressions += impressions;
     entry.clicks += clicks;
 
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
+    const matched = findMatchedObjective(actionsWithProfileVisits(row), objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -911,7 +932,7 @@ async function fetchPlacementSegments(
       level: "ad",
       breakdowns: "publisher_platform,platform_position",
       time_range: JSON.stringify({ since, until }),
-      fields: "spend,actions,campaign_id,adset_id,ad_id",
+      fields: "spend,actions,instagram_profile_visits,campaign_id,adset_id,ad_id",
       limit: "5000",
     },
     metaConfig.system_user_token
@@ -932,7 +953,7 @@ async function fetchPlacementSegments(
     }
 
     const spend = Number(row.spend ?? 0);
-    const matched = findMatchedObjective(row.actions ?? [], objectiveEvents, row.adset_id, objectives);
+    const matched = findMatchedObjective(actionsWithProfileVisits(row), objectiveEvents, row.adset_id, objectives);
     if (matched) {
       entry.objectiveLeads[matched.index] = (entry.objectiveLeads[matched.index] ?? 0) + matched.value;
       entry.objectiveSpend[matched.index] = (entry.objectiveSpend[matched.index] ?? 0) + spend;
@@ -979,6 +1000,7 @@ interface MetaVideoRetentionInsightsResponse {
 interface MetaPlacementRow {
   spend?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   publisher_platform?: string;
   platform_position?: string;
   campaign_id?: string;
@@ -1222,7 +1244,7 @@ export async function fetchRealInvestmentCalendarData(
           time_increment: "1",
           time_range: JSON.stringify({ since, until }),
           // reach/impressions/clicks sumados a pedido de Martín — ver MetaCampaignDayRow.
-          fields: "spend,actions,action_values,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,reach,impressions,clicks",
+          fields: "spend,actions,instagram_profile_visits,action_values,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,reach,impressions,clicks",
           limit: "5000",
         },
         metaConfig.system_user_token
@@ -1338,7 +1360,7 @@ export async function fetchRealInvestmentCalendarData(
       adEntry.totalClicks += rowTotalClicks;
     }
 
-    const actions = row.actions ?? [];
+    const actions = actionsWithProfileVisits(row);
     for (const action of actions) {
       const value = Number(action.value ?? 0);
       if (value > 0 && action.action_type) {
@@ -2015,6 +2037,12 @@ function mergeRealInvestmentCalendarData(
  * v23→v24: el alcance de RegionSegmentTotals/AudienceSegmentTotals pasa a ser el deduplicado por
  * Meta (ver fetchDedupedReach) en vez de la suma por anuncio, y se agregan reachByCampaign/
  * reachByAdset — una entrada vieja seguiría mostrando el alcance inflado.
+ *
+ * v24→v25: las visitas al perfil de Instagram (campo instagram_profile_visits, ver
+ * actionsWithProfileVisits) pasan a contar como Resultado — una entrada vieja tiene esas campañas
+ * con 0 Resultados y withResultsOnlyEntities las sacaría de los combos. Por lo mismo se bumpean
+ * resultObjectives (v4→v5, si no seguiría devolviendo los objetivos sin el tipo nuevo hasta que
+ * venza el TTL) y entityPerformance (v2→v3).
  */
 export async function fetchRealInvestmentCalendarDataCached(
   savedMetaConfig: MetaAdsConfig,
@@ -2034,7 +2062,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v24",
+        query: "investmentCalendar:v25",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
       },
       () => fetchRealInvestmentCalendarData(metaConfig, monthStart, lastDataDate)
@@ -2050,7 +2078,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v24",
+        query: "investmentCalendar:v25",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -2064,7 +2092,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v24",
+        query: "investmentCalendar:v25",
         params: { accountId, objectivesKey, from: format(monthStart, "yyyy-MM-dd"), to: format(stableUntil, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -2076,7 +2104,7 @@ export async function fetchRealInvestmentCalendarDataCached(
       {
         clientId,
         source: "meta_ads",
-        query: "investmentCalendar:v24",
+        query: "investmentCalendar:v25",
         params: { accountId, objectivesKey, from: format(lastDataDate, "yyyy-MM-dd"), to: format(lastDataDate, "yyyy-MM-dd") },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -2106,7 +2134,7 @@ async function withResultObjectives(
       {
         clientId,
         source: "meta_ads",
-        query: "resultObjectives:v4",
+        query: "resultObjectives:v5",
         params: { accountId: metaConfig.ad_account_id, from: since, to: until },
         ttlSeconds: THREE_HOURS_SECONDS,
       },
@@ -2157,6 +2185,7 @@ interface PerformanceAdRow {
   /** Campo "clicks" de Meta (TODOS los clics) — mismo criterio que el resto del reporte. */
   clicks?: string;
   actions?: { action_type: string; value: string }[];
+  instagram_profile_visits?: string;
   action_values?: { action_type: string; value: string }[];
 }
 
@@ -2187,7 +2216,7 @@ export async function fetchEntityPerformance(
     {
       clientId,
       source: "meta_ads",
-      query: "entityPerformance:v2",
+      query: "entityPerformance:v3",
       params: { accountId: metaConfig.ad_account_id, dimension, objectivesKey, from: since, to: until },
       ...(monthIsComplete ? {} : { ttlSeconds: THREE_HOURS_SECONDS }),
     },
@@ -2198,7 +2227,7 @@ export async function fetchEntityPerformance(
           {
             level: "ad",
             time_range: JSON.stringify({ since, until }),
-            fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,actions,action_values",
+            fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,actions,instagram_profile_visits,action_values",
             limit: "5000",
           },
           metaConfig.system_user_token
@@ -2226,7 +2255,7 @@ export async function fetchEntityPerformance(
           entity = { id, name, spend: 0, reach: 0, impressions: 0, clicks: 0, results: 0, purchases: 0, revenue: 0 };
           byId.set(id, entity);
         }
-        const actions = row.actions ?? [];
+        const actions = actionsWithProfileVisits(row);
         entity.spend += Number(row.spend ?? 0);
         entity.impressions += Number(row.impressions ?? 0);
         // "Clicks" = campo clicks de Meta (TODOS los clics), mismo criterio que Performance de

@@ -15,7 +15,7 @@
 // y no queremos que caiga en "Clics en el enlace" si otro conjunto optimiza por clics.
 
 import { fetchMetaGraphApi } from "@/lib/meta-ads/client";
-import { resolveResultLabel } from "@/lib/reporting/metaResultLabels";
+import { INSTAGRAM_PROFILE_VISIT_ACTION_TYPE, resolveResultLabel } from "@/lib/reporting/metaResultLabels";
 import type { MetaAdsConfig, MetaAdsObjective } from "@/lib/types";
 
 interface AdsetInsightsResponse {
@@ -52,6 +52,12 @@ const PIXEL_EVENT_ACTION_TYPE: Record<string, string> = {
 export function resultActionTypeForAdset(adset: AdsetInfo): string | null {
   const goal = (adset.optimization_goal ?? "").toUpperCase();
   const promoted = adset.promoted_object ?? {};
+
+  // Tráfico al perfil de Instagram: Meta usa PROFILE_VISIT, pero un conjunto de clics con destino
+  // al perfil también cuenta visitas al perfil como Resultado en Ads Manager.
+  if (goal === "PROFILE_VISIT" || (goal === "LINK_CLICKS" && (adset.destination_type ?? "").toUpperCase() === "INSTAGRAM_PROFILE")) {
+    return INSTAGRAM_PROFILE_VISIT_ACTION_TYPE;
+  }
 
   switch (goal) {
     case "CONVERSATIONS":
@@ -95,7 +101,7 @@ function specificityRank(actionType: string): number {
   if (actionType.startsWith("onsite_conversion.messaging")) return 1;
   if (actionType === "mobile_app_install" || actionType === "rsvp") return 2;
   if (actionType === "landing_page_view") return 3;
-  if (actionType === "link_click") return 4;
+  if (actionType === "link_click" || actionType === INSTAGRAM_PROFILE_VISIT_ACTION_TYPE) return 4;
   if (actionType === "video_view") return 5;
   return 6; // post_engagement, like, etc.
 }

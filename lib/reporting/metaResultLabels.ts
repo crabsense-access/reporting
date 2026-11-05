@@ -21,6 +21,14 @@
 // Cuando aparezca un action_type nuevo que convenga agregar acá, el diagnóstico
 // "detectedActionTypes" (mismo archivo que objectiveActionTypes) ya lo muestra en el Admin con su
 // conteo real del mes — de ahí se puede copiar el string exacto.
+
+/**
+ * action_type PROPIO (no existe en Meta) para las visitas al perfil de Instagram: Meta no las
+ * manda en "actions" sino en el campo aparte instagram_profile_visits, y metaInvestmentData.ts
+ * (actionsWithProfileVisits) las suma a "actions" con este nombre.
+ */
+export const INSTAGRAM_PROFILE_VISIT_ACTION_TYPE = "instagram_profile_visit";
+
 const META_ACTION_TYPE_LABELS: Record<string, string> = {
   // Clientes potenciales (leads)
   lead: "Clientes potenciales",
@@ -39,6 +47,7 @@ const META_ACTION_TYPE_LABELS: Record<string, string> = {
 
   // Tráfico / navegación
   link_click: "Clics en el enlace",
+  [INSTAGRAM_PROFILE_VISIT_ACTION_TYPE]: "Visitas al perfil de Instagram",
   landing_page_view: "Vistas de la página de destino",
   outbound_click: "Clics salientes",
 
