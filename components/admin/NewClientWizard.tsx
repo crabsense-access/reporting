@@ -18,6 +18,7 @@ import { SourceIcon } from "@/components/admin/SourceIcon";
 import { createClientAction } from "@/app/admin/(dashboard)/clients/actions";
 import { buildSearchConsoleConfig, EMPTY_SEARCH_CONSOLE_FORM_VALUES } from "@/lib/gsc/config";
 import { normalizeGoogleAdsCustomerId } from "@/lib/google-ads/config";
+import { GoogleAdsAccountSelect } from "@/components/admin/GoogleAdsAccountSelect";
 import { normalizeMetaAdAccountId } from "@/lib/meta-ads/config";
 import type { SearchConsoleFormValues } from "@/lib/gsc/config";
 
@@ -39,6 +40,7 @@ export function NewClientWizard() {
   );
   const [googleAdsEnabled, setGoogleAdsEnabled] = useState(false);
   const [googleAdsCustomerId, setGoogleAdsCustomerId] = useState("");
+  const [googleAdsAccountName, setGoogleAdsAccountName] = useState<string | null>(null);
   const [metaAdsEnabled, setMetaAdsEnabled] = useState(false);
   const [metaAdsAccountId, setMetaAdsAccountId] = useState("");
   const [emails, setEmails] = useState<string[]>([""]);
@@ -70,7 +72,10 @@ export function NewClientWizard() {
         searchConsole: scResult.config,
         googleAds:
           googleAdsEnabled && googleAdsCustomerId.trim()
-            ? { customer_id: normalizeGoogleAdsCustomerId(googleAdsCustomerId.trim()) }
+            ? {
+                customer_id: normalizeGoogleAdsCustomerId(googleAdsCustomerId.trim()),
+                ...(googleAdsAccountName ? { account_name: googleAdsAccountName } : {}),
+              }
             : null,
         metaAds:
           metaAdsEnabled && metaAdsAccountId.trim()
@@ -210,7 +215,7 @@ export function NewClientWizard() {
                   />
                 }
                 title="Google Ads"
-                description="Customer ID de la cuenta de Ads vinculada a la MCC de la agencia."
+                description="Cuenta de Google Ads a la que tiene acceso access@crabsense.com."
                 status={<SourceStatusBadge configured={googleAdsEnabled && !adsHasErrors} />}
                 headerRight={
                   <Switch
@@ -221,18 +226,14 @@ export function NewClientWizard() {
                 }
               >
                 {googleAdsEnabled ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="ads-customer-id">Customer ID de Google Ads</Label>
-                    <Input
-                      id="ads-customer-id"
-                      value={googleAdsCustomerId}
-                      onChange={(event) => setGoogleAdsCustomerId(event.target.value)}
-                      placeholder="Ej: 123-456-7890"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Ingresá el Customer ID en formato XXX-XXX-XXXX. La cuenta tiene que estar vinculada previamente a la MCC de la agencia (4391931539).
-                    </p>
-                  </div>
+                  <GoogleAdsAccountSelect
+                    id="ads-customer-id"
+                    value={normalizeGoogleAdsCustomerId(googleAdsCustomerId)}
+                    onChange={(id, name) => {
+                      setGoogleAdsCustomerId(id);
+                      setGoogleAdsAccountName(name);
+                    }}
+                  />
                 ) : (
                   <p className="text-sm text-muted-foreground">
                     Activá el switch de arriba para conectar Google Ads.

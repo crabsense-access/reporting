@@ -39,6 +39,8 @@ export interface GSCConfig {
 
 export interface GoogleAdsConfig {
   customer_id: string;
+  /** Nombre de la cuenta en Google Ads al momento de conectarla (sólo informativo). */
+  account_name?: string;
   /** Mes (yyyy-MM) desde el cual el informe toma los datos de Google Ads (ver lib/reporting/reportWindow.ts). */
   start_month?: string;
   /** El cliente es un ecommerce: muestra Facturación, Ticket promedio y ROAS (ver isGoogleAdsEcommerce). */

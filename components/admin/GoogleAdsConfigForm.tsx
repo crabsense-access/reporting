@@ -4,15 +4,15 @@ import { useState, useTransition } from "react";
 
 import { AccordionItem, SourceStatusBadge } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SourceIcon } from "@/components/admin/SourceIcon";
+import { GoogleAdsAccountSelect } from "@/components/admin/GoogleAdsAccountSelect";
 import { StartMonthSelect } from "@/components/admin/StartMonthSelect";
 import { resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { saveGoogleAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
-import { formatGoogleAdsCustomerId, isGoogleAdsEcommerce, normalizeGoogleAdsCustomerId } from "@/lib/google-ads/config";
+import { isGoogleAdsEcommerce, normalizeGoogleAdsCustomerId } from "@/lib/google-ads/config";
 import type { GoogleAdsConfig } from "@/lib/types";
 
 interface GoogleAdsConfigFormProps {
@@ -32,6 +32,7 @@ export function GoogleAdsConfigForm({
   const [customerId, setCustomerId] = useState(() =>
     initialConfig?.customer_id ? normalizeGoogleAdsCustomerId(initialConfig.customer_id) : ""
   );
+  const [accountName, setAccountName] = useState<string | null>(initialConfig?.account_name ?? null);
   const [primaryGoal, setPrimaryGoal] = useState(initialConfig?.primary_goal ?? "");
   const [secondaryGoal, setSecondaryGoal] = useState(initialConfig?.secondary_goal ?? "");
   const [startMonth, setStartMonth] = useState(() => resolveStartMonth(initialConfig));
@@ -47,6 +48,7 @@ export function GoogleAdsConfigForm({
       enabled && normalizedCustomerId
         ? {
             customer_id: normalizedCustomerId,
+            ...(accountName ? { account_name: accountName } : {}),
             start_month: startMonth,
             is_ecommerce: isEcommerce,
             primary_goal: primaryGoal.trim(),
@@ -72,7 +74,7 @@ export function GoogleAdsConfigForm({
       id="google-ads"
       icon={<SourceIcon src="/icons/google-ads.png" alt="Google Ads" connected={configured} />}
       title="Google Ads"
-      description="Customer ID de la cuenta de Ads vinculada a la MCC de la agencia."
+      description="Cuenta de Google Ads a la que tiene acceso access@crabsense.com."
       status={<SourceStatusBadge configured={configured} />}
       headerRight={
         <Switch
@@ -85,20 +87,14 @@ export function GoogleAdsConfigForm({
       <div className="flex flex-col gap-6">
         {enabled ? (
           <div className="flex flex-col gap-6 rounded-lg border border-border p-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="ads-customer-id">Customer ID de Google Ads</Label>
-              <Input
-                id="ads-customer-id"
-                value={formatGoogleAdsCustomerId(customerId)}
-                onChange={(event) => setCustomerId(normalizeGoogleAdsCustomerId(event.target.value))}
-                placeholder="Ej: 123-456-7890"
-              />
-              <p className="text-xs text-muted-foreground">
-                Ingresá el Customer ID de la cuenta de Ads en formato XXX-XXX-XXXX, tal como aparece
-                en Google Ads. La cuenta tiene que estar vinculada previamente a la MCC de la agencia
-                (4391931539).
-              </p>
-            </div>
+            <GoogleAdsAccountSelect
+              id="ads-customer-id"
+              value={customerId}
+              onChange={(id, name) => {
+                setCustomerId(normalizeGoogleAdsCustomerId(id));
+                setAccountName(name);
+              }}
+            />
 
             <StartMonthSelect id="ads-start-month" value={startMonth} onChange={setStartMonth} />
 

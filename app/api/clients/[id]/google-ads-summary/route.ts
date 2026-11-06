@@ -97,14 +97,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ ...withGoogleAdsSummaryDefaults(summary), from, to, isCurrentMonth, isEcommerce });
   } catch (error) {
     console.error("[google-ads-summary] Error:", error);
-    // Error típico: la cuenta del cliente no está vinculada a la MCC de la agencia
-    // (GOOGLE_ADS_LOGIN_CUSTOMER_ID) — mensaje claro en vez del JSON crudo de Google.
+    // Error típico: access@crabsense.com (dueño del refresh token) no tiene acceso a la cuenta
+    // del cliente — mensaje claro en vez del JSON crudo de Google.
     if (/authorization_error|doesn't have permission to access customer/i.test(JSON.stringify((error as { errors?: unknown })?.errors ?? String(error)))) {
       return NextResponse.json(
         {
           error:
-            `No hay acceso a la cuenta de Google Ads ${formatId(customerId)}. Hay que vincularla a la cuenta de administrador (MCC) ` +
-            `de la agencia ${formatId(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? "")} y que el cliente acepte la invitación.`,
+            `No hay acceso a la cuenta de Google Ads ${formatId(customerId)}. El cliente tiene que agregar a ` +
+            `access@crabsense.com como usuario de su cuenta de Google Ads (y aceptar la invitación).`,
         },
         { status: 403 }
       );
