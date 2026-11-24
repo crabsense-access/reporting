@@ -6,6 +6,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { getClientLogoUrl } from "@/lib/reporting/clientLogo";
 import { ReportBody } from "@/components/admin/reporting/ReportBody";
 import { resolveStartMonth } from "@/lib/reporting/reportWindow";
+import { latestMetaExcelMonth } from "@/lib/reporting/metaExcelStore";
+import type { MetaAdsConfig } from "@/lib/types";
 import { ReportWithSidebar, type ReportPlatform } from "@/components/admin/reporting/ReportSidebar";
 
 // Armado común de las páginas de reporte (Server Component): una página por hoja (Resumen general /
@@ -50,6 +52,11 @@ export async function ReportPage({
     google_ads: resolveStartMonth(sources?.find((s) => s.source_type === "google_ads")?.config as { start_month?: string } | undefined),
   };
 
+  // Meta Ads en modo Excel (sin Ad Account ID, ver lib/reporting/metaExcelImport.ts): sin ?month,
+  // el reporte abre en el último mes cargado — el mes en curso casi nunca tiene export todavía.
+  const metaConfig = sources?.find((s) => s.source_type === "meta_ads")?.config as MetaAdsConfig | undefined;
+  const initialMonth = month ?? (metaConfig && !metaConfig.ad_account_id ? ((await latestMetaExcelMonth(clientId)) ?? undefined) : undefined);
+
   // Si la plataforma pedida no está configurada (pero hay alguna), se va al Resumen general.
   if (platform !== "summary" && !platforms.includes(platform) && platforms.length > 0) {
     redirect(month ? `${hrefs.summary}?month=${month}` : hrefs.summary);
@@ -86,7 +93,7 @@ export async function ReportPage({
       <ReportBody
         clientId={clientId}
         platform={platform}
-        initialMonth={month}
+        initialMonth={initialMonth}
         showRecommendations={showRecommendations}
         platforms={platforms}
         startMonths={startMonths}

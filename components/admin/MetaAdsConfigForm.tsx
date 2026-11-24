@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { Check, Copy } from "lucide-react";
 import { SiMeta } from "react-icons/si";
 
 import { AccordionItem, SourceStatusBadge } from "@/components/ui/accordion";
@@ -8,7 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { previewSheetChartAction, saveMetaAdsConfigAction } from "@/app/admin/(dashboard)/clients/actions";
+import {
+  getMetaAdsTokenAction,
+  previewSheetChartAction,
+  saveMetaAdsConfigAction,
+} from "@/app/admin/(dashboard)/clients/actions";
 import { StartMonthSelect } from "@/components/admin/StartMonthSelect";
 import { resolveStartMonth } from "@/lib/reporting/reportWindow";
 import { normalizeMetaAdAccountId } from "@/lib/meta-ads/config";
@@ -55,6 +60,8 @@ export function MetaAdsConfigForm({
   const [tokenInput, setTokenInput] = useState("");
   const [tokenStored, setTokenStored] = useState(hasStoredToken);
   const [clearToken, setClearToken] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copying" | "copied" | "error">("idle");
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -73,6 +80,41 @@ export function MetaAdsConfigForm({
         text: `OK — ${rows} filas. Eje X: "${xLabel}". Series: ${series.join(", ")}. Gráfico de ${kind === "line" ? "líneas" : "barras"}.`,
       });
     });
+  }
+
+  // Copia el token al portapapeles: si hay uno tipeado en el campo copia ese; si no, pide al server
+  // el guardado (sólo admins). Se usa ClipboardItem con una Promise para que Safari no rechace la
+  // escritura por haber un await entre el click y el copiado.
+  async function handleCopyToken() {
+    setCopyError(null);
+    setCopyStatus("copying");
+
+    const typed = tokenInput.trim();
+    const tokenPromise: Promise<string> = typed
+      ? Promise.resolve(typed)
+      : dataSourceId
+        ? getMetaAdsTokenAction(dataSourceId).then((result) => {
+            if (result.error || !result.data) throw new Error(result.error ?? "No se pudo obtener el token.");
+            return result.data;
+          })
+        : Promise.reject(new Error("No hay token guardado para este cliente."));
+
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": tokenPromise.then((token) => new Blob([token], { type: "text/plain" })),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(await tokenPromise);
+      }
+      setCopyStatus("copied");
+      setTimeout(() => setCopyStatus("idle"), 2000);
+    } catch (error) {
+      setCopyStatus("error");
+      setCopyError(error instanceof Error && error.message ? error.message : "No se pudo copiar el token.");
+    }
   }
 
   function handleSave() {
@@ -180,21 +222,35 @@ export function MetaAdsConfigForm({
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="meta-ads-token">System User token (Marketing API)</Label>
-              <Input
-                id="meta-ads-token"
-                type="password"
-                autoComplete="off"
-                value={tokenInput}
-                onChange={(event) => {
-                  setTokenInput(event.target.value);
-                  if (event.target.value) setClearToken(false);
-                }}
-                placeholder={
-                  tokenStored
-                    ? "•••••••••••• (dejar en blanco para no modificarlo)"
-                    : "Pegá acá el token del System User de este cliente"
-                }
-              />
+              <div className="flex items-start gap-2">
+                <Input
+                  id="meta-ads-token"
+                  type="password"
+                  autoComplete="off"
+                  value={tokenInput}
+                  onChange={(event) => {
+                    setTokenInput(event.target.value);
+                    if (event.target.value) setClearToken(false);
+                  }}
+                  placeholder={
+                    tokenStored
+                      ? "•••••••••••• (dejar en blanco para no modificarlo)"
+                      : "Pegá acá el token del System User de este cliente"
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCopyToken}
+                  disabled={copyStatus === "copying" || (!tokenInput.trim() && !(tokenStored && !clearToken))}
+                  title="Copiar token al portapapeles"
+                  aria-label="Copiar token"
+                >
+                  {copyStatus === "copied" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copyStatus === "copied" ? "Copiado" : copyStatus === "copying" ? "Copiando…" : "Copiar"}
+                </Button>
+              </div>
+              {copyStatus === "error" && <p className="text-xs text-destructive">{copyError}</p>}
               <p className="text-xs text-muted-foreground">
                 Token propio de este cliente, generado en su Business Manager (Usuarios del
                 sistema → Generar token, con permisos ads_read). No se muestra una vez guardado.

@@ -250,6 +250,8 @@ export interface CampaignRankingEntry {
 }
 
 export interface RealInvestmentCalendarData {
+  /** "excel": armado desde un export de Meta subido a mano (ver lib/reporting/metaExcelImport.ts), sin ubicaciones, regiones ni horario. Ausente = Marketing API. */
+  source?: "api" | "excel";
   currency: string;
   /** Presupuesto DEL MES consultado (ver resolveMonthlyBudget) — null si ese mes no tiene ni una entrada propia en monthly_budgets ni un monthly_budget legado cargado. */
   monthlyBudget: number | null;
@@ -1891,7 +1893,7 @@ function withSegmentDefaults(data: RealInvestmentCalendarData): RealInvestmentCa
  * estable/fresco cuando corresponde) — por eso este filtro se aplica como último paso, después de
  * cualquier merge, y no importa en qué tramo cayeron los leads.
  */
-function withResultsOnlyEntities(data: RealInvestmentCalendarData): RealInvestmentCalendarData {
+export function withResultsOnlyEntities(data: RealInvestmentCalendarData): RealInvestmentCalendarData {
   const adLeadsTotal = new Map<string, number>();
   const campaignLeadsTotal = new Map<string, number>();
   const adsetLeadsTotal = new Map<string, number>();

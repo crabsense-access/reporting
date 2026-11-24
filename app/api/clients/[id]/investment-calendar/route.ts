@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { endOfMonth, startOfMonth } from "date-fns";
+import { endOfMonth, format, startOfMonth } from "date-fns";
+import { es } from "date-fns/locale";
 
 import { createClient } from "@/lib/supabase/server";
 import { canAccessClient } from "@/lib/auth/roles";
 import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
-import { fetchRealInvestmentCalendarDataCached } from "@/lib/reporting/metaInvestmentData";
+import { fetchRealInvestmentCalendarDataCached, withResultsOnlyEntities } from "@/lib/reporting/metaInvestmentData";
+import { getMetaExcelImport } from "@/lib/reporting/metaExcelStore";
 import { MetaAdsAuthError, MetaAdsUnavailableError } from "@/lib/meta-ads/client";
 import type { MetaAdsConfig } from "@/lib/types";
 
@@ -40,9 +42,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const metaAdsConfig = metaAdsSource.config as MetaAdsConfig;
-  if (!metaAdsConfig.ad_account_id) {
-    return NextResponse.json({ error: "Meta Ads no está configurado para este cliente." }, { status: 404 });
-  }
+  // Sin Ad Account ID = cliente en modo Excel: los datos salen del export subido para cada mes
+  // (ver lib/reporting/metaExcelImport.ts), no de la Marketing API.
+  const fromExcel = !metaAdsConfig.ad_account_id;
 
   const today = todayInBuenosAires();
   const monthParam = new URL(request.url).searchParams.get("month");
@@ -51,6 +53,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, "0")}`;
   if (!isMonthFromStart(monthKey, resolveStartMonth(metaAdsConfig))) {
     return NextResponse.json({ error: "Este mes todavía no está disponible." }, { status: 403 });
+  }
+
+  if (fromExcel) {
+    const stored = await getMetaExcelImport(clientId, monthKey);
+    if (!stored) {
+      return NextResponse.json(
+        { error: `Todavía no hay datos de Meta Ads cargados para ${format(monthStart, "MMMM yyyy", { locale: es })}.` },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ ...withResultsOnlyEntities(stored.data), isEcommerce: false });
   }
   // Nunca pedimos más allá de hoy: los días futuros todavía no tienen datos en Meta. Para un mes
   // pasado esto no recorta nada (su último día siempre es anterior a hoy); para el mes en curso

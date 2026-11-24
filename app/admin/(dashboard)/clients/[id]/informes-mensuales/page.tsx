@@ -13,6 +13,7 @@ import { withCache, THREE_HOURS_SECONDS } from "@/lib/cache/withCache";
 import { formatCurrency } from "@/lib/format";
 import type { MetaAdsConfig } from "@/lib/types";
 import { isMonthFromStart, resolveStartMonth } from "@/lib/reporting/reportWindow";
+import { listMetaExcelImports } from "@/lib/reporting/metaExcelStore";
 
 // Listado de informes mensuales de un cliente (reemplaza los botones "Informes", "Ver informes" y
 // "Generar informe" del detalle del cliente, a pedido de Martín). Cada mes es el Calendario de
@@ -98,6 +99,17 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
     } catch (err) {
       error = err instanceof Error ? err.message : "No se pudieron cargar los meses desde Meta Ads.";
     }
+  } else if (config) {
+    // Meta Ads desde Excel: un informe por cada mes con export cargado.
+    const imports = await listMetaExcelImports(client.id).catch(() => []);
+    const currentValue = format(startOfMonth(new Date()), "yyyy-MM");
+    result = {
+      currency: imports[0]?.currency ?? "USD",
+      months: imports.map((imp) => {
+        const label = format(parseISO(`${imp.month}-01`), "MMMM yyyy", { locale: es });
+        return { value: imp.month, label: label.charAt(0).toUpperCase() + label.slice(1), spend: imp.spend, isCurrent: imp.month === currentValue };
+      }),
+    };
   }
 
   return (
@@ -120,7 +132,7 @@ export default async function MonthlyReportsPage({ params }: { params: Promise<{
           <CardDescription>Calendario de inversión de cada mes con inversión en Meta Ads (últimos 12 meses).</CardDescription>
         </CardHeader>
         <CardContent>
-          {!config?.ad_account_id ? (
+          {!config ? (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <p className="text-sm text-muted-foreground">Este cliente todavía no tiene Meta Ads configurado.</p>
               <Button asChild variant="outline" size="sm">

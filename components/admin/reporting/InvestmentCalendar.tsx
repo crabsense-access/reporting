@@ -196,6 +196,8 @@ interface VideoRetentionByAge {
 }
 
 interface InvestmentCalendarResponse {
+  /** "excel" = datos de un export subido a mano: no trae ubicaciones, regiones ni horario, así que esos bloques no se muestran. */
+  source?: "api" | "excel";
   currency: string;
   /** El cliente está marcado como ecommerce en el Admin (Meta Ads → "Es un ecommerce") — muestra el bloque Ecommerce. */
   isEcommerce?: boolean;
@@ -902,7 +904,7 @@ export function InvestmentCalendar({
             clientId={clientId}
           />
 
-          {data && (
+          {data && data.source !== "excel" && (
             <PlacementAnalysis
               segments={data.placementSegments}
               objectiveOptions={visibleObjectiveTotals.map((o) => ({ index: o.index, label: o.label }))}
@@ -941,7 +943,7 @@ export function InvestmentCalendar({
             />
           )}
 
-          {data && (
+          {data && data.source !== "excel" && (
             <RegionAnalysis
               showReach={false}
               segments={data.regionSegments}
@@ -958,7 +960,7 @@ export function InvestmentCalendar({
             />
           )}
 
-          {data && (
+          {data && data.source !== "excel" && (
             <HourlyPerformanceChart
               hourlyTotals={data.hourlyTotals}
               currency={currency}

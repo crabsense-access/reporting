@@ -12,6 +12,8 @@ import { getClientLogoUrl } from "@/lib/reporting/clientLogo";
 import { GA4ConfigForm } from "@/components/admin/GA4ConfigForm";
 import { GoogleAdsConfigForm } from "@/components/admin/GoogleAdsConfigForm";
 import { MetaAdsConfigForm } from "@/components/admin/MetaAdsConfigForm";
+import { MetaExcelImportForm } from "@/components/admin/MetaExcelImportForm";
+import { listMetaExcelImports } from "@/lib/reporting/metaExcelStore";
 import { SearchConsoleConfigForm } from "@/components/admin/SearchConsoleConfigForm";
 import { ClientUsersManager } from "@/components/admin/ClientUsersManager";
 import { ClientReportUrl } from "@/components/admin/ClientReportUrl";
@@ -20,10 +22,14 @@ import type { GA4Config, GoogleAdsConfig, GSCConfig, MetaAdsConfig } from "@/lib
 
 export default async function ClientDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ excelError?: string }>;
 }) {
   const { id } = await params;
+  // Error al subir el Excel de Meta Ads desde el asistente de nuevo cliente (ver NewClientWizard).
+  const { excelError } = await searchParams;
   const supabase = await createClient();
 
   const { data: client } = await supabase
@@ -68,6 +74,11 @@ export default async function ClientDetailPage({
     .order("created_at", { ascending: true });
 
   const logoUrl = await getClientLogoUrl(id);
+
+  // Meta Ads desde Excel: "api" si tiene Ad Account ID, "excel" si tiene la fuente sin Ad Account ID.
+  const metaAdsConfig = metaAdsDataSource?.config as MetaAdsConfig | undefined;
+  const metaExcelMode = !metaAdsConfig ? "none" : metaAdsConfig.ad_account_id ? "api" : "excel";
+  const metaExcelImports = metaExcelMode === "api" ? [] : await listMetaExcelImports(id).catch(() => []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -144,6 +155,15 @@ export default async function ClientDetailPage({
             configured={Boolean(googleAdsDataSource)}
           />
         </Accordion>
+      </div>
+
+      <div id="meta-excel" className="scroll-mt-6">
+        <MetaExcelImportForm
+          clientId={client.id}
+          mode={metaExcelMode}
+          initialImports={metaExcelImports}
+          initialError={excelError ?? null}
+        />
       </div>
 
       <Card>

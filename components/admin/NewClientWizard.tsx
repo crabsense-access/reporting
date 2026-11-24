@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SiGoogleanalytics, SiMeta } from "react-icons/si";
+import { FileSpreadsheet, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,12 +44,20 @@ export function NewClientWizard() {
   const [googleAdsAccountName, setGoogleAdsAccountName] = useState<string | null>(null);
   const [metaAdsEnabled, setMetaAdsEnabled] = useState(false);
   const [metaAdsAccountId, setMetaAdsAccountId] = useState("");
+  // Origen de los datos de Meta Ads: la Marketing API (Ad Account ID) o exports de Excel subidos a
+  // mano (ver lib/reporting/metaExcelImport.ts). En modo Excel se elige el archivo acá y se sube
+  // apenas se crea el cliente; los meses siguientes se suben desde el detalle del cliente.
+  const [metaAdsOrigin, setMetaAdsOrigin] = useState<"api" | "excel">("api");
+  const [metaExcelFile, setMetaExcelFile] = useState<File | null>(null);
+  const metaExcelInputRef = useRef<HTMLInputElement>(null);
   const [emails, setEmails] = useState<string[]>([""]);
   const scResult = buildSearchConsoleConfig(searchConsole);
   const ga4HasErrors = ga4Enabled && propertyId.trim().length === 0;
   const scHasErrors = searchConsole.enabled && Object.keys(scResult.errors).length > 0;
   const adsHasErrors = googleAdsEnabled && normalizeGoogleAdsCustomerId(googleAdsCustomerId).length === 0;
-  const metaAdsHasErrors = metaAdsEnabled && normalizeMetaAdAccountId(metaAdsAccountId).length === 0;
+  const metaAdsHasErrors =
+    metaAdsEnabled &&
+    (metaAdsOrigin === "excel" ? !metaExcelFile : normalizeMetaAdAccountId(metaAdsAccountId).length === 0);
   const ga4Valid = ga4Enabled && !ga4HasErrors;
 
   const canGoNext =
@@ -77,10 +86,14 @@ export function NewClientWizard() {
                 ...(googleAdsAccountName ? { account_name: googleAdsAccountName } : {}),
               }
             : null,
-        metaAds:
-          metaAdsEnabled && metaAdsAccountId.trim()
-            ? { ad_account_id: normalizeMetaAdAccountId(metaAdsAccountId.trim()) }
-            : null,
+        metaAds: !metaAdsEnabled
+          ? null
+          : metaAdsOrigin === "excel"
+            ? // Sin Ad Account ID = modo Excel. El mes de inicio lo fija la subida del archivo.
+              { ad_account_id: "" }
+            : metaAdsAccountId.trim()
+              ? { ad_account_id: normalizeMetaAdAccountId(metaAdsAccountId.trim()) }
+              : null,
         userEmails: emails.map((email) => email.trim()).filter(Boolean),
       });
 
@@ -89,7 +102,20 @@ export function NewClientWizard() {
         return;
       }
 
-      router.push(`/admin/clients/${result.data.id}`);
+      const clientId = result.data.id;
+      if (metaAdsEnabled && metaAdsOrigin === "excel" && metaExcelFile) {
+        const body = new FormData();
+        body.append("file", metaExcelFile);
+        const res = await fetch(`/api/clients/${clientId}/meta-excel-import`, { method: "POST", body }).catch(() => null);
+        if (!res?.ok) {
+          // El cliente ya quedó creado: se sigue al detalle, donde se puede volver a subir el archivo.
+          const message = ((await res?.json().catch(() => ({}))) as { error?: string } | undefined)?.error;
+          router.push(`/admin/clients/${clientId}?excelError=${encodeURIComponent(message ?? "No se pudo subir el Excel de Meta Ads.")}#meta-excel`);
+          return;
+        }
+      }
+
+      router.push(`/admin/clients/${clientId}`);
     });
   }
 
@@ -250,7 +276,7 @@ export function NewClientWizard() {
                   />
                 }
                 title="Meta Ads"
-                description="Ad Account ID de la cuenta de Meta compartida con el Business Manager de la agencia."
+                description="Ad Account ID de la cuenta de Meta compartida con el Business Manager de la agencia, o exports de Excel."
                 status={<SourceStatusBadge configured={metaAdsEnabled && !metaAdsHasErrors} />}
                 headerRight={
                   <Switch
@@ -261,18 +287,76 @@ export function NewClientWizard() {
                 }
               >
                 {metaAdsEnabled ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="meta-ads-account-id">Ad Account ID de Meta</Label>
-                    <Input
-                      id="meta-ads-account-id"
-                      value={metaAdsAccountId}
-                      onChange={(event) => setMetaAdsAccountId(event.target.value)}
-                      placeholder="Ej: act_1234567890"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Ingresá el Ad Account ID en formato act_XXXXXXXXXX. La cuenta tiene que estar
-                      compartida previamente con el Business Manager de la agencia.
-                    </p>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
+                      <Label>Origen de los datos</Label>
+                      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Origen de los datos de Meta Ads">
+                        {(
+                          [
+                            { value: "api", label: "API de Meta (Ad Account ID)" },
+                            { value: "excel", label: "Excel exportado de Meta" },
+                          ] as const
+                        ).map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={metaAdsOrigin === option.value}
+                            onClick={() => setMetaAdsOrigin(option.value)}
+                            className={
+                              metaAdsOrigin === option.value
+                                ? "rounded-md border border-primary bg-primary/5 px-3 py-2 text-sm font-medium text-primary"
+                                : "rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:border-primary/40"
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {metaAdsOrigin === "api" ? (
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="meta-ads-account-id">Ad Account ID de Meta</Label>
+                        <Input
+                          id="meta-ads-account-id"
+                          value={metaAdsAccountId}
+                          onChange={(event) => setMetaAdsAccountId(event.target.value)}
+                          placeholder="Ej: act_1234567890"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Ingresá el Ad Account ID en formato act_XXXXXXXXXX. La cuenta tiene que estar
+                          compartida previamente con el Business Manager de la agencia.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        <Label>Export de Meta Ads (.xlsx)</Label>
+                        <input
+                          ref={metaExcelInputRef}
+                          type="file"
+                          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                          className="hidden"
+                          onChange={(event) => setMetaExcelFile(event.target.files?.[0] ?? null)}
+                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <Button type="button" variant="outline" onClick={() => metaExcelInputRef.current?.click()}>
+                            <Upload className="h-4 w-4" />
+                            {metaExcelFile ? "Cambiar archivo" : "Elegir archivo"}
+                          </Button>
+                          {metaExcelFile && (
+                            <span className="flex items-center gap-1.5 text-sm text-foreground">
+                              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                              {metaExcelFile.name}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Un mes por archivo, desglosado por Día (y por Edad y Sexo para el bloque de audiencia). Se sube
+                          al crear el cliente; los meses siguientes se cargan desde el detalle del cliente.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">

@@ -318,6 +318,28 @@ export async function saveMetaAdsConfigAction(
 }
 
 /**
+ * Botón "Copiar" del token de Meta Ads: devuelve el System User token guardado para que el admin
+ * lo pueda copiar al portapapeles. Sólo admins (el token nunca se manda al browser en initialConfig).
+ */
+export async function getMetaAdsTokenAction(dataSourceId: string): Promise<ActionResult<string | null>> {
+  const authError = await assertAdmin();
+  if (authError) return { data: null, error: authError };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("data_sources")
+    .select("config")
+    .eq("id", dataSourceId)
+    .eq("source_type", "meta_ads")
+    .single();
+  if (error) return { data: null, error: error.message };
+
+  const token = (data?.config as MetaAdsConfig | null)?.system_user_token ?? null;
+  if (!token) return { data: null, error: "No hay token guardado para este cliente." };
+  return { data: token, error: null };
+}
+
+/**
  * "Probar Sheet" del acordeón de Meta Ads: baja el Google Sheet y devuelve un resumen de cómo se
  * va a interpretar (sin guardar nada), para que el admin confirme antes de guardar.
  */
